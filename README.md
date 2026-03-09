@@ -40,7 +40,7 @@ At $15/M tokens (Opus), a developer spending $100/month is lighting **$30-50 on 
 
 ### Context Heatmap — see where your tokens go
 
-Run `/context` to get a visual breakdown of every file in your session. Green = useful. Red = waste.
+Run `/cco` to get a visual breakdown of every file in your session. Green = useful. Red = waste.
 
 <p align="center">
   <img src="assets/heatmap-demo.svg" alt="Context Heatmap" width="700"/>
@@ -48,7 +48,7 @@ Run `/context` to get a visual breakdown of every file in your session. Green = 
 
 ### Token ROI Report — full analytics across sessions
 
-Run `/context-report` for a comprehensive dashboard: total tokens, waste ratio, cost estimates, trends, and actionable recommendations.
+Run `/cco-report` for a comprehensive dashboard: total tokens, waste ratio, cost estimates, trends, and actionable recommendations.
 
 <p align="center">
   <img src="assets/dashboard-demo.svg" alt="Token ROI Report" width="700"/>
@@ -56,7 +56,7 @@ Run `/context-report` for a comprehensive dashboard: total tokens, waste ratio, 
 
 ### Efficiency Score — gamified optimization
 
-Run `/context-digest` for a weekly efficiency grade (S/A/B/C/D/F) with breakdown by precision, edit ratio, search accuracy, and focus.
+Run `/cco-digest` for a weekly efficiency grade (S/A/B/C/D/F) with breakdown by precision, edit ratio, search accuracy, and focus.
 
 <p align="center">
   <img src="assets/efficiency-score.svg" alt="Efficiency Score" width="700"/>
@@ -73,15 +73,15 @@ Set a token budget and get real-time warnings as you approach the limit. Automat
 
 ### Git-Aware Suggestions — smart context loading
 
-Run `/context-git` and the plugin analyzes your `git diff`, finds related test files, configs, and historically useful files — then suggests exactly what to load.
+Run `/cco-git` and the plugin analyzes your `git diff`, finds related test files, configs, and historically useful files — then suggests exactly what to load.
 
 ### Context Templates — presets for common tasks
 
 Create reusable context sets for different task types:
 
 ```bash
-/context-templates create bug-fix    # Save files you always need for bug fixes
-/context-templates apply bug-fix     # Load them instantly next time
+/cco-templates create bug-fix    # Save files you always need for bug fixes
+/cco-templates apply bug-fix     # Load them instantly next time
 ```
 
 ### Smart Loader Skill — automatic suggestions
@@ -90,7 +90,7 @@ The plugin learns from your behavior. When you start a new task, it silently sug
 
 ### HTML Export — shareable dashboards
 
-Run `/context-export html` to generate a beautiful dark-themed dashboard you can open in any browser or share with your team.
+Run `/cco-export html` to generate a beautiful dark-themed dashboard you can open in any browser or share with your team.
 
 ---
 
@@ -98,14 +98,14 @@ Run `/context-export html` to generate a beautiful dark-themed dashboard you can
 
 | Command | Description |
 |---------|-------------|
-| `/context` | Session heatmap — visual file-by-file token breakdown |
-| `/context-report` | Full ROI report — stats, trends, waste analysis, recommendations |
-| `/context-digest [days]` | Efficiency digest — score, grade, cost analysis (default: 7 days) |
-| `/context-budget [status\|set\|model]` | Token budget — configure limits and cost model |
-| `/context-git` | Git-aware suggestions — smart file loading based on diff |
-| `/context-templates [list\|create\|apply\|delete]` | Context templates — reusable file sets for task types |
-| `/context-export [md\|html]` | Export reports — Markdown or HTML dashboard |
-| `/context-clean` | Cleanup — remove old tracking data |
+| `/cco` | Session heatmap — visual file-by-file token breakdown |
+| `/cco-report` | Full ROI report — stats, trends, waste analysis, recommendations |
+| `/cco-digest [days]` | Efficiency digest — score, grade, cost analysis (default: 7 days) |
+| `/cco-budget [status\|set\|model]` | Token budget — configure limits and cost model |
+| `/cco-git` | Git-aware suggestions — smart file loading based on diff |
+| `/cco-templates [list\|create\|apply\|delete]` | Context templates — reusable file sets for task types |
+| `/cco-export [md\|html]` | Export reports — Markdown or HTML dashboard |
+| `/cco-clean` | Cleanup — remove old tracking data |
 
 ---
 
@@ -170,7 +170,7 @@ You use Claude Code normally
           │
           ▼
 ┌─────────────────────┐
-│  Reports & Insights  │  /context, /context-report, /context-digest
+│  Reports & Insights  │  /cco, /cco-report, /cco-digest
 │  Budget Alerts       │  Real-time warnings when approaching token limits.
 │  Smart Suggestions   │  File recommendations based on git state + history.
 └─────────────────────┘
@@ -221,14 +221,14 @@ claude-context-optimizer/
 │   ├── report.js            # ROI report generator
 │   └── export.js            # MD/HTML report exporter
 ├── commands/
-│   ├── context.md           # /context — session heatmap
-│   ├── context-report.md    # /context-report — full ROI report
-│   ├── context-digest.md    # /context-digest — efficiency digest
-│   ├── context-budget.md    # /context-budget — budget manager
-│   ├── context-git.md       # /context-git — git suggestions
-│   ├── context-export.md    # /context-export — report export
-│   ├── context-templates.md # /context-templates — template manager
-│   └── context-clean.md     # /context-clean — data cleanup
+│   ├── cco.md               # /cco — session heatmap
+│   ├── cco-report.md        # /cco-report — full ROI report
+│   ├── cco-digest.md        # /cco-digest — efficiency digest
+│   ├── cco-budget.md        # /cco-budget — budget manager
+│   ├── cco-git.md           # /cco-git — git suggestions
+│   ├── cco-export.md        # /cco-export — report export
+│   ├── cco-templates.md     # /cco-templates — template manager
+│   └── cco-clean.md         # /cco-clean — data cleanup
 ├── agents/
 │   └── context-analyzer.md  # Deep analysis agent
 ├── skills/
@@ -249,7 +249,7 @@ This plugin:
 - **Tracks only file paths and line counts** — never file contents
 - **Stores everything locally** in `~/.claude-context-optimizer/`
 - **Sends zero telemetry** — no network calls, no analytics, no tracking
-- **Can be fully wiped** with `/context-clean --reset-all`
+- **Can be fully wiped** with `/cco-clean --reset-all`
 
 Your data never leaves your machine. Period.
 
@@ -264,7 +264,7 @@ A: No. Hook scripts run asynchronously and typically complete in <10ms. The trac
 A: They use a ~4 tokens/line heuristic. It's not exact, but it's consistent across sessions, making trends and comparisons reliable.
 
 **Q: Can I use this with Claude Sonnet / Haiku?**
-A: Yes. Set your model with `/context-budget model sonnet` for accurate cost estimates.
+A: Yes. Set your model with `/cco-budget model sonnet` for accurate cost estimates.
 
 **Q: Will this work with subagents?**
 A: Yes. The PostToolUse hook fires for all tool calls, including those made by subagents.
