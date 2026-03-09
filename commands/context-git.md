@@ -9,7 +9,7 @@ Analyze the current git state and suggest which files Claude should read for the
 
 Run:
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/src/git-context.js
+node /Users/egorfedorov/claude-context-optimizer/src/git-context.js
 ```
 
 Present the results:

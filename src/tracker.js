@@ -7,7 +7,7 @@
  * Stores data in ~/.claude-context-optimizer/ for cross-session analysis.
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, readdirSync } from 'fs';
 import { join, basename, extname } from 'path';
 import { homedir } from 'os';
 
@@ -277,13 +277,97 @@ function finalizeSession(session) {
 }
 
 /**
+ * Rebuild global stats from all session files (fallback when global-stats.json is missing)
+ */
+function rebuildGlobalStats() {
+  const sessionFiles = readdirSync(SESSIONS_DIR).filter(f => f.endsWith('.json'));
+  if (sessionFiles.length === 0) return;
+
+  // Reset patterns and stats, then finalize each session
+  const patterns = { fileFrequency: {}, taskPatterns: {}, wastedReads: {}, lastUpdated: null };
+  const globalStats = {
+    totalSessions: 0, totalTokensTracked: 0, estimatedTokensSaved: 0,
+    totalFilesRead: 0, totalFilesEdited: 0, avgTokensPerSession: 0,
+    topWastedFiles: [], topUsefulFiles: [], sessionHistory: []
+  };
+
+  for (const file of sessionFiles) {
+    try {
+      const session = JSON.parse(readFileSync(join(SESSIONS_DIR, file), 'utf-8'));
+      let sessionTokensTotal = 0;
+      let sessionTokensWasted = 0;
+
+      for (const [filePath, fileData] of Object.entries(session.files || {})) {
+        const tokensUsed = (fileData.estTokens || 0) * (fileData.reads || 1);
+        sessionTokensTotal += tokensUsed;
+        const isUseful = fileData.wasEdited || fileData.reads > 1;
+
+        if (!isUseful && fileData.reads === 1) {
+          sessionTokensWasted += tokensUsed;
+          if (!patterns.wastedReads[filePath]) {
+            patterns.wastedReads[filePath] = { count: 0, sessions: 0, totalTokensWasted: 0 };
+          }
+          patterns.wastedReads[filePath].count++;
+          patterns.wastedReads[filePath].sessions++;
+          patterns.wastedReads[filePath].totalTokensWasted += tokensUsed;
+        }
+
+        if (!patterns.fileFrequency[filePath]) {
+          patterns.fileFrequency[filePath] = { sessions: 0, totalReads: 0, totalEdits: 0, usefulness: 0 };
+        }
+        patterns.fileFrequency[filePath].sessions++;
+        patterns.fileFrequency[filePath].totalReads += fileData.reads || 0;
+        patterns.fileFrequency[filePath].totalEdits += fileData.edits || 0;
+        if (isUseful) patterns.fileFrequency[filePath].usefulness++;
+      }
+
+      globalStats.totalSessions++;
+      globalStats.totalTokensTracked += sessionTokensTotal;
+      globalStats.estimatedTokensSaved += sessionTokensWasted;
+      globalStats.totalFilesRead += session.totalReads || 0;
+      globalStats.totalFilesEdited += session.totalEdits || 0;
+
+      globalStats.sessionHistory.push({
+        id: session.id, date: session.startedAt || new Date().toISOString(),
+        filesRead: Object.keys(session.files || {}).length,
+        totalReads: session.totalReads || 0, totalEdits: session.totalEdits || 0,
+        tokensTotal: sessionTokensTotal, tokensWasted: sessionTokensWasted,
+        wastePercent: sessionTokensTotal > 0 ? Math.round((sessionTokensWasted / sessionTokensTotal) * 100) : 0
+      });
+    } catch { /* skip corrupted session files */ }
+  }
+
+  if (globalStats.totalSessions > 0) {
+    globalStats.avgTokensPerSession = Math.round(globalStats.totalTokensTracked / globalStats.totalSessions);
+  }
+  globalStats.sessionHistory = globalStats.sessionHistory.slice(-100);
+
+  globalStats.topWastedFiles = Object.entries(patterns.wastedReads)
+    .sort((a, b) => b[1].totalTokensWasted - a[1].totalTokensWasted)
+    .slice(0, 20)
+    .map(([path, data]) => ({ path: basename(path), fullPath: path, ...data }));
+
+  globalStats.topUsefulFiles = Object.entries(patterns.fileFrequency)
+    .filter(([, data]) => data.usefulness > 0)
+    .sort((a, b) => b[1].usefulness - a[1].usefulness)
+    .slice(0, 20)
+    .map(([path, data]) => ({ path: basename(path), fullPath: path, ...data }));
+
+  savePatterns(patterns);
+  saveGlobalStats(globalStats);
+}
+
+/**
  * Main entry: parse hook event from stdin
  */
 async function main() {
   const action = process.argv[2];
 
   if (action === 'report') {
-    // Output report to stdout
+    // Rebuild from sessions if global-stats.json is missing
+    if (!existsSync(GLOBAL_STATS_FILE)) {
+      rebuildGlobalStats();
+    }
     const globalStats = loadGlobalStats();
     console.log(JSON.stringify(globalStats, null, 2));
     return;

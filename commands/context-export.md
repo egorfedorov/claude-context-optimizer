@@ -12,7 +12,7 @@ Parse $ARGUMENTS for the format (default: md).
 
 Run:
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/src/export.js $ARGUMENTS
+node /Users/egorfedorov/claude-context-optimizer/src/export.js $ARGUMENTS
 ```
 
 Show the user the path to the exported file. If HTML, mention they can open it in a browser for a visual dashboard with charts and color-coded metrics.
