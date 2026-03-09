@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 200" fill="none">
+  <defs>
+    <linearGradient id="wbg" x1="0" y1="0" x2="700" y2="200">
+      <stop offset="0%" stop-color="#0d1117"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+  </defs>
+  <rect width="700" height="200" rx="10" fill="url(#wbg)"/>
+  <rect x="1" y="1" width="698" height="198" rx="9" fill="none" stroke="#30363d" stroke-width="1"/>
+
+  <!-- Step 1 -->
+  <rect x="20" y="30" width="120" height="120" rx="8" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="80" y="70" font-family="SF Mono, monospace" font-size="28" fill="#58a6ff" text-anchor="middle">1</text>
+  <text x="80" y="95" font-family="SF Mono, monospace" font-size="11" font-weight="600" fill="#f0f6fc" text-anchor="middle">TRACK</text>
+  <text x="80" y="112" font-family="SF Mono, monospace" font-size="9" fill="#8b949e" text-anchor="middle">Silent hooks</text>
+  <text x="80" y="125" font-family="SF Mono, monospace" font-size="9" fill="#8b949e" text-anchor="middle">on every tool</text>
+  <text x="80" y="138" font-family="SF Mono, monospace" font-size="9" fill="#8b949e" text-anchor="middle">Read/Edit/Search</text>
+
+  <!-- Arrow 1 -->
+  <line x1="145" y1="90" x2="175" y2="90" stroke="#30363d" stroke-width="2"/>
+  <polygon points="175,85 185,90 175,95" fill="#30363d"/>
+
+  <!-- Step 2 -->
+  <rect x="190" y="30" width="120" height="120" rx="8" fill="#161b22" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="250" y="70" font-family="SF Mono, monospace" font-size="28" fill="#a371f7" text-anchor="middle">2</text>
+  <text x="250" y="95" font-family="SF Mono, monospace" font-size="11" font-weight="600" fill="#f0f6fc" text-anchor="middle">ANALYZE</text>
+  <text x="250" y="112" font-family="SF Mono, monospace" font-size="9" fill="#8b949e" text-anchor="middle">Token estimation</text>
+  <text x="250" y="125" font-family="SF Mono, monospace" font-size="9" fill="#8b949e" text-anchor="middle">Usefulness scoring</text>
+  <text x="250" y="138" font-family="SF Mono, monospace" font-size="9" fill="#8b949e" text-anchor="middle">Pattern detection</text>
+
+  <!-- Arrow 2 -->
+  <line x1="315" y1="90" x2="345" y2="90" stroke="#30363d" stroke-width="2"/>
+  <polygon points="345,85 355,90 345,95" fill="#30363d"/>
+
+  <!-- Step 3 -->
+  <rect x="360" y="30" width="120" height="120" rx="8" fill="#161b22" stroke="#d29922" stroke-width="1.5"/>
+  <text x="420" y="70" font-family="SF Mono, monospace" font-size="28" fill="#d29922" text-anchor="middle">3</text>
+  <text x="420" y="95" font-family="SF Mono, monospace" font-size="11" font-weight="600" fill="#f0f6fc" text-anchor="middle">LEARN</text>
+  <text x="420" y="112" font-family="SF Mono, monospace" font-size="9" fill="#8b949e" text-anchor="middle">Cross-session</text>
+  <text x="420" y="125" font-family="SF Mono, monospace" font-size="9" fill="#8b949e" text-anchor="middle">pattern database</text>
+  <text x="420" y="138" font-family="SF Mono, monospace" font-size="9" fill="#8b949e" text-anchor="middle">File frequency map</text>
+
+  <!-- Arrow 3 -->
+  <line x1="485" y1="90" x2="515" y2="90" stroke="#30363d" stroke-width="2"/>
+  <polygon points="515,85 525,90 515,95" fill="#30363d"/>
+
+  <!-- Step 4 -->
+  <rect x="530" y="30" width="150" height="120" rx="8" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="605" y="70" font-family="SF Mono, monospace" font-size="28" fill="#3fb950" text-anchor="middle">4</text>
+  <text x="605" y="95" font-family="SF Mono, monospace" font-size="11" font-weight="600" fill="#f0f6fc" text-anchor="middle">OPTIMIZE</text>
+  <text x="605" y="112" font-family="SF Mono, monospace" font-size="9" fill="#8b949e" text-anchor="middle">Smart suggestions</text>
+  <text x="605" y="125" font-family="SF Mono, monospace" font-size="9" fill="#8b949e" text-anchor="middle">Budget alerts</text>
+  <text x="605" y="138" font-family="SF Mono, monospace" font-size="9" fill="#8b949e" text-anchor="middle">Context templates</text>
+
+  <!-- Bottom tagline -->
+  <text x="350" y="180" font-family="SF Mono, monospace" font-size="12" fill="#58a6ff" text-anchor="middle">Zero config · Fully local · Learns from your behavior</text>
+</svg>

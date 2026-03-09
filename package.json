@@ -1,0 +1,26 @@
+{
+  "name": "claude-context-optimizer",
+  "version": "1.0.0",
+  "description": "Intelligent context tracking and token optimization for Claude Code",
+  "type": "module",
+  "main": "src/tracker.js",
+  "bin": {
+    "cco-tracker": "src/tracker.js",
+    "cco-report": "src/report.js"
+  },
+  "files": [
+    "src/",
+    "commands/",
+    "agents/",
+    "skills/",
+    "hooks/",
+    ".claude-plugin/"
+  ],
+  "keywords": [
+    "claude-code",
+    "plugin",
+    "context-optimization",
+    "token-tracking"
+  ],
+  "license": "MIT"
+}

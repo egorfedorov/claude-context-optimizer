@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 380" fill="none">
+  <defs>
+    <linearGradient id="hbg" x1="0" y1="0" x2="700" y2="380">
+      <stop offset="0%" stop-color="#0d1117"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+  </defs>
+  <rect width="700" height="380" rx="10" fill="url(#hbg)"/>
+  <rect x="1" y="1" width="698" height="378" rx="9" fill="none" stroke="#30363d" stroke-width="1"/>
+
+  <!-- Terminal header -->
+  <rect x="0" y="0" width="700" height="32" rx="10" fill="#1c2128"/>
+  <rect x="0" y="20" width="700" height="12" fill="#1c2128"/>
+  <circle cx="20" cy="16" r="6" fill="#f85149"/>
+  <circle cx="38" cy="16" r="6" fill="#d29922"/>
+  <circle cx="56" cy="16" r="6" fill="#3fb950"/>
+  <text x="350" y="20" font-family="SF Mono, monospace" font-size="12" fill="#8b949e" text-anchor="middle">/context — Session Heatmap</text>
+
+  <!-- Title -->
+  <text x="30" y="65" font-family="SF Mono, monospace" font-size="16" font-weight="700" fill="#58a6ff">CONTEXT HEATMAP</text>
+  <line x1="30" y1="75" x2="670" y2="75" stroke="#30363d" stroke-width="1"/>
+
+  <!-- Header row -->
+  <text x="30" y="100" font-family="SF Mono, monospace" font-size="12" fill="#8b949e">File</text>
+  <text x="280" y="100" font-family="SF Mono, monospace" font-size="12" fill="#8b949e">Tokens</text>
+  <text x="350" y="100" font-family="SF Mono, monospace" font-size="12" fill="#8b949e">Reads</text>
+  <text x="410" y="100" font-family="SF Mono, monospace" font-size="12" fill="#8b949e">Edits</text>
+  <text x="470" y="100" font-family="SF Mono, monospace" font-size="12" fill="#8b949e">Impact</text>
+  <line x1="30" y1="108" x2="670" y2="108" stroke="#21262d" stroke-width="1"/>
+
+  <!-- Row 1: Edited file (high value) -->
+  <text x="30" y="133" font-family="SF Mono, monospace" font-size="13" fill="#f0f6fc">✏️ auth-service.ts</text>
+  <text x="280" y="133" font-family="SF Mono, monospace" font-size="13" fill="#c9d1d9">3,200</text>
+  <text x="360" y="133" font-family="SF Mono, monospace" font-size="13" fill="#c9d1d9">4</text>
+  <text x="420" y="133" font-family="SF Mono, monospace" font-size="13" fill="#c9d1d9">3</text>
+  <rect x="470" y="122" width="190" height="14" rx="3" fill="#3fb950" opacity="0.9"/>
+
+  <!-- Row 2: Multi-read (useful) -->
+  <text x="30" y="163" font-family="SF Mono, monospace" font-size="13" fill="#f0f6fc">✅ user.model.ts</text>
+  <text x="280" y="163" font-family="SF Mono, monospace" font-size="13" fill="#c9d1d9">1,800</text>
+  <text x="360" y="163" font-family="SF Mono, monospace" font-size="13" fill="#c9d1d9">3</text>
+  <text x="420" y="163" font-family="SF Mono, monospace" font-size="13" fill="#c9d1d9">1</text>
+  <rect x="470" y="152" width="130" height="14" rx="3" fill="#3fb950" opacity="0.7"/>
+
+  <!-- Row 3: Edited -->
+  <text x="30" y="193" font-family="SF Mono, monospace" font-size="13" fill="#f0f6fc">✏️ api-routes.ts</text>
+  <text x="280" y="193" font-family="SF Mono, monospace" font-size="13" fill="#c9d1d9">1,200</text>
+  <text x="360" y="193" font-family="SF Mono, monospace" font-size="13" fill="#c9d1d9">2</text>
+  <text x="420" y="193" font-family="SF Mono, monospace" font-size="13" fill="#c9d1d9">2</text>
+  <rect x="470" y="182" width="100" height="14" rx="3" fill="#3fb950" opacity="0.8"/>
+
+  <!-- Row 4: Wasted (read but unused) -->
+  <text x="30" y="223" font-family="SF Mono, monospace" font-size="13" fill="#f0f6fc">⚠️ package.json</text>
+  <text x="280" y="223" font-family="SF Mono, monospace" font-size="13" fill="#8b949e">800</text>
+  <text x="360" y="223" font-family="SF Mono, monospace" font-size="13" fill="#8b949e">1</text>
+  <text x="420" y="223" font-family="SF Mono, monospace" font-size="13" fill="#8b949e">0</text>
+  <rect x="470" y="212" width="65" height="14" rx="3" fill="#f85149" opacity="0.4"/>
+
+  <!-- Row 5: Wasted -->
+  <text x="30" y="253" font-family="SF Mono, monospace" font-size="13" fill="#f0f6fc">⚠️ tsconfig.json</text>
+  <text x="280" y="253" font-family="SF Mono, monospace" font-size="13" fill="#8b949e">400</text>
+  <text x="360" y="253" font-family="SF Mono, monospace" font-size="13" fill="#8b949e">1</text>
+  <text x="420" y="253" font-family="SF Mono, monospace" font-size="13" fill="#8b949e">0</text>
+  <rect x="470" y="242" width="35" height="14" rx="3" fill="#f85149" opacity="0.3"/>
+
+  <!-- Row 6: Wasted -->
+  <text x="30" y="283" font-family="SF Mono, monospace" font-size="13" fill="#f0f6fc">⚠️ README.md</text>
+  <text x="280" y="283" font-family="SF Mono, monospace" font-size="13" fill="#8b949e">2,400</text>
+  <text x="360" y="283" font-family="SF Mono, monospace" font-size="13" fill="#8b949e">1</text>
+  <text x="420" y="283" font-family="SF Mono, monospace" font-size="13" fill="#8b949e">0</text>
+  <rect x="470" y="272" width="160" height="14" rx="3" fill="#f85149" opacity="0.4"/>
+
+  <!-- Legend -->
+  <line x1="30" y1="305" x2="670" y2="305" stroke="#21262d" stroke-width="1"/>
+  <rect x="30" y="320" width="12" height="12" rx="2" fill="#3fb950"/>
+  <text x="48" y="331" font-family="SF Mono, monospace" font-size="11" fill="#8b949e">Useful (edited/multi-read)</text>
+  <rect x="250" y="320" width="12" height="12" rx="2" fill="#f85149" opacity="0.4"/>
+  <text x="268" y="331" font-family="SF Mono, monospace" font-size="11" fill="#8b949e">Wasted (read once, never used)</text>
+
+  <!-- Summary -->
+  <text x="30" y="360" font-family="SF Mono, monospace" font-size="12" fill="#d29922">Session: 9,800 tokens total | 3,600 wasted (37%) | Potential savings: $0.054 (Opus)</text>
+</svg>

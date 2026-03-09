@@ -1,0 +1,33 @@
+{
+  "name": "claude-context-optimizer",
+  "version": "1.0.0",
+  "description": "Intelligent context tracking, token ROI analysis, and auto-optimization for Claude Code sessions. Saves 30-50% tokens by tracking what's useful and what's waste.",
+  "author": {
+    "name": "Egor Fedorov",
+    "email": "egor@fedorov.dev"
+  },
+  "repository": "https://github.com/egorfedorov/claude-context-optimizer",
+  "license": "MIT",
+  "keywords": [
+    "context",
+    "optimization",
+    "tokens",
+    "productivity",
+    "cost-saving",
+    "budget",
+    "analytics"
+  ],
+  "commands": [
+    "./commands/context.md",
+    "./commands/context-report.md",
+    "./commands/context-digest.md",
+    "./commands/context-budget.md",
+    "./commands/context-git.md",
+    "./commands/context-export.md",
+    "./commands/context-clean.md",
+    "./commands/context-templates.md"
+  ],
+  "agents": "./agents/",
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json"
+}
