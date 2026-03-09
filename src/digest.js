@@ -72,7 +72,8 @@ function calculateEfficiencyScore(sessions) {
         wastedTokens += tokens;
       }
 
-      if (fileData.reads > 2) {
+      // Only penalize re-reads that produced no edits (wasteful exploration)
+      if (fileData.reads > 2 && !fileData.wasEdited) {
         reReads += fileData.reads - 1;
       }
 

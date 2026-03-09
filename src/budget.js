@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 
 /**
- * Context Budget Monitor
+ * Context Budget Monitor v2.0
  *
  * Tracks token accumulation during a session and warns
  * when approaching a configurable budget limit.
- * Runs as a PostToolUse hook — checks cumulative tokens after each Read.
+ * Now handles ALL tool types (Read, Edit, Write, Glob, Grep, Agent),
+ * and provides smart compact recommendations with specific files to drop.
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
-import { join } from 'path';
+import { join, basename } from 'path';
 import { homedir } from 'os';
 
 const DATA_DIR = join(homedir(), '.claude-context-optimizer');
@@ -23,10 +24,10 @@ function loadConfig() {
     return JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'));
   }
   return {
-    budgetTokens: 100000,       // default 100K token budget per session
-    warnAt: [50, 70, 85, 95],   // warn at these percentages
-    autoCompactAt: 90,          // suggest /compact at this %
-    model: 'opus'               // for cost estimation
+    budgetTokens: 100000,
+    warnAt: [50, 70, 85, 95],
+    autoCompactAt: 90,
+    model: 'opus'
   };
 }
 
@@ -49,8 +50,50 @@ function saveBudgetState(state) {
   writeFileSync(file, JSON.stringify(state, null, 2));
 }
 
-function estimateTokensFromLines(lines) {
-  return Math.round(lines * 4);
+function formatTokens(n) {
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return String(n);
+}
+
+const MODEL_COSTS = {
+  haiku: 0.25,
+  sonnet: 3,
+  opus: 15
+};
+
+function estimateToolTokens(toolName, toolInput) {
+  switch (toolName) {
+    case 'Read': {
+      const lines = toolInput?.limit || 2000;
+      // ~35 chars per line / ~3.7 chars per token
+      return Math.round((lines * 35) / 3.7);
+    }
+    case 'Edit': {
+      // old_string + new_string context
+      const oldLen = (toolInput?.old_string || '').length;
+      const newLen = (toolInput?.new_string || '').length;
+      return Math.round((oldLen + newLen) / 3.7) + 50; // +50 for metadata
+    }
+    case 'Write': {
+      const contentLen = (toolInput?.content || '').length;
+      return Math.round(contentLen / 3.7) + 30;
+    }
+    case 'Grep': {
+      // Estimate based on typical result size: ~3 tokens per result line
+      return 200; // conservative base estimate
+    }
+    case 'Glob': {
+      // File paths: ~3 tokens each, typical 10-30 results
+      return 100;
+    }
+    case 'Agent': {
+      // Agent calls consume significant context
+      return 500;
+    }
+    default:
+      return 50; // minimal overhead for unknown tools
+  }
 }
 
 async function main() {
@@ -59,76 +102,70 @@ async function main() {
     input += chunk;
   }
 
-  if (!input.trim()) {
-    process.exit(0);
-  }
+  if (!input.trim()) process.exit(0);
 
   let event;
-  try {
-    event = JSON.parse(input);
-  } catch {
-    process.exit(0);
-  }
+  try { event = JSON.parse(input); } catch { process.exit(0); }
 
-  if (event.hook_event_name !== 'PostToolUse') {
-    process.exit(0);
-  }
+  if (event.hook_event_name !== 'PostToolUse') process.exit(0);
 
   const toolName = event.tool_name || '';
-  if (toolName !== 'Read') {
-    process.exit(0);
-  }
-
+  const toolInput = event.tool_input || {};
   const sessionId = event.session_id || 'unknown';
   const config = loadConfig();
   const state = loadBudgetState(sessionId);
 
-  const filePath = event.tool_input?.file_path || '';
-  const lineLimit = event.tool_input?.limit || 2000;
-
-  const tokensAdded = estimateTokensFromLines(lineLimit);
+  // Estimate tokens for this tool call
+  const tokensAdded = estimateToolTokens(toolName, toolInput);
   state.totalTokensEstimated += tokensAdded;
 
-  if (!state.filesLoaded[filePath]) {
-    state.filesLoaded[filePath] = { tokens: 0, reads: 0 };
+  // Track per-file for Read/Edit/Write
+  const filePath = toolInput?.file_path;
+  if (filePath) {
+    if (!state.filesLoaded[filePath]) {
+      state.filesLoaded[filePath] = { tokens: 0, reads: 0, edits: 0 };
+    }
+    state.filesLoaded[filePath].tokens += tokensAdded;
+    if (toolName === 'Read') state.filesLoaded[filePath].reads++;
+    if (toolName === 'Edit' || toolName === 'Write') state.filesLoaded[filePath].edits++;
   }
-  state.filesLoaded[filePath].tokens += tokensAdded;
-  state.filesLoaded[filePath].reads++;
 
   const usagePercent = Math.round((state.totalTokensEstimated / config.budgetTokens) * 100);
 
-  // Check if we need to warn
   for (const threshold of config.warnAt) {
     if (usagePercent >= threshold && !state.warningsSent.includes(threshold)) {
       state.warningsSent.push(threshold);
 
-      const costs = {
-        haiku: (state.totalTokensEstimated / 1000000) * 0.25,
-        sonnet: (state.totalTokensEstimated / 1000000) * 3,
-        opus: (state.totalTokensEstimated / 1000000) * 15
-      };
+      const cost = (state.totalTokensEstimated / 1000000) * (MODEL_COSTS[config.model] || 15);
 
-      let msg = `[context-budget] ${usagePercent}% of token budget used (~${formatTokens(state.totalTokensEstimated)}/${formatTokens(config.budgetTokens)})`;
+      let msg = `[context-budget] ${usagePercent}% budget used (~${formatTokens(state.totalTokensEstimated)}/${formatTokens(config.budgetTokens)})`;
+      msg += ` | Est. cost: $${cost.toFixed(3)} (${config.model})`;
 
+      // Smart compact: at 90%+, list specific files that can be dropped
       if (usagePercent >= config.autoCompactAt) {
-        msg += ` | Consider running /compact to free context`;
+        const droppable = Object.entries(state.filesLoaded)
+          .filter(([, d]) => d.reads > 0 && d.edits === 0) // read but never edited
+          .sort((a, b) => b[1].tokens - a[1].tokens)
+          .slice(0, 3);
+
+        if (droppable.length > 0) {
+          const reclaimable = droppable.reduce((sum, [, d]) => sum + d.tokens, 0);
+          msg += `\n[context-budget] Reclaimable files (read-only, 0 edits):`;
+          for (const [path, d] of droppable) {
+            msg += `\n  - ${basename(path)} (~${formatTokens(d.tokens)}, ${d.reads} reads)`;
+          }
+          msg += `\n  Total reclaimable: ~${formatTokens(reclaimable)} | Run /compact`;
+        } else {
+          msg += ` | Consider /compact to free context`;
+        }
       }
 
-      msg += ` | Est. cost: $${costs[config.model].toFixed(3)} (${config.model})`;
-
-      // Output warning to stderr (shown as hook feedback)
       console.error(msg);
     }
   }
 
   saveBudgetState(state);
   process.exit(0);
-}
-
-function formatTokens(n) {
-  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-  return String(n);
 }
 
 main().catch(() => process.exit(0));

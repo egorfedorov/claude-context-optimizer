@@ -14,6 +14,16 @@ const DATA_DIR = join(homedir(), '.claude-context-optimizer');
 const SESSIONS_DIR = join(DATA_DIR, 'sessions');
 const GLOBAL_STATS_FILE = join(DATA_DIR, 'global-stats.json');
 const PATTERNS_FILE = join(DATA_DIR, 'patterns.json');
+const CONFIG_FILE = join(DATA_DIR, 'config.json');
+
+function loadConfig() {
+  if (existsSync(CONFIG_FILE)) {
+    return JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'));
+  }
+  return { budgetTokens: 100000, warnAt: [50, 70, 85, 95], autoCompactAt: 90, model: 'opus' };
+}
+
+const MODEL_COSTS = { haiku: 0.25, sonnet: 3, opus: 15 };
 
 function loadJSON(file) {
   if (!existsSync(file)) return null;
@@ -57,12 +67,19 @@ function generateFullReport() {
     Math.round((stats.estimatedTokensSaved / stats.totalTokensTracked) * 100) : 0;
   report += `  Overall waste ratio:        ${overallWaste}%\n`;
 
-  // Cost estimate (rough: $3/M input tokens for Sonnet, $15/M for Opus)
-  const costSonnet = (stats.estimatedTokensSaved / 1000000) * 3;
-  const costOpus = (stats.estimatedTokensSaved / 1000000) * 15;
-  if (stats.estimatedTokensSaved > 10000) {
-    report += `  Est. $ saved (Sonnet):      $${costSonnet.toFixed(2)}\n`;
-    report += `  Est. $ saved (Opus):        $${costOpus.toFixed(2)}\n`;
+  // Cost estimate using configured model (with all models shown)
+  const config = loadConfig();
+  const primaryModel = config.model || 'opus';
+  const primaryCost = (stats.estimatedTokensSaved / 1000000) * (MODEL_COSTS[primaryModel] || 15);
+  if (stats.estimatedTokensSaved > 5000) {
+    report += `  Est. $ saveable (${primaryModel}):   $${primaryCost.toFixed(2)}\n`;
+    // Show other models for reference
+    for (const [model, rate] of Object.entries(MODEL_COSTS)) {
+      if (model !== primaryModel) {
+        const cost = (stats.estimatedTokensSaved / 1000000) * rate;
+        report += `  Est. $ saveable (${model}):   $${cost.toFixed(2)}\n`;
+      }
+    }
   }
   report += '\n';
 

@@ -78,6 +78,56 @@ function getGitContext(cwd) {
   };
 }
 
+/**
+ * Analyze git log to find files that frequently change together.
+ * Much more accurate than hardcoded patterns.
+ */
+function getGitCoChanges(cwd, targetFiles) {
+  if (!isGitRepo(cwd) || targetFiles.length === 0) return {};
+
+  try {
+    // Get last 50 commits with file names
+    const log = run('git log --name-only --pretty=format:"---COMMIT---" -50 2>/dev/null', cwd);
+    if (!log) return {};
+
+    // Parse commits into groups of files changed together
+    const commits = log.split('---COMMIT---')
+      .filter(Boolean)
+      .map(block => block.split('\n').map(l => l.trim()).filter(Boolean));
+
+    // For each target file, find files frequently in the same commit
+    const coChanges = {};
+    for (const target of targetFiles) {
+      const relTarget = target.replace(cwd + '/', '');
+      const companions = {};
+
+      for (const commitFiles of commits) {
+        if (commitFiles.includes(relTarget)) {
+          for (const f of commitFiles) {
+            if (f !== relTarget && !f.startsWith('.')) {
+              companions[f] = (companions[f] || 0) + 1;
+            }
+          }
+        }
+      }
+
+      // Only include files that co-changed 2+ times
+      const frequent = Object.entries(companions)
+        .filter(([, count]) => count >= 2)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+
+      if (frequent.length > 0) {
+        coChanges[relTarget] = frequent.map(([file, count]) => ({ file, coCommits: count }));
+      }
+    }
+
+    return coChanges;
+  } catch {
+    return {};
+  }
+}
+
 function getHistoricalSuggestions(cwd) {
   if (!existsSync(PATTERNS_FILE)) return [];
 
@@ -116,10 +166,16 @@ async function main() {
   const gitContext = getGitContext(cwd);
   const historical = getHistoricalSuggestions(cwd);
 
+  // Find co-changed files from git history
+  const modifiedFilePaths = gitContext ?
+    gitContext.modifiedFiles.map(f => join(cwd, f.file)) : [];
+  const coChanges = getGitCoChanges(cwd, modifiedFilePaths);
+
   const result = {
     cwd,
     isGitRepo: !!gitContext,
     git: gitContext,
+    gitCoChanges: coChanges,
     historicalSuggestions: historical,
     summary: ''
   };
@@ -142,6 +198,16 @@ async function main() {
 
     if (gitContext.relatedFiles.length > 0) {
       parts.push(`Related files found: ${gitContext.relatedFiles.join(', ')}`);
+    }
+
+    if (Object.keys(coChanges).length > 0) {
+      const coFiles = new Set();
+      for (const companions of Object.values(coChanges)) {
+        for (const c of companions.slice(0, 2)) coFiles.add(c.file);
+      }
+      if (coFiles.size > 0) {
+        parts.push(`Git co-changes: ${[...coFiles].slice(0, 5).join(', ')}`);
+      }
     }
 
     if (historical.length > 0) {
