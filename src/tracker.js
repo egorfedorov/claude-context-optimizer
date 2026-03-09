@@ -391,10 +391,19 @@ async function main() {
   }
 
   if (action === 'heatmap') {
-    const sessionId = process.argv[3];
+    let sessionId = process.argv[3];
     if (!sessionId) {
-      console.error('Usage: cco-tracker heatmap <session-id>');
-      process.exit(1);
+      // Fall back to the most recent session file
+      const sessionFiles = readdirSync(SESSIONS_DIR).filter(f => f.endsWith('.json'));
+      if (sessionFiles.length === 0) {
+        console.log('No sessions tracked yet.');
+        return;
+      }
+      // Sort by modification time, newest first
+      const sorted = sessionFiles
+        .map(f => ({ name: f, mtime: statSync(join(SESSIONS_DIR, f)).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime);
+      sessionId = sorted[0].name.replace('.json', '');
     }
     const session = loadSession(sessionId);
     const heatmap = generateHeatmap(session);
