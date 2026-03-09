@@ -86,5 +86,5 @@
   <text x="40" y="415" font-family="SF Mono, monospace" font-size="12" fill="#58a6ff">→</text>
   <text x="60" y="415" font-family="SF Mono, monospace" font-size="12" fill="#c9d1d9">Create a template for "api-fix" tasks: auth-service.ts + api-routes.ts</text>
 
-  <text x="30" y="440" font-family="SF Mono, monospace" font-size="10" fill="#484f58">claude-context-optimizer v1.0.0 | Run /cco-export html for full dashboard</text>
+  <text x="30" y="440" font-family="SF Mono, monospace" font-size="10" fill="#484f58">claude-context-optimizer v2.0.0 | Run /cco-export html for full dashboard</text>
 </svg>

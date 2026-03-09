@@ -22,7 +22,7 @@
   <path d="M75 78 L82 90 L72 90 L80 105" fill="none" stroke="url(#green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
 
   <!-- Title -->
-  <text x="150" y="78" font-family="SF Mono, Fira Code, monospace" font-size="28" font-weight="700" fill="#f0f6fc">context-optimizer</text>
+  <text x="150" y="78" font-family="SF Mono, Fira Code, monospace" font-size="24" font-weight="700" fill="#f0f6fc">claude-context-optimizer</text>
   <text x="150" y="108" font-family="SF Mono, Fira Code, monospace" font-size="14" fill="#8b949e">Intelligent token tracking for Claude Code</text>
 
   <!-- Stats badges -->
