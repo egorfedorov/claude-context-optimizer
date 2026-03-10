@@ -111,37 +111,52 @@ Run `/cco-export html` to generate a beautiful dark-themed dashboard you can ope
 
 ## Installation
 
-### One-liner
+### Option 1 — Load directly (recommended)
+
+Clone the repo anywhere and point Claude Code at it:
 
 ```bash
-git clone https://github.com/egorfedorov/claude-context-optimizer.git ~/.claude/plugins/claude-context-optimizer
+git clone https://github.com/egorfedorov/claude-context-optimizer.git ~/claude-context-optimizer
+claude --plugin-dir ~/claude-context-optimizer
 ```
 
-### Then enable
+This loads the plugin for the current session. To make it persistent, add it to your settings:
 
-**Option A** — via Claude Code:
-```bash
-claude /plugin enable claude-context-optimizer
-```
-
-**Option B** — manually in `~/.claude/settings.json`:
+**In `~/.claude/settings.json`:**
 ```json
 {
-  "enabledPlugins": {
-    "claude-context-optimizer": true
+  "plugins": [
+    "~/claude-context-optimizer"
+  ]
+}
+```
+
+### Option 2 — GitHub marketplace (team distribution)
+
+Add the repo as a custom marketplace in `~/.claude/settings.json`:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "egorfedorov-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "egorfedorov/claude-context-optimizer"
+      }
+    }
   }
 }
 ```
 
-**Option C** — test without installing:
-```bash
-claude --plugin-dir /path/to/claude-context-optimizer
+Then install via:
+```
+/plugin → Discover → claude-context-optimizer → Install
 ```
 
 ### Requirements
 
 - Node.js >= 18
-- Claude Code (any version with plugin support)
+- Claude Code (with plugin support)
 
 ---
 
