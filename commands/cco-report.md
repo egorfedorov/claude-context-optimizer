@@ -9,7 +9,7 @@ Generate and display a comprehensive token usage report across all tracked sessi
 
 Run:
 ```bash
-node /Users/egorfedorov/claude-context-optimizer/src/report.js full
+node ${CLAUDE_PLUGIN_ROOT}/src/report.js full
 ```
 
 Present the full report to the user. After showing it, provide actionable insights:
@@ -21,7 +21,7 @@ Present the full report to the user. After showing it, provide actionable insigh
 
 Also run:
 ```bash
-node /Users/egorfedorov/claude-context-optimizer/src/tracker.js suggest "$(pwd)"
+node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js suggest "$(pwd)"
 ```
 
 And present the smart suggestions (files to preload, files to avoid) for the current project directory.

@@ -26,7 +26,7 @@ Help the user create a new template. Ask them:
 
 Also suggest files based on historical tracking data:
 ```bash
-node /Users/egorfedorov/claude-context-optimizer/src/tracker.js suggest "$(pwd)"
+node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js suggest "$(pwd)"
 ```
 
 Save the template as `~/.claude-context-optimizer/templates/<name>.json` with format:

@@ -12,7 +12,7 @@ Parse $ARGUMENTS for the number of days (default: 7).
 
 Run:
 ```bash
-node /Users/egorfedorov/claude-context-optimizer/src/digest.js $ARGUMENTS
+node ${CLAUDE_PLUGIN_ROOT}/src/digest.js $ARGUMENTS
 ```
 
 Present the digest to the user. Highlight:
