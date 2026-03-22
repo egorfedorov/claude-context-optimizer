@@ -1,4 +1,5 @@
 ---
+name: cco-report
 description: Show detailed token ROI report across all tracked sessions
 allowed-tools: [Bash, Read]
 ---

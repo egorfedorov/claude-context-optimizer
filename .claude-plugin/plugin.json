@@ -1,14 +1,10 @@
 {
   "name": "claude-context-optimizer",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Intelligent context tracking, token ROI analysis, and auto-optimization for Claude Code sessions.",
   "author": {
     "name": "Egor Fedorov"
   },
   "repository": "https://github.com/egorfedorov/claude-context-optimizer",
-  "license": "MIT",
-  "commands": "./commands/",
-  "agents": "./agents/",
-  "skills": "./skills/",
-  "hooks": "./hooks/hooks.json"
+  "license": "MIT"
 }

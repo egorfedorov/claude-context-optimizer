@@ -1,4 +1,5 @@
 ---
+name: cco-git
 description: Show git-aware context suggestions for current working directory
 allowed-tools: [Bash, Read, Glob]
 ---

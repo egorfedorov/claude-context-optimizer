@@ -1,4 +1,5 @@
 ---
+name: cco-clean
 description: Clean up old tracking data and reset statistics
 argument-hint: [--sessions-older-than <days>] [--reset-all]
 allowed-tools: [Bash]

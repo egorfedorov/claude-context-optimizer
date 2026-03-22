@@ -1,4 +1,5 @@
 ---
+name: cco
 description: Show context usage heatmap for current session
 allowed-tools: [Bash, Read]
 ---

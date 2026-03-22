@@ -96,6 +96,8 @@ Run `/cco-export html` to generate a beautiful dark-themed dashboard you can ope
 
 ## All Commands
 
+When installed as a plugin, commands are namespaced: `/claude-context-optimizer:cco`. With `--plugin-dir`, they're also available as `/cco`.
+
 | Command | Description |
 |---------|-------------|
 | `/cco` | Session heatmap — visual file-by-file token breakdown |
@@ -235,20 +237,18 @@ claude-context-optimizer/
 │   ├── git-context.js       # Git-aware context suggestions
 │   ├── report.js            # ROI report generator
 │   └── export.js            # MD/HTML report exporter
-├── commands/
-│   ├── cco.md               # /cco — session heatmap
-│   ├── cco-report.md        # /cco-report — full ROI report
-│   ├── cco-digest.md        # /cco-digest — efficiency digest
-│   ├── cco-budget.md        # /cco-budget — budget manager
-│   ├── cco-git.md           # /cco-git — git suggestions
-│   ├── cco-export.md        # /cco-export — report export
-│   ├── cco-templates.md     # /cco-templates — template manager
-│   └── cco-clean.md         # /cco-clean — data cleanup
+├── skills/
+│   ├── cco/SKILL.md               # /cco — session heatmap
+│   ├── cco-report/SKILL.md        # /cco-report — full ROI report
+│   ├── cco-digest/SKILL.md        # /cco-digest — efficiency digest
+│   ├── cco-budget/SKILL.md        # /cco-budget — budget manager
+│   ├── cco-git/SKILL.md           # /cco-git — git suggestions
+│   ├── cco-export/SKILL.md        # /cco-export — report export
+│   ├── cco-templates/SKILL.md     # /cco-templates — template manager
+│   ├── cco-clean/SKILL.md         # /cco-clean — data cleanup
+│   └── smart-loader/SKILL.md      # Auto-suggestion skill (model-invoked)
 ├── agents/
 │   └── context-analyzer.md  # Deep analysis agent
-├── skills/
-│   └── smart-loader/
-│       └── SKILL.md         # Auto-suggestion skill
 ├── hooks/
 │   └── hooks.json           # Hook configuration
 ├── assets/                  # SVG visuals for README

@@ -1,4 +1,5 @@
 ---
+name: cco-export
 description: Export context report as Markdown or HTML
 argument-hint: [md|html] (default: md)
 allowed-tools: [Bash]
