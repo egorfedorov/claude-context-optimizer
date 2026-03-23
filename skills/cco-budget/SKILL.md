@@ -1,6 +1,7 @@
 ---
 name: cco-budget
 description: Configure token budget limits and view current budget status
+license: MIT
 argument-hint: [status | set <tokens> | model <haiku|sonnet|opus>]
 allowed-tools: [Bash, Read, Write]
 ---

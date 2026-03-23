@@ -1,6 +1,7 @@
 ---
 name: cco-report
 description: Show detailed token ROI report across all tracked sessions
+license: MIT
 allowed-tools: [Bash, Read]
 ---
 

@@ -1,6 +1,6 @@
 {
   "name": "claude-context-optimizer",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Intelligent context tracking and token optimization for Claude Code",
   "type": "module",
   "main": "src/tracker.js",
@@ -10,7 +10,6 @@
   },
   "files": [
     "src/",
-    "commands/",
     "agents/",
     "skills/",
     "hooks/",
@@ -20,7 +19,8 @@
     "claude-code",
     "plugin",
     "context-optimization",
-    "token-tracking"
+    "token-tracking",
+    "skills"
   ],
   "license": "MIT"
 }

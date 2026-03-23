@@ -1,73 +1,46 @@
 #!/usr/bin/env node
 
 /**
- * Context Optimizer Tracker v2.0
+ * Context Optimizer Tracker v2.1
  *
  * Tracks file reads, edits, searches, and tool usage per session.
  * Features: ignore patterns, real-time waste warnings, partial read tracking,
  * co-occurrence matrix, project-segmented patterns, weighted usefulness scoring,
- * compact heatmap with actionable recommendations.
+ * compact heatmap with actionable recommendations, data pruning.
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { join, basename, extname, dirname } from 'path';
-import { homedir } from 'os';
-import { execSync } from 'child_process';
+import {
+  DATA_DIR, SESSIONS_DIR, PATTERNS_FILE, GLOBAL_STATS_FILE, TEMPLATES_DIR,
+  estimateTokens, formatTokens, displayPath, computeUsefulness,
+  loadJSON, saveJSON, ensureDataDirs
+} from './utils.js';
 
-const DATA_DIR = join(homedir(), '.claude-context-optimizer');
-const SESSIONS_DIR = join(DATA_DIR, 'sessions');
-const PATTERNS_FILE = join(DATA_DIR, 'patterns.json');
-const GLOBAL_STATS_FILE = join(DATA_DIR, 'global-stats.json');
-
-mkdirSync(SESSIONS_DIR, { recursive: true });
+ensureDataDirs();
 
 // ── Ignore patterns: skip tracking for these files ──────────────────────────
 const IGNORE_PATTERNS = [
-  /^toolu_/,                          // Claude internal tool result IDs
-  /^\/dev\//,                         // system paths
-  /^\/proc\//,                        // linux proc
-  /^\/tmp\/claude/,                   // Claude temp files
-  /^data:/,                           // data URIs
-  /\.(png|jpg|jpeg|gif|svg|ico|webp|bmp|tiff)$/i,  // images
-  /\.(mp3|mp4|wav|ogg|webm|avi|mov)$/i,            // media
-  /\.(zip|tar|gz|bz2|7z|rar)$/i,                   // archives
-  /\.(woff|woff2|ttf|eot|otf)$/i,                  // fonts
-  /\.(pdf)$/i,                        // PDFs (high token cost, often one-off)
-  /node_modules\//,                   // dependencies
-  /\.git\//,                          // git internals
-  /package-lock\.json$/,              // lock files
+  /^toolu_/,
+  /^\/dev\//,
+  /^\/proc\//,
+  /^\/tmp\/claude/,
+  /^data:/,
+  /\.(png|jpg|jpeg|gif|svg|ico|webp|bmp|tiff)$/i,
+  /\.(mp3|mp4|wav|ogg|webm|avi|mov)$/i,
+  /\.(zip|tar|gz|bz2|7z|rar)$/i,
+  /\.(woff|woff2|ttf|eot|otf)$/i,
+  /\.(pdf)$/i,
+  /node_modules\//,
+  /\.git\//,
+  /package-lock\.json$/,
   /yarn\.lock$/,
   /pnpm-lock\.yaml$/,
 ];
 
 function shouldIgnore(filePath) {
   if (!filePath) return true;
-  const normalized = filePath.replace(/^\/Users\/[^/]+\//, '~/');
-  return IGNORE_PATTERNS.some(p => p.test(filePath) || p.test(basename(filePath)) || p.test(normalized));
-}
-
-// ── Token estimation ────────────────────────────────────────────────────────
-
-// Extension-specific chars-per-token ratios (lower = more tokens per char)
-const TOKEN_RATIOS = {
-  '.json': 3.2, '.yaml': 3.5, '.yml': 3.5, '.toml': 3.5,
-  '.ts': 3.8, '.tsx': 3.8, '.js': 3.8, '.jsx': 3.8,
-  '.py': 4.0, '.rb': 4.0, '.go': 3.7, '.rs': 3.7,
-  '.cpp': 3.6, '.c': 3.6, '.h': 3.6, '.hpp': 3.6,
-  '.md': 4.2, '.txt': 4.5, '.html': 3.5, '.css': 3.8,
-  '.svg': 3.0, '.xml': 3.2,
-};
-
-function estimateTokens(lineCount, ext) {
-  // Better heuristic: avg line is ~35 chars, then apply ratio
-  const avgCharsPerLine = 35;
-  const ratio = TOKEN_RATIOS[ext] || 3.7;
-  return Math.round((lineCount * avgCharsPerLine) / ratio);
-}
-
-function estimateTokensFromContent(content, ext) {
-  const ratio = TOKEN_RATIOS[ext] || 3.7;
-  return Math.round(content.length / ratio);
+  return IGNORE_PATTERNS.some(p => p.test(filePath) || p.test(basename(filePath)));
 }
 
 // ── File utilities ──────────────────────────────────────────────────────────
@@ -131,29 +104,25 @@ function saveSession(session) {
 // ── Patterns (project-segmented) ────────────────────────────────────────────
 
 function loadPatterns() {
-  if (existsSync(PATTERNS_FILE)) {
-    const data = JSON.parse(readFileSync(PATTERNS_FILE, 'utf-8'));
-    // Migrate old flat format to project-segmented
-    if (data.fileFrequency && !data.projects) {
-      return {
-        projects: {
-          _global: {
-            fileFrequency: data.fileFrequency || {},
-            wastedReads: data.wastedReads || {},
-            coOccurrence: {},
-          }
-        },
-        taskPatterns: data.taskPatterns || {},
-        lastUpdated: data.lastUpdated
-      };
-    }
-    return data;
+  const data = loadJSON(PATTERNS_FILE);
+  if (!data) {
+    return { projects: {}, taskPatterns: {}, lastUpdated: null };
   }
-  return {
-    projects: {},
-    taskPatterns: {},
-    lastUpdated: null
-  };
+  // Migrate old flat format to project-segmented
+  if (data.fileFrequency && !data.projects) {
+    return {
+      projects: {
+        _global: {
+          fileFrequency: data.fileFrequency || {},
+          wastedReads: data.wastedReads || {},
+          coOccurrence: {},
+        }
+      },
+      taskPatterns: data.taskPatterns || {},
+      lastUpdated: data.lastUpdated
+    };
+  }
+  return data;
 }
 
 function getProjectPatterns(patterns, projectRoot) {
@@ -170,16 +139,13 @@ function getProjectPatterns(patterns, projectRoot) {
 
 function savePatterns(patterns) {
   patterns.lastUpdated = new Date().toISOString();
-  writeFileSync(PATTERNS_FILE, JSON.stringify(patterns, null, 2));
+  saveJSON(PATTERNS_FILE, patterns);
 }
 
 // ── Global stats ────────────────────────────────────────────────────────────
 
 function loadGlobalStats() {
-  if (existsSync(GLOBAL_STATS_FILE)) {
-    return JSON.parse(readFileSync(GLOBAL_STATS_FILE, 'utf-8'));
-  }
-  return {
+  return loadJSON(GLOBAL_STATS_FILE) || {
     totalSessions: 0,
     totalTokensTracked: 0,
     estimatedTokensSaved: 0,
@@ -190,10 +156,6 @@ function loadGlobalStats() {
     topUsefulFiles: [],
     sessionHistory: []
   };
-}
-
-function saveGlobalStats(stats) {
-  writeFileSync(GLOBAL_STATS_FILE, JSON.stringify(stats, null, 2));
 }
 
 // ── Tracking functions ──────────────────────────────────────────────────────
@@ -214,7 +176,6 @@ function trackRead(session, filePath, lineCount, readOptions = {}) {
       firstRead: new Date().toISOString(),
       lastUse: null,
       wasEdited: false,
-      wasReferencedInOutput: false,
       partialReads: 0,
       fullReads: 0,
     };
@@ -234,7 +195,6 @@ function trackRead(session, filePath, lineCount, readOptions = {}) {
 
   session.totalReads++;
 
-  // Detect project root from first file read
   if (!session.projectRoot) {
     session.projectRoot = getProjectRoot(filePath);
   }
@@ -242,7 +202,6 @@ function trackRead(session, filePath, lineCount, readOptions = {}) {
   // ── Real-time warnings ──
   const warnings = [];
 
-  // Warn: repeated reads of same file (3+ times, no edits)
   if (file.reads >= 3 && !file.wasEdited) {
     const totalTokensSpent = file.estTokens * file.reads;
     if (file.reads === 3) {
@@ -262,13 +221,16 @@ function trackRead(session, filePath, lineCount, readOptions = {}) {
     }
   }
 
-  // Warn: file known as waste from past sessions
   if (file.reads === 1) {
     try {
       const patterns = loadPatterns();
       const proj = getProjectPatterns(patterns, session.projectRoot);
       const wasteData = proj.wastedReads[filePath];
-      if (wasteData && wasteData.sessions >= 2) {
+      if (wasteData && wasteData.sessions >= 3) {
+        warnings.push(
+          `[cco] ${basename(filePath)} was unused in ${wasteData.sessions} past sessions (~${formatTokens(wasteData.totalTokensWasted)} wasted). Try Grep for specific content instead.`
+        );
+      } else if (wasteData && wasteData.sessions >= 2) {
         warnings.push(
           `[cco] ${basename(filePath)} was wasted in ${wasteData.sessions} past sessions. Consider skipping.`
         );
@@ -276,14 +238,19 @@ function trackRead(session, filePath, lineCount, readOptions = {}) {
     } catch { /* don't block on pattern load failure */ }
   }
 
-  // Warn: large file read fully when partial would suffice
-  if (!isPartial && lineCount > 300) {
+  if (!isPartial && lineCount > 500) {
     warnings.push(
-      `[cco] ${basename(filePath)} is ${lineCount} lines. Use offset/limit to read only what you need.`
+      `[cco] ${basename(filePath)} is ${lineCount} lines (~${formatTokens(tokens)} tokens). Use offset/limit to read specific sections.`
     );
+  } else if (!isPartial && lineCount > 200) {
+    // Softer hint for medium files
+    if (file.reads === 1) {
+      warnings.push(
+        `[cco] ${basename(filePath)}: ${lineCount} lines read fully. Next time, try offset/limit if you only need part of it.`
+      );
+    }
   }
 
-  // Output warnings to stderr (shown as hook feedback)
   for (const w of warnings) {
     console.error(w);
   }
@@ -303,7 +270,6 @@ function trackEdit(session, filePath) {
       firstRead: new Date().toISOString(),
       lastUse: null,
       wasEdited: true,
-      wasReferencedInOutput: true,
       partialReads: 0,
       fullReads: 0,
     };
@@ -311,7 +277,6 @@ function trackEdit(session, filePath) {
 
   session.files[filePath].edits++;
   session.files[filePath].wasEdited = true;
-  session.files[filePath].wasReferencedInOutput = true;
   session.files[filePath].lastUse = new Date().toISOString();
   session.totalEdits++;
 
@@ -320,11 +285,10 @@ function trackEdit(session, filePath) {
   }
 }
 
-function trackSearch(session, pattern, type, resultsCount) {
+function trackSearch(session, pattern, type) {
   session.searches.push({
     pattern,
     type,
-    resultsCount: resultsCount || 0,
     ts: new Date().toISOString()
   });
   session.totalSearches++;
@@ -338,46 +302,58 @@ function trackToolUse(session, toolName) {
   session.totalToolCalls++;
 }
 
-// ── Usefulness scoring (weighted, not binary) ───────────────────────────────
+// ── Data pruning ────────────────────────────────────────────────────────────
 
-function computeUsefulness(fileData) {
-  let score = 0;
+function prunePatterns(patterns) {
+  for (const [, proj] of Object.entries(patterns.projects)) {
+    // Cap co-occurrence entries per file to top 20
+    for (const [file, related] of Object.entries(proj.coOccurrence || {})) {
+      const entries = Object.entries(related);
+      if (entries.length > 20) {
+        const top = entries.sort((a, b) => b[1] - a[1]).slice(0, 20);
+        proj.coOccurrence[file] = Object.fromEntries(top);
+      }
+    }
 
-  // Edited = high value
-  score += (fileData.edits || 0) * 3;
+    // Cap wasted reads to top 100
+    const wastedEntries = Object.entries(proj.wastedReads || {});
+    if (wastedEntries.length > 100) {
+      const top = wastedEntries
+        .sort((a, b) => b[1].totalTokensWasted - a[1].totalTokensWasted)
+        .slice(0, 100);
+      proj.wastedReads = Object.fromEntries(top);
+    }
 
-  // Multi-read = some value (but diminishing)
-  if (fileData.reads > 1) {
-    score += Math.min(3, (fileData.reads - 1) * 0.5);
+    // Cap file frequency to top 200
+    const freqEntries = Object.entries(proj.fileFrequency || {});
+    if (freqEntries.length > 200) {
+      const top = freqEntries
+        .sort((a, b) => b[1].sessions - a[1].sessions)
+        .slice(0, 200);
+      proj.fileFrequency = Object.fromEntries(top);
+    }
   }
-
-  // Partial reads = smart usage bonus
-  if ((fileData.partialReads || 0) > 0) {
-    score += 1;
-  }
-
-  // Penalty: many reads but no edits on a large file
-  if (fileData.reads >= 3 && !fileData.wasEdited && (fileData.lines || 0) > 100) {
-    score -= 1;
-  }
-
-  return score;
 }
 
 // ── Session finalization ────────────────────────────────────────────────────
 
 function finalizeSession(session) {
+  const fileEntries = Object.entries(session.files);
+  // Skip finalization for empty sessions
+  if (fileEntries.length === 0) {
+    saveSession(session);
+    return { sessionTokensTotal: 0, sessionTokensWasted: 0 };
+  }
+
   const patterns = loadPatterns();
   const globalStats = loadGlobalStats();
   const proj = getProjectPatterns(patterns, session.projectRoot);
 
   let sessionTokensTotal = 0;
   let sessionTokensWasted = 0;
-
   const editedFiles = [];
-  const allFiles = Object.keys(session.files);
 
-  for (const [filePath, fileData] of Object.entries(session.files)) {
+  for (const [filePath, fileData] of fileEntries) {
     const tokensUsed = fileData.estTokens * fileData.reads;
     sessionTokensTotal += tokensUsed;
 
@@ -395,7 +371,6 @@ function finalizeSession(session) {
       proj.wastedReads[filePath].totalTokensWasted += tokensUsed;
     }
 
-    // Track frequency
     if (!proj.fileFrequency[filePath]) {
       proj.fileFrequency[filePath] = { sessions: 0, totalReads: 0, totalEdits: 0, usefulness: 0 };
     }
@@ -411,13 +386,11 @@ function finalizeSession(session) {
     }
   }
 
-  // ── Build co-occurrence matrix ──
-  // Files edited together in the same session are likely related
+  // Build co-occurrence matrix
   if (editedFiles.length >= 2 && editedFiles.length <= 20) {
     for (let i = 0; i < editedFiles.length; i++) {
       const a = editedFiles[i];
       if (!proj.coOccurrence[a]) proj.coOccurrence[a] = {};
-
       for (let j = 0; j < editedFiles.length; j++) {
         if (i === j) continue;
         const b = editedFiles[j];
@@ -426,7 +399,10 @@ function finalizeSession(session) {
     }
   }
 
-  // ── Update global stats ──
+  // Prune patterns to prevent unbounded growth
+  prunePatterns(patterns);
+
+  // Update global stats
   globalStats.totalSessions++;
   globalStats.totalTokensTracked += sessionTokensTotal;
   globalStats.estimatedTokensSaved += sessionTokensWasted;
@@ -440,7 +416,7 @@ function finalizeSession(session) {
     id: session.id,
     date: new Date().toISOString(),
     project: session.projectRoot ? basename(session.projectRoot) : null,
-    filesRead: allFiles.length,
+    filesRead: fileEntries.length,
     totalReads: session.totalReads,
     totalEdits: session.totalEdits,
     tokensTotal: sessionTokensTotal,
@@ -482,10 +458,74 @@ function finalizeSession(session) {
     .map(([path, data]) => ({ path: basename(path), fullPath: path, ...data }));
 
   savePatterns(patterns);
-  saveGlobalStats(globalStats);
+  saveJSON(GLOBAL_STATS_FILE, globalStats);
   saveSession(session);
 
+  // Auto-create template if 5+ sessions in project and none exists
+  autoCreateTemplate(session.projectRoot, proj);
+
   return { sessionTokensTotal, sessionTokensWasted };
+}
+
+// ── Auto-template creation ──────────────────────────────────────────────────
+
+function autoCreateTemplate(projectRoot, proj) {
+  if (!projectRoot) return;
+  try {
+    const projectName = basename(projectRoot);
+    const templateFile = join(TEMPLATES_DIR, `auto-${projectName}.json`);
+    if (existsSync(templateFile)) return; // already exists
+
+    // Need 5+ sessions worth of data for reliable patterns
+    const frequentFiles = Object.entries(proj.fileFrequency || {})
+      .filter(([, d]) => d.usefulness >= 3 && d.totalEdits >= 2)
+      .sort((a, b) => b[1].usefulness - a[1].usefulness)
+      .slice(0, 8);
+
+    if (frequentFiles.length < 3) return; // not enough data
+
+    const template = {
+      name: `auto-${projectName}`,
+      description: `Auto-generated template for ${projectName} based on ${Object.values(proj.fileFrequency).reduce((s, d) => s + d.sessions, 0)} file interactions`,
+      autoGenerated: true,
+      files: frequentFiles.map(([path]) => path.replace(projectRoot + '/', '')),
+      createdAt: new Date().toISOString()
+    };
+
+    saveJSON(templateFile, template);
+  } catch { /* don't block on template creation failure */ }
+}
+
+// ── Savings calculation ─────────────────────────────────────────────────────
+
+function calculateWeeklySavings(globalStats) {
+  const weekAgo = new Date();
+  weekAgo.setDate(weekAgo.getDate() - 7);
+  const recent = (globalStats.sessionHistory || [])
+    .filter(s => new Date(s.date) >= weekAgo && s.tokensTotal > 0);
+
+  if (recent.length < 2) return null;
+
+  // Compare first half vs second half waste
+  const mid = Math.floor(recent.length / 2);
+  const first = recent.slice(0, mid);
+  const second = recent.slice(mid);
+
+  const firstAvgWaste = first.reduce((s, x) => s + x.wastePercent, 0) / first.length;
+  const secondAvgWaste = second.reduce((s, x) => s + x.wastePercent, 0) / second.length;
+
+  const totalTokens = recent.reduce((s, x) => s + x.tokensTotal, 0);
+  const totalWasted = recent.reduce((s, x) => s + x.tokensWasted, 0);
+  const improvement = firstAvgWaste - secondAvgWaste;
+
+  return {
+    sessions: recent.length,
+    totalTokens,
+    totalWasted,
+    avgWaste: Math.round((totalWasted / totalTokens) * 100),
+    improving: improvement > 3,
+    improvementPct: Math.round(improvement)
+  };
 }
 
 // ── Rebuild global stats ────────────────────────────────────────────────────
@@ -504,6 +544,11 @@ function rebuildGlobalStats() {
   for (const file of sessionFiles) {
     try {
       const session = JSON.parse(readFileSync(join(SESSIONS_DIR, file), 'utf-8'));
+      const fileEntries = Object.entries(session.files || {});
+
+      // Skip empty sessions
+      if (fileEntries.length === 0) continue;
+
       const projKey = session.projectRoot || '_global';
       if (!patterns.projects[projKey]) {
         patterns.projects[projKey] = { fileFrequency: {}, wastedReads: {}, coOccurrence: {} };
@@ -513,7 +558,7 @@ function rebuildGlobalStats() {
       let sessionTokensTotal = 0;
       let sessionTokensWasted = 0;
 
-      for (const [filePath, fileData] of Object.entries(session.files || {})) {
+      for (const [filePath, fileData] of fileEntries) {
         if (shouldIgnore(filePath)) continue;
 
         const tokensUsed = (fileData.estTokens || 0) * (fileData.reads || 1);
@@ -549,7 +594,7 @@ function rebuildGlobalStats() {
       globalStats.sessionHistory.push({
         id: session.id, date: session.startedAt || new Date().toISOString(),
         project: session.projectRoot ? basename(session.projectRoot) : null,
-        filesRead: Object.keys(session.files || {}).length,
+        filesRead: fileEntries.length,
         totalReads: session.totalReads || 0, totalEdits: session.totalEdits || 0,
         tokensTotal: sessionTokensTotal, tokensWasted: sessionTokensWasted,
         wastePercent: sessionTokensTotal > 0 ? Math.round((sessionTokensWasted / sessionTokensTotal) * 100) : 0
@@ -582,11 +627,12 @@ function rebuildGlobalStats() {
     .sort((a, b) => b[1].usefulness - a[1].usefulness).slice(0, 20)
     .map(([path, data]) => ({ path: basename(path), fullPath: path, ...data }));
 
+  prunePatterns(patterns);
   savePatterns(patterns);
-  saveGlobalStats(globalStats);
+  saveJSON(GLOBAL_STATS_FILE, globalStats);
 }
 
-// ── Compact heatmap with actionable recommendations ─────────────────────────
+// ── Compact heatmap with disambiguated paths ────────────────────────────────
 
 function generateHeatmap(session) {
   const files = Object.entries(session.files)
@@ -605,11 +651,10 @@ function generateHeatmap(session) {
   const wasteFiles = [];
   const heavyRereadFiles = [];
 
-  // ── Compact table ──
   let output = '\n  CONTEXT HEATMAP\n';
-  output += '  ' + '='.repeat(70) + '\n';
-  output += '  File'.padEnd(33) + 'Tokens'.padStart(7) + ' Rds Eds  Impact\n';
-  output += '  ' + '-'.repeat(70) + '\n';
+  output += '  ' + '='.repeat(76) + '\n';
+  output += '  File'.padEnd(39) + 'Tokens'.padStart(7) + ' Rds Eds  Impact\n';
+  output += '  ' + '-'.repeat(76) + '\n';
 
   for (const [filePath, data] of files) {
     const totalTok = data.estTokens * data.reads;
@@ -619,10 +664,10 @@ function generateHeatmap(session) {
 
     if (!isUseful) {
       wastedTokens += totalTok;
-      wasteFiles.push({ name: basename(filePath), tokens: totalTok, reads: data.reads });
+      wasteFiles.push({ name: displayPath(filePath, 30), tokens: totalTok, reads: data.reads });
     }
     if (data.reads >= 3 && !data.wasEdited) {
-      heavyRereadFiles.push({ name: basename(filePath), tokens: totalTok, reads: data.reads });
+      heavyRereadFiles.push({ name: displayPath(filePath, 30), tokens: totalTok, reads: data.reads });
     }
 
     totalPartialReads += data.partialReads || 0;
@@ -631,23 +676,21 @@ function generateHeatmap(session) {
     const barLen = Math.max(1, Math.round((totalTok / maxTokens) * barWidth));
     const bar = isUseful ? '\u2588'.repeat(barLen) : '\u2591'.repeat(barLen);
     const icon = data.wasEdited ? '\u270F' : (data.reads > 1 ? '\u2714' : '\u26A0');
-    const name = basename(filePath).substring(0, 28);
+    const name = displayPath(filePath, 34);
     const partial = (data.partialReads || 0) > 0 ? '\u2197' : ' ';
 
-    output += `  ${icon}${partial}${name.padEnd(30)} ${formatTokens(totalTok).padStart(6)} ${String(data.reads).padStart(3)} ${String(data.edits).padStart(3)}  ${bar}\n`;
+    output += `  ${icon}${partial}${name.padEnd(36)} ${formatTokens(totalTok).padStart(6)} ${String(data.reads).padStart(3)} ${String(data.edits).padStart(3)}  ${bar}\n`;
   }
 
   const wastePercent = totalTokens > 0 ? Math.round((wastedTokens / totalTokens) * 100) : 0;
   const partialPercent = (totalPartialReads + totalFullReads) > 0 ?
     Math.round((totalPartialReads / (totalPartialReads + totalFullReads)) * 100) : 0;
 
-  // ── Summary line ──
-  output += '  ' + '-'.repeat(70) + '\n';
+  output += '  ' + '-'.repeat(76) + '\n';
   output += `  ${formatTokens(totalTokens)} total | ${formatTokens(wastedTokens)} waste (${wastePercent}%) | ${partialPercent}% partial reads\n`;
 
-  // ── Actionable recommendations ──
   output += '\n  ACTIONS\n';
-  output += '  ' + '-'.repeat(70) + '\n';
+  output += '  ' + '-'.repeat(76) + '\n';
 
   if (wasteFiles.length > 0) {
     const topWaste = wasteFiles.sort((a, b) => b.tokens - a.tokens).slice(0, 3);
@@ -714,7 +757,7 @@ function generateSuggestions(cwd) {
     }
   }
 
-  // Co-occurrence suggestions: "if you opened X, you probably need Y"
+  // Co-occurrence suggestions
   for (const [filePath, related] of Object.entries(proj.coOccurrence || {})) {
     if (!filePath.startsWith(cwd)) continue;
     const top = Object.entries(related)
@@ -732,9 +775,9 @@ function generateSuggestions(cwd) {
 
   // Tips
   if (globalStats.totalSessions > 3) {
-    const avgWaste = globalStats.sessionHistory.slice(-10)
-      .reduce((sum, s) => sum + s.wastePercent, 0) /
-      Math.min(10, globalStats.sessionHistory.length);
+    const recentHistory = globalStats.sessionHistory.slice(-10);
+    const avgWaste = recentHistory.reduce((sum, s) => sum + s.wastePercent, 0) /
+      Math.min(10, recentHistory.length);
 
     if (avgWaste > 30) {
       suggestions.tips.push(
@@ -753,14 +796,6 @@ function generateSuggestions(cwd) {
   suggestions.avoid.sort((a, b) => b.tokensSaveable - a.tokensSaveable);
 
   return suggestions;
-}
-
-// ── Formatting ──────────────────────────────────────────────────────────────
-
-function formatTokens(n) {
-  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-  return String(n);
 }
 
 // ── Main entry ──────────────────────────────────────────────────────────────
@@ -843,7 +878,7 @@ async function main() {
 
       if (toolName === 'Glob' || toolName === 'Grep') {
         const pattern = toolInput.pattern || toolInput.query || '';
-        trackSearch(session, pattern, toolName, 0);
+        trackSearch(session, pattern, toolName);
       }
 
       if (toolName === 'Agent') {
@@ -854,6 +889,43 @@ async function main() {
     }
 
     case 'SessionStart': {
+      try {
+        const globalStats = loadGlobalStats();
+        if (globalStats.totalSessions >= 3) {
+          // Weekly savings streak
+          const savings = calculateWeeklySavings(globalStats);
+          if (savings && savings.sessions >= 3) {
+            if (savings.improving) {
+              console.error(`[cco] Waste trending down ${savings.improvementPct}% this week. Keep it up!`);
+            } else if (savings.avgWaste > 30) {
+              console.error(`[cco] ${savings.avgWaste}% avg waste this week (${savings.sessions} sessions). Try Grep before Read.`);
+            }
+          }
+
+          // Warn about known waste files for current project
+          const patterns = loadPatterns();
+          const cwd = event.cwd || process.cwd();
+          for (const [projKey, proj] of Object.entries(patterns.projects)) {
+            if (projKey === '_global' || cwd.startsWith(projKey)) {
+              const topWaste = Object.entries(proj.wastedReads || {})
+                .filter(([, d]) => d.sessions >= 3)
+                .sort((a, b) => b[1].totalTokensWasted - a[1].totalTokensWasted)
+                .slice(0, 2);
+              if (topWaste.length > 0) {
+                const names = topWaste.map(([p]) => basename(p)).join(', ');
+                console.error(`[cco] Frequently wasted: ${names}. Consider skipping.`);
+              }
+              // Mention auto-template if available
+              const projectName = basename(projKey);
+              const templateFile = join(TEMPLATES_DIR, `auto-${projectName}.json`);
+              if (existsSync(templateFile)) {
+                console.error(`[cco] Template "auto-${projectName}" available. Use /cco-templates apply auto-${projectName}`);
+              }
+              break;
+            }
+          }
+        }
+      } catch { /* don't block session start */ }
       break;
     }
 
@@ -864,13 +936,26 @@ async function main() {
 
     case 'SessionEnd': {
       const result = finalizeSession(session);
-      const wastePercent = result.sessionTokensTotal > 0 ?
-        Math.round((result.sessionTokensWasted / result.sessionTokensTotal) * 100) : 0;
-      console.error(
-        `[cco] Session: ~${formatTokens(result.sessionTokensTotal)} tracked, ` +
-        `~${formatTokens(result.sessionTokensWasted)} wasted (${wastePercent}%). ` +
-        `${Object.keys(session.files).length} files, ${session.totalEdits} edits.`
-      );
+      if (result.sessionTokensTotal > 0) {
+        const wastePercent = Math.round((result.sessionTokensWasted / result.sessionTokensTotal) * 100);
+        let msg = `[cco] Session: ~${formatTokens(result.sessionTokensTotal)} tracked, ` +
+          `~${formatTokens(result.sessionTokensWasted)} wasted (${wastePercent}%). ` +
+          `${Object.keys(session.files).length} files, ${session.totalEdits} edits.`;
+
+        // Compare with recent average
+        const globalStats = loadGlobalStats();
+        const recent = globalStats.sessionHistory.slice(-6, -1).filter(s => s.tokensTotal > 0);
+        if (recent.length >= 3) {
+          const recentAvg = recent.reduce((s, x) => s + x.wastePercent, 0) / recent.length;
+          if (wastePercent < recentAvg - 5) {
+            msg += ` Better than avg (${Math.round(recentAvg)}%)!`;
+          } else if (wastePercent > recentAvg + 10) {
+            msg += ` Above avg (${Math.round(recentAvg)}%) — check /cco for details.`;
+          }
+        }
+
+        console.error(msg);
+      }
       break;
     }
 

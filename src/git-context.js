@@ -1,23 +1,20 @@
 #!/usr/bin/env node
 
 /**
- * Git-Aware Context Suggester
+ * Git-Aware Context Suggester v2.1
  *
  * Analyzes git status/diff to suggest which files Claude should read
- * for the current task. Runs on SessionStart hook.
+ * for the current task. Fixed: uses project-segmented patterns.
  */
 
 import { execSync } from 'child_process';
-import { readFileSync, existsSync } from 'fs';
-import { join, dirname, extname } from 'path';
-import { homedir } from 'os';
-
-const DATA_DIR = join(homedir(), '.claude-context-optimizer');
-const PATTERNS_FILE = join(DATA_DIR, 'patterns.json');
+import { existsSync } from 'fs';
+import { join, dirname, extname, basename } from 'path';
+import { PATTERNS_FILE, loadJSON } from './utils.js';
 
 function run(cmd, cwd) {
   try {
-    return execSync(cmd, { cwd, encoding: 'utf-8', timeout: 5000 }).trim();
+    return execSync(cmd, { cwd, encoding: 'utf-8', timeout: 5000 }).trimEnd();
   } catch {
     return '';
   }
@@ -37,7 +34,6 @@ function getGitContext(cwd) {
   const stagedFiles = run('git diff --cached --name-only 2>/dev/null', cwd);
   const untrackedFiles = run('git ls-files --others --exclude-standard 2>/dev/null', cwd);
 
-  // Parse modified files
   const modifiedFiles = status.split('\n')
     .filter(l => l.trim())
     .map(l => ({
@@ -45,19 +41,16 @@ function getGitContext(cwd) {
       file: l.substring(3).trim()
     }));
 
-  // Find related files (tests, configs, imports)
   const relatedFiles = new Set();
   for (const { file } of modifiedFiles) {
     const ext = extname(file);
     const dir = dirname(file);
     const base = file.replace(ext, '');
 
-    // Test file
     relatedFiles.add(`${base}.test${ext}`);
     relatedFiles.add(`${base}.spec${ext}`);
     relatedFiles.add(`${dir}/__tests__/${file.split('/').pop()}`);
 
-    // Config files in same directory
     const configs = ['package.json', 'tsconfig.json', '.eslintrc', 'Makefile', 'CMakeLists.txt'];
     for (const cfg of configs) {
       const cfgPath = join(dir, cfg);
@@ -78,24 +71,17 @@ function getGitContext(cwd) {
   };
 }
 
-/**
- * Analyze git log to find files that frequently change together.
- * Much more accurate than hardcoded patterns.
- */
 function getGitCoChanges(cwd, targetFiles) {
   if (!isGitRepo(cwd) || targetFiles.length === 0) return {};
 
   try {
-    // Get last 50 commits with file names
     const log = run('git log --name-only --pretty=format:"---COMMIT---" -50 2>/dev/null', cwd);
     if (!log) return {};
 
-    // Parse commits into groups of files changed together
     const commits = log.split('---COMMIT---')
       .filter(Boolean)
       .map(block => block.split('\n').map(l => l.trim()).filter(Boolean));
 
-    // For each target file, find files frequently in the same commit
     const coChanges = {};
     for (const target of targetFiles) {
       const relTarget = target.replace(cwd + '/', '');
@@ -111,7 +97,6 @@ function getGitCoChanges(cwd, targetFiles) {
         }
       }
 
-      // Only include files that co-changed 2+ times
       const frequent = Object.entries(companions)
         .filter(([, count]) => count >= 2)
         .sort((a, b) => b[1] - a[1])
@@ -128,19 +113,30 @@ function getGitCoChanges(cwd, targetFiles) {
   }
 }
 
+/**
+ * Fixed: now correctly reads project-segmented patterns
+ * instead of the old flat format.
+ */
 function getHistoricalSuggestions(cwd) {
-  if (!existsSync(PATTERNS_FILE)) return [];
+  const patterns = loadJSON(PATTERNS_FILE);
+  if (!patterns) return [];
 
-  const patterns = JSON.parse(readFileSync(PATTERNS_FILE, 'utf-8'));
   const suggestions = [];
 
-  for (const [filePath, data] of Object.entries(patterns.fileFrequency || {})) {
-    if (filePath.startsWith(cwd) && data.usefulness >= 2 && data.totalEdits > 0) {
-      suggestions.push({
-        file: filePath.replace(cwd + '/', ''),
-        score: data.usefulness,
-        reason: `edited ${data.totalEdits}x across ${data.sessions} sessions`
-      });
+  // Search in project-segmented patterns
+  const projects = patterns.projects || {};
+  for (const [projectRoot, projData] of Object.entries(projects)) {
+    // Match current cwd to project or use _global
+    if (projectRoot !== '_global' && !cwd.startsWith(projectRoot)) continue;
+
+    for (const [filePath, data] of Object.entries(projData.fileFrequency || {})) {
+      if (filePath.startsWith(cwd) && data.usefulness >= 2 && data.totalEdits > 0) {
+        suggestions.push({
+          file: filePath.replace(cwd + '/', ''),
+          score: data.usefulness,
+          reason: `edited ${data.totalEdits}x across ${data.sessions} sessions`
+        });
+      }
     }
   }
 
@@ -166,7 +162,6 @@ async function main() {
   const gitContext = getGitContext(cwd);
   const historical = getHistoricalSuggestions(cwd);
 
-  // Find co-changed files from git history
   const modifiedFilePaths = gitContext ?
     gitContext.modifiedFiles.map(f => join(cwd, f.file)) : [];
   const coChanges = getGitCoChanges(cwd, modifiedFilePaths);
@@ -180,7 +175,6 @@ async function main() {
     summary: ''
   };
 
-  // Build human-readable summary
   if (gitContext) {
     const parts = [];
 

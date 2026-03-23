@@ -1,6 +1,7 @@
 ---
 name: cco-digest
 description: Show weekly/daily efficiency digest with score and trends
+license: MIT
 argument-hint: [7|14|30] (days, default 7)
 allowed-tools: [Bash]
 ---

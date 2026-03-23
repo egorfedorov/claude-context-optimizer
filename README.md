@@ -113,18 +113,27 @@ When installed as a plugin, commands are namespaced: `/claude-context-optimizer:
 
 ## Installation
 
-### Option 1 — Load directly (recommended)
+### Option 1 — Skills CLI (recommended)
 
-Clone the repo anywhere and point Claude Code at it:
+Install all skills with one command:
+
+```bash
+npx skills add https://github.com/egorfedorov/claude-context-optimizer
+```
+
+This installs the skills globally to `~/.agents/skills/` and symlinks them to Claude Code. Works with Amp, Cline, Codex, Cursor, Gemini CLI, and other compatible agents.
+
+### Option 2 — Plugin directory
+
+Clone the repo and load it as a plugin:
 
 ```bash
 git clone https://github.com/egorfedorov/claude-context-optimizer.git ~/claude-context-optimizer
 claude --plugin-dir ~/claude-context-optimizer
 ```
 
-This loads the plugin for the current session. To make it persistent, add it to your settings:
+To make it persistent, add to `~/.claude/settings.json`:
 
-**In `~/.claude/settings.json`:**
 ```json
 {
   "plugins": [
@@ -133,32 +142,35 @@ This loads the plugin for the current session. To make it persistent, add it to 
 }
 ```
 
-### Option 2 — GitHub marketplace (team distribution)
-
-Add the repo as a custom marketplace in `~/.claude/settings.json`:
-
-```json
-{
-  "extraKnownMarketplaces": {
-    "egorfedorov-plugins": {
-      "source": {
-        "source": "github",
-        "repo": "egorfedorov/claude-context-optimizer"
-      }
-    }
-  }
-}
-```
-
-Then install via:
-```
-/plugin → Discover → claude-context-optimizer → Install
-```
-
 ### Requirements
 
 - Node.js >= 18
-- Claude Code (with plugin support)
+- Claude Code (with plugin/skills support)
+
+---
+
+## Install & Forget
+
+Once installed, the plugin works **automatically** — no commands needed. Here's what happens in the background:
+
+**On session start:**
+- Shows optimization tips if recent waste is high
+- Warns about files that were consistently wasted in this project
+
+**On every file read:**
+- Warns if a file has been read 3+ times without edits (suggests offset/limit)
+- Warns if a file was wasted in 2+ past sessions (suggests skipping)
+- Warns if a large file (300+ lines) is being read fully
+
+**On budget thresholds (50%, 70%, 85%, 95%):**
+- Shows usage percentage and estimated cost
+- At 90%+, lists specific read-only files that can be dropped with `/compact`
+
+**On session end:**
+- Logs total tokens, waste percentage, and file/edit counts
+- Updates pattern database for smarter future suggestions
+
+You literally just code. The plugin watches and helps.
 
 ---
 

@@ -1,6 +1,7 @@
 ---
 name: cco
 description: Show context usage heatmap for current session
+license: MIT
 allowed-tools: [Bash, Read]
 ---
 

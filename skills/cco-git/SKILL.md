@@ -1,6 +1,7 @@
 ---
 name: cco-git
 description: Show git-aware context suggestions for current working directory
+license: MIT
 allowed-tools: [Bash, Read, Glob]
 ---
 
