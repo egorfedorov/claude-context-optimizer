@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Context Optimizer — Stop Burning Tokens on Files Claude Never Uses</title>
+<meta name="description" content="Intelligent context tracking and token optimization plugin for Claude Code. Save 30-50% of wasted tokens automatically.">
+<meta property="og:title" content="Context Optimizer for Claude Code">
+<meta property="og:description" content="Stop burning tokens on files Claude never uses. Save 30-50% automatically.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --bg-card: #12121a;
+    --bg-code: #1a1a2e;
+    --border: #1e1e30;
+    --text: #e0e0e8;
+    --text-dim: #8888a0;
+    --accent: #6c5ce7;
+    --accent-glow: rgba(108, 92, 231, 0.15);
+    --green: #00d2a0;
+    --red: #ff6b6b;
+    --yellow: #ffd93d;
+    --blue: #4ecdc4;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  /* ── Noise texture overlay ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ── Navigation ── */
+  nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    padding: 16px 0;
+    background: rgba(10, 10, 15, 0.85);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  nav .container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .nav-logo {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--text);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .nav-logo span {
+    background: linear-gradient(135deg, var(--accent), var(--blue));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .nav-links {
+    display: flex;
+    gap: 32px;
+    list-style: none;
+  }
+
+  .nav-links a {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: color 0.2s;
+  }
+
+  .nav-links a:hover { color: var(--text); }
+
+  .nav-cta {
+    background: var(--accent);
+    color: white !important;
+    padding: 8px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    transition: opacity 0.2s;
+  }
+
+  .nav-cta:hover { opacity: 0.85; }
+
+  /* ── Hero ── */
+  .hero {
+    padding: 160px 0 100px;
+    text-align: center;
+    position: relative;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 6px 16px;
+    border-radius: 100px;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    margin-bottom: 32px;
+  }
+
+  .badge-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  h1 {
+    font-size: clamp(2.5rem, 6vw, 4.2rem);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    margin-bottom: 24px;
+  }
+
+  h1 .highlight {
+    background: linear-gradient(135deg, var(--red), var(--yellow));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hero-sub {
+    font-size: 1.25rem;
+    color: var(--text-dim);
+    max-width: 600px;
+    margin: 0 auto 48px;
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 28px;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s;
+    cursor: pointer;
+    border: none;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 4px 24px rgba(108, 92, 231, 0.3);
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(108, 92, 231, 0.4);
+  }
+
+  .btn-secondary {
+    background: var(--bg-card);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+  }
+
+  /* ── Install box ── */
+  .install-box {
+    margin: 64px auto 0;
+    max-width: 620px;
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .install-box code {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.95rem;
+    color: var(--green);
+    white-space: nowrap;
+    overflow-x: auto;
+  }
+
+  .install-box code .dim { color: var(--text-dim); }
+
+  .copy-btn {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+
+  .copy-btn:hover { color: var(--text); border-color: var(--accent); }
+  .copy-btn.copied { color: var(--green); border-color: var(--green); }
+
+  /* ── Problem section ── */
+  .problem {
+    padding: 120px 0;
+  }
+
+  .section-label {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+
+  h2 {
+    font-size: clamp(1.8rem, 4vw, 2.8rem);
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    margin-bottom: 20px;
+  }
+
+  .problem-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px;
+    margin-top: 48px;
+  }
+
+  .problem-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    transition: border-color 0.3s;
+  }
+
+  .problem-card:hover { border-color: rgba(108, 92, 231, 0.3); }
+
+  .problem-icon {
+    font-size: 2rem;
+    margin-bottom: 16px;
+  }
+
+  .problem-card h3 {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .problem-card p {
+    color: var(--text-dim);
+    font-size: 0.95rem;
+  }
+
+  .cost-highlight {
+    display: inline-block;
+    color: var(--red);
+    font-weight: 700;
+    font-size: 1.1em;
+  }
+
+  /* ── How it works ── */
+  .how-it-works {
+    padding: 100px 0;
+  }
+
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 32px;
+    margin-top: 56px;
+  }
+
+  @media (max-width: 768px) {
+    .steps { grid-template-columns: 1fr; }
+  }
+
+  .step {
+    text-align: center;
+    padding: 40px 24px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    position: relative;
+  }
+
+  .step-num {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: white;
+    font-weight: 700;
+    font-size: 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 20px;
+  }
+
+  .step h3 {
+    font-size: 1.1rem;
+    margin-bottom: 12px;
+  }
+
+  .step p {
+    color: var(--text-dim);
+    font-size: 0.9rem;
+  }
+
+  /* ── Features ── */
+  .features {
+    padding: 100px 0;
+  }
+
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 24px;
+    margin-top: 56px;
+  }
+
+  .feature {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    transition: all 0.3s;
+  }
+
+  .feature:hover {
+    border-color: rgba(108, 92, 231, 0.3);
+    transform: translateY(-4px);
+  }
+
+  .feature-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    margin-bottom: 20px;
+  }
+
+  .feature-icon.purple { background: rgba(108, 92, 231, 0.15); }
+  .feature-icon.green { background: rgba(0, 210, 160, 0.15); }
+  .feature-icon.blue { background: rgba(78, 205, 196, 0.15); }
+  .feature-icon.yellow { background: rgba(255, 217, 61, 0.15); }
+  .feature-icon.red { background: rgba(255, 107, 107, 0.15); }
+
+  .feature h3 {
+    font-size: 1.1rem;
+    margin-bottom: 8px;
+  }
+
+  .feature p {
+    color: var(--text-dim);
+    font-size: 0.9rem;
+  }
+
+  .feature code {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    background: var(--bg-code);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    color: var(--green);
+  }
+
+  /* ── Terminal demo ── */
+  .demo {
+    padding: 100px 0;
+  }
+
+  .terminal {
+    max-width: 750px;
+    margin: 48px auto 0;
+    background: #0c0c14;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
+  }
+
+  .terminal-bar {
+    display: flex;
+    gap: 8px;
+    padding: 14px 18px;
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .terminal-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #333;
+  }
+
+  .terminal-dot:nth-child(1) { background: #ff5f57; }
+  .terminal-dot:nth-child(2) { background: #febc2e; }
+  .terminal-dot:nth-child(3) { background: #28c840; }
+
+  .terminal-body {
+    padding: 20px 24px;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    color: var(--text-dim);
+    overflow-x: auto;
+  }
+
+  .terminal-body .g { color: var(--green); }
+  .terminal-body .r { color: var(--red); }
+  .terminal-body .y { color: var(--yellow); }
+  .terminal-body .b { color: var(--blue); }
+  .terminal-body .p { color: var(--accent); }
+  .terminal-body .w { color: var(--text); }
+  .terminal-body .d { color: #555; }
+
+  /* ── Auto section ── */
+  .auto {
+    padding: 100px 0;
+  }
+
+  .auto-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-top: 48px;
+  }
+
+  @media (max-width: 768px) {
+    .auto-grid { grid-template-columns: 1fr; }
+  }
+
+  .auto-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    display: flex;
+    gap: 16px;
+  }
+
+  .auto-when {
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+    min-width: 100px;
+    padding-top: 2px;
+  }
+
+  .auto-what p {
+    color: var(--text-dim);
+    font-size: 0.9rem;
+  }
+
+  .auto-what strong { color: var(--text); }
+
+  /* ── Commands ── */
+  .commands {
+    padding: 100px 0;
+  }
+
+  .cmd-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 8px;
+    margin-top: 48px;
+  }
+
+  .cmd-table td {
+    padding: 16px 20px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    font-size: 0.9rem;
+  }
+
+  .cmd-table td:first-child {
+    border-radius: 12px 0 0 12px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: var(--green);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .cmd-table td:last-child {
+    border-radius: 0 12px 12px 0;
+    color: var(--text-dim);
+  }
+
+  /* ── CTA ── */
+  .cta {
+    padding: 120px 0;
+    text-align: center;
+  }
+
+  .cta h2 {
+    margin-bottom: 16px;
+  }
+
+  .cta p {
+    color: var(--text-dim);
+    font-size: 1.1rem;
+    margin-bottom: 40px;
+  }
+
+  .cta .install-box {
+    margin-top: 40px;
+  }
+
+  /* ── Footer ── */
+  footer {
+    padding: 40px 0;
+    border-top: 1px solid var(--border);
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+  }
+
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  .footer-links {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin-bottom: 16px;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .nav-links { display: none; }
+    .install-box { flex-direction: column; text-align: center; }
+    .problem-grid { grid-template-columns: 1fr; }
+    .feature-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Navigation -->
+<nav>
+  <div class="container">
+    <a href="#" class="nav-logo"><span>context-optimizer</span></a>
+    <ul class="nav-links">
+      <li><a href="#problem">Problem</a></li>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#how">How It Works</a></li>
+      <li><a href="#commands">Commands</a></li>
+      <li><a href="#install" class="nav-cta">Install</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="container">
+    <div class="badge">
+      <div class="badge-dot"></div>
+      Claude Code Plugin &middot; Zero Config &middot; No Telemetry
+    </div>
+    <h1>Stop <span class="highlight">burning tokens</span><br>on files Claude never uses</h1>
+    <p class="hero-sub">
+      The average session wastes 30-50% of tokens on irrelevant context.
+      This plugin tracks everything silently and tells you exactly where your tokens go.
+    </p>
+    <div class="hero-actions">
+      <a href="#install" class="btn btn-primary">Install in 10 seconds</a>
+      <a href="https://github.com/egorfedorov/claude-context-optimizer" class="btn btn-secondary">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+        GitHub
+      </a>
+    </div>
+
+    <div class="install-box" id="install">
+      <code><span class="dim">$</span> npx skills add https://github.com/egorfedorov/claude-context-optimizer</code>
+      <button class="copy-btn" onclick="copyInstall(this)">Copy</button>
+    </div>
+  </div>
+</section>
+
+<!-- Problem -->
+<section class="problem" id="problem">
+  <div class="container">
+    <div class="section-label">The Problem</div>
+    <h2>Your tokens are leaking. Every session.</h2>
+    <p style="color: var(--text-dim); max-width: 600px; font-size: 1.05rem;">
+      Every <code style="background:var(--bg-code);padding:2px 6px;border-radius:4px;color:var(--green)">Read</code> call consumes context &mdash; whether the file was relevant or not.
+      At $15/M tokens on Opus, this adds up fast.
+    </p>
+
+    <div class="problem-grid">
+      <div class="problem-card">
+        <div class="problem-icon">&#128196;</div>
+        <h3>Config files "just in case"</h3>
+        <p>Claude reads <code>package.json</code>, <code>tsconfig.json</code>, <code>.eslintrc</code> every session. <span class="cost-highlight">~500 tokens each time</span>, rarely used.</p>
+      </div>
+      <div class="problem-card">
+        <div class="problem-icon">&#128209;</div>
+        <h3>README glance = 2,400 tokens</h3>
+        <p>A single read of a 250-line README burns tokens. If Claude reads it once and never references it again, that's <span class="cost-highlight">pure waste</span>.</p>
+      </div>
+      <div class="problem-card">
+        <div class="problem-icon">&#128257;</div>
+        <h3>Re-reading the same file 5x</h3>
+        <p>Context gets compacted, Claude forgets, reads again. <span class="cost-highlight">5x the tokens</span> for the same information. Over and over.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- How it works -->
+<section class="how-it-works" id="how">
+  <div class="container">
+    <div class="section-label">How It Works</div>
+    <h2>Install once. Forget about it.</h2>
+    <p style="color: var(--text-dim); max-width: 550px; font-size: 1.05rem;">
+      The plugin hooks into Claude Code silently. No configuration. No commands to learn. It just works.
+    </p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h3>Silent Tracking</h3>
+        <p>Every Read, Edit, Write, Glob, Grep, and Agent call is tracked automatically via PostToolUse hooks. Zero overhead.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <h3>Pattern Learning</h3>
+        <p>The plugin learns which files are useful (edited) and which are waste (read once, never used). Per-project, cross-session.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h3>Real-time Guidance</h3>
+        <p>Warns you about waste as it happens. "This file was unused in 3 past sessions." Budget alerts. Smart suggestions.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Terminal Demo -->
+<section class="demo">
+  <div class="container" style="text-align: center;">
+    <div class="section-label">Live Output</div>
+    <h2>What you'll see</h2>
+
+    <div class="terminal">
+      <div class="terminal-bar">
+        <div class="terminal-dot"></div>
+        <div class="terminal-dot"></div>
+        <div class="terminal-dot"></div>
+      </div>
+      <div class="terminal-body">
+<span class="d">  CONTEXT HEATMAP</span>
+<span class="d">  ============================================================================</span>
+<span class="d">  File                                  Tokens Rds Eds  Impact</span>
+<span class="d">  ----------------------------------------------------------------------------</span>
+<span class="g">  &#x270F; src/components/Auth.tsx               4.2K   2   3  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;</span>
+<span class="g">  &#x270F; src/lib/api.ts                        2.8K   1   2  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;</span>
+<span class="b">  &#x2714; src/types/index.ts                    1.1K   3   0  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;</span>
+<span class="r">  &#x26A0; README.md                             2.4K   1   0  &#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;</span>
+<span class="r">  &#x26A0; package.json                            320   1   0  &#x2591;&#x2591;</span>
+<span class="r">  &#x26A0; tsconfig.json                           280   1   0  &#x2591;&#x2591;</span>
+<span class="d">  ----------------------------------------------------------------------------</span>
+<span class="w">  11.1K total | 3.0K waste (27%) | 33% partial reads</span>
+
+<span class="d">  ACTIONS</span>
+<span class="d">  ----------------------------------------------------------------------------</span>
+<span class="r">  &#x2717; Skip README.md (2.4K wasted, 1 read, 0 edits)</span>
+<span class="r">  &#x2717; Skip package.json (320 wasted, 1 read, 0 edits)</span>
+<span class="y">  &#x21BB; types/index.ts: 3 re-reads &#x2192; add to memory/CLAUDE.md</span>
+<span class="g">  &#x2713; Good partial read usage (33%).</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Auto features -->
+<section class="auto">
+  <div class="container">
+    <div class="section-label">Install &amp; Forget</div>
+    <h2>It works while you work</h2>
+    <p style="color: var(--text-dim); max-width: 550px; font-size: 1.05rem;">
+      No commands needed. The plugin intervenes only when it can save you tokens.
+    </p>
+
+    <div class="auto-grid">
+      <div class="auto-item">
+        <div class="auto-when">Session Start</div>
+        <div class="auto-what">
+          <p><strong>Weekly savings streak</strong> &mdash; shows waste trend. Warns about files that are always wasted in this project.</p>
+        </div>
+      </div>
+      <div class="auto-item">
+        <div class="auto-when">Every Read</div>
+        <div class="auto-what">
+          <p><strong>Real-time warnings</strong> &mdash; "file was unused in 3 sessions, try Grep instead." Tiered alerts for 200+ and 500+ line files.</p>
+        </div>
+      </div>
+      <div class="auto-item">
+        <div class="auto-when">Budget 85%+</div>
+        <div class="auto-what">
+          <p><strong>Smart compact suggestions</strong> &mdash; lists specific read-only files to drop with exact token savings. Repeats every 10K tokens.</p>
+        </div>
+      </div>
+      <div class="auto-item">
+        <div class="auto-when">Session End</div>
+        <div class="auto-what">
+          <p><strong>Performance comparison</strong> &mdash; "12% waste. Better than your avg (19%)!" Motivates improvement.</p>
+        </div>
+      </div>
+      <div class="auto-item">
+        <div class="auto-when">5+ Sessions</div>
+        <div class="auto-what">
+          <p><strong>Auto-templates</strong> &mdash; automatically creates file presets from your patterns. "Template available &mdash; apply it?"</p>
+        </div>
+      </div>
+      <div class="auto-item">
+        <div class="auto-when">Task Start</div>
+        <div class="auto-what">
+          <p><strong>Smart loader</strong> &mdash; Claude suggests files based on history. "You usually need these 4 files for this type of task."</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="features" id="features">
+  <div class="container">
+    <div class="section-label">Commands</div>
+    <h2>When you want to dig deeper</h2>
+    <p style="color: var(--text-dim); max-width: 550px; font-size: 1.05rem;">
+      The plugin works automatically, but you can also run these commands for detailed insights.
+    </p>
+
+    <div class="feature-grid">
+      <div class="feature">
+        <div class="feature-icon purple">&#x1F4CA;</div>
+        <h3>Context Heatmap</h3>
+        <p>Run <code>/cco</code> to see a visual breakdown of every file in your session. Green = useful. Red = waste. With actionable recommendations.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon green">&#x1F4C8;</div>
+        <h3>Token ROI Report</h3>
+        <p>Run <code>/cco-report</code> for cross-session analytics: trends, top wasted files, top useful files, cost estimates, and recommendations.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon blue">&#x1F3AF;</div>
+        <h3>Efficiency Score</h3>
+        <p>Run <code>/cco-digest</code> for a weekly grade (S/A/B/C/D/F) broken down by precision, edit ratio, search accuracy, and focus.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon yellow">&#x1F4B0;</div>
+        <h3>Token Budget</h3>
+        <p>Run <code>/cco-budget set 80000</code> to set a limit. Get automatic alerts at 50%, 70%, 85%, 95% with cost estimates per model.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon red">&#x1F500;</div>
+        <h3>Git Suggestions</h3>
+        <p>Run <code>/cco-git</code> to get smart file suggestions based on your git diff, related tests, and files that historically change together.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon purple">&#x1F4E6;</div>
+        <h3>Context Templates</h3>
+        <p>Run <code>/cco-templates create bug-fix</code> to save file presets for common tasks. Load them instantly with <code>apply</code>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Privacy -->
+<section style="padding: 80px 0;">
+  <div class="container" style="text-align: center;">
+    <div style="display:inline-flex;gap:32px;flex-wrap:wrap;justify-content:center;">
+      <div style="display:flex;align-items:center;gap:10px;color:var(--text-dim)">
+        <svg width="20" height="20" fill="var(--green)" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>
+        Zero telemetry
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:var(--text-dim)">
+        <svg width="20" height="20" fill="var(--green)" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>
+        100% local storage
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:var(--text-dim)">
+        <svg width="20" height="20" fill="var(--green)" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>
+        Only tracks paths, never content
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:var(--text-dim)">
+        <svg width="20" height="20" fill="var(--green)" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>
+        MIT licensed
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta" id="install-bottom">
+  <div class="container">
+    <h2>Start saving tokens today</h2>
+    <p>One command. Zero config. Works instantly.</p>
+    <div class="hero-actions">
+      <a href="https://github.com/egorfedorov/claude-context-optimizer" class="btn btn-primary">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+        View on GitHub
+      </a>
+    </div>
+
+    <div class="install-box">
+      <code><span class="dim">$</span> npx skills add https://github.com/egorfedorov/claude-context-optimizer</code>
+      <button class="copy-btn" onclick="copyInstall(this)">Copy</button>
+    </div>
+
+    <p style="margin-top: 24px; font-size: 0.85rem; color: var(--text-dim);">
+      Or clone manually: <code style="background:var(--bg-code);padding:2px 8px;border-radius:4px;color:var(--green);font-size:0.85rem;">git clone https://github.com/egorfedorov/claude-context-optimizer.git</code>
+    </p>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <div class="footer-links">
+      <a href="https://github.com/egorfedorov/claude-context-optimizer">GitHub</a>
+      <a href="https://github.com/egorfedorov/claude-context-optimizer/issues">Issues</a>
+      <a href="https://github.com/egorfedorov/claude-context-optimizer/blob/main/LICENSE">MIT License</a>
+    </div>
+    <p>Built with frustration at wasted tokens and love for efficiency.</p>
+  </div>
+</footer>
+
+<script>
+function copyInstall(btn) {
+  const cmd = 'npx skills add https://github.com/egorfedorov/claude-context-optimizer';
+  navigator.clipboard.writeText(cmd).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+      btn.classList.remove('copied');
+    }, 2000);
+  });
+}
+</script>
+</body>
+</html>

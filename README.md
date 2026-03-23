@@ -67,8 +67,12 @@ Run `/cco-digest` for a weekly efficiency grade (S/A/B/C/D/F) with breakdown by 
 Set a token budget and get real-time warnings as you approach the limit. Automatic alerts at 50%, 70%, 85%, 95% with cost estimates.
 
 ```
-[context-budget] 70% of token budget used (~70K/100K) | Est. cost: $1.050 (opus)
-[context-budget] 90% of token budget used (~90K/100K) | Consider running /compact to free context
+[context-budget] 70% budget used (~70K/100K) | Est. cost: $1.050 (opus)
+[context-budget] 85% budget used (~85K/100K) | Est. cost: $1.275 (opus)
+[context-budget] Run /compact to free ~8.2K tokens:
+  drop README.md (~2.4K, 1 reads, 0 edits)
+  drop tsconfig.json (~1.1K, 2 reads, 0 edits)
+  drop package.json (~320, 1 reads, 0 edits)
 ```
 
 ### Git-Aware Suggestions — smart context loading
@@ -154,21 +158,27 @@ To make it persistent, add to `~/.claude/settings.json`:
 Once installed, the plugin works **automatically** — no commands needed. Here's what happens in the background:
 
 **On session start:**
-- Shows optimization tips if recent waste is high
+- Weekly savings streak: "Waste trending down 8% this week!"
 - Warns about files that were consistently wasted in this project
+- Mentions auto-generated templates if available
 
 **On every file read:**
 - Warns if a file has been read 3+ times without edits (suggests offset/limit)
-- Warns if a file was wasted in 2+ past sessions (suggests skipping)
-- Warns if a large file (300+ lines) is being read fully
+- Warns if a file was wasted in 2+ past sessions ("Try Grep for specific content instead")
+- Tiered warnings for large files: 200+ lines (soft), 500+ lines (strong with token count)
 
 **On budget thresholds (50%, 70%, 85%, 95%):**
-- Shows usage percentage and estimated cost
-- At 90%+, lists specific read-only files that can be dropped with `/compact`
+- Shows usage percentage and estimated cost per model
+- At 85%+, lists specific read-only files to drop with exact token savings
+- Repeats compact reminders every 10K tokens after 90%
 
 **On session end:**
-- Logs total tokens, waste percentage, and file/edit counts
+- Compares your session waste vs recent average: "12% waste. Better than avg (19%)!"
 - Updates pattern database for smarter future suggestions
+
+**After 5+ sessions in a project:**
+- Auto-creates file templates from your most frequently edited files
+- Notifies you on next session start: "Template available — apply it?"
 
 You literally just code. The plugin watches and helps.
 
@@ -207,17 +217,18 @@ You use Claude Code normally
 
 ### What counts as "useful"?
 
-A file is considered **useful** if:
-- It was **edited** after being read (high value — you needed it to make changes)
-- It was **read multiple times** (you kept referring back to it)
+A file is considered **useful** if (weighted scoring):
+- It was **edited** after being read (+3 per edit)
+- It was **read multiple times** (+0.5 per re-read, diminishing)
+- It was **partially read** with offset/limit (+1 bonus for smart usage)
 
 A file is considered **wasted** if:
-- It was **read once and never referenced again**
-- It was never edited or re-read during the session
+- Its usefulness score is zero or negative (read but never edited, no re-reads)
+- Large files (100+ lines) read 3+ times without edits get a penalty
 
 ### Token estimation
 
-Tokens are estimated at ~4 tokens per line (industry average for code). This is a rough estimate — actual usage depends on content density — but it's consistent enough for comparative analysis.
+Tokens are estimated using extension-specific ratios (e.g., 3.8 chars/token for JS/TS, 4.2 for Markdown, 3.2 for JSON) applied to line counts. Not exact, but consistent enough for comparative analysis.
 
 ---
 
@@ -243,6 +254,7 @@ claude-context-optimizer/
 ├── .claude-plugin/
 │   └── plugin.json          # Plugin manifest
 ├── src/
+│   ├── utils.js             # Shared constants, formatting, scoring
 │   ├── tracker.js           # Core: file & token tracking engine
 │   ├── budget.js            # Token budget monitor with alerts
 │   ├── digest.js            # Efficiency score & weekly digest
@@ -264,6 +276,9 @@ claude-context-optimizer/
 ├── hooks/
 │   └── hooks.json           # Hook configuration
 ├── assets/                  # SVG visuals for README
+├── docs/
+│   └── index.html           # Landing page (GitHub Pages)
+├── skills.json              # Skills CLI manifest
 └── package.json
 ```
 
@@ -305,8 +320,8 @@ PRs welcome. Areas that need help:
 - [ ] More accurate token counting (AST-based instead of line-based)
 - [ ] VSCode extension for visual heatmap overlay
 - [ ] Team sharing — aggregate patterns across team members
-- [ ] Auto-compact trigger based on budget thresholds
 - [ ] Integration with Claude Code's built-in `/cost` command
+- [ ] Dashboard web UI for browsing session history
 
 ---
 
