@@ -475,10 +475,11 @@
   .terminal-body {
     padding: 20px 24px;
     font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-    font-size: 0.82rem;
-    line-height: 1.6;
+    font-size: 0.78rem;
+    line-height: 1.5;
     color: var(--text-dim);
     overflow-x: auto;
+    white-space: pre;
   }
 
   .terminal-body .g { color: var(--green); }
@@ -726,17 +727,16 @@
         <div class="terminal-dot"></div>
         <div class="terminal-dot"></div>
       </div>
-      <div class="terminal-body">
-<span class="d">  CONTEXT HEATMAP</span>
-<span class="d">  ============================================================================</span>
-<span class="d">  File                                  Tokens Rds Eds  Impact</span>
-<span class="d">  ----------------------------------------------------------------------------</span>
-<span class="g">  &#x270F; src/components/Auth.tsx               4.2K   2   3  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;</span>
-<span class="g">  &#x270F; src/lib/api.ts                        2.8K   1   2  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;</span>
-<span class="b">  &#x2714; src/types/index.ts                    1.1K   3   0  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;</span>
-<span class="r">  &#x26A0; README.md                             2.4K   1   0  &#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;</span>
-<span class="r">  &#x26A0; package.json                            320   1   0  &#x2591;&#x2591;</span>
-<span class="r">  &#x26A0; tsconfig.json                           280   1   0  &#x2591;&#x2591;</span>
+      <div class="terminal-body"><span class="d">  CONTEXT HEATMAP
+  ============================================================================
+  File                                   Tokens  Rds Eds  Impact
+  ----------------------------------------------------------------------------</span>
+<span class="g">  &#x270F; src/components/Auth.tsx                4.2K    2   3  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;</span>
+<span class="g">  &#x270F; src/lib/api.ts                         2.8K    1   2  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;</span>
+<span class="b">  &#x2714; src/types/index.ts                     1.1K    3   0  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;</span>
+<span class="r">  &#x26A0; README.md                              2.4K    1   0  &#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;</span>
+<span class="r">  &#x26A0; package.json                             320    1   0  &#x2591;&#x2591;</span>
+<span class="r">  &#x26A0; tsconfig.json                            280    1   0  &#x2591;&#x2591;</span>
 <span class="d">  ----------------------------------------------------------------------------</span>
 <span class="w">  11.1K total | 3.0K waste (27%) | 33% partial reads</span>
 
@@ -745,8 +745,7 @@
 <span class="r">  &#x2717; Skip README.md (2.4K wasted, 1 read, 0 edits)</span>
 <span class="r">  &#x2717; Skip package.json (320 wasted, 1 read, 0 edits)</span>
 <span class="y">  &#x21BB; types/index.ts: 3 re-reads &#x2192; add to memory/CLAUDE.md</span>
-<span class="g">  &#x2713; Good partial read usage (33%).</span>
-      </div>
+<span class="g">  &#x2713; Good partial read usage (33%).</span></div>
     </div>
   </div>
 </section>
