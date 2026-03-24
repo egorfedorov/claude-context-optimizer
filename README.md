@@ -339,7 +339,6 @@ claude-context-optimizer/
 ├── assets/                  # SVG visuals for README
 ├── docs/
 │   └── index.html           # Landing page (GitHub Pages)
-├── skills.json              # Skills CLI manifest
 └── package.json
 ```
 
