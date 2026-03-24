@@ -1,132 +1,130 @@
 ---
-title: I built a plugin that blocks Claude Code from re-reading the same file — saves 30-60% tokens
+title: "Update: my Claude Code token optimizer now blocks redundant reads. Here's the data from 107 sessions."
 published: false
-description: A Claude Code plugin that tracks every file read and blocks redundant ones. Smart Read Cache, ContextShield, token budgets, and more.
+description: "Two weeks ago I shared a plugin that tracks token waste. Now it actively prevents it — and I have real numbers from 107 sessions to prove it."
 tags: claudecode, ai, productivity, opensource
 cover_image:
+series: "Claude Code Token Optimization"
 ---
 
-My Claude Code sessions were burning 100K+ tokens. I started tracking where they went — 37% were wasted on re-reading files Claude already had in context.
+Two weeks ago I posted [I tracked where my Claude Code tokens actually go. 37% were wasted.](https://dev.to/egorfedorov/i-tracked-where-my-claude-code-tokens-actually-go-37-were-wasted-2gll) — a plugin that tracks where your tokens go and shows you the waste.
 
-That number bothered me enough to build something about it.
+34 reactions. Great feedback. But one comment stuck with me:
 
-## The problem
+> "The real unlock for me was getting a live counter visible all session instead of only doing post-mortems, because it changes behavior in the moment before waste happens." — @henrygodnick
 
-Watch Claude Code work on any non-trivial task. You'll see patterns like this:
+He was right. Tracking is nice. **Preventing** is better.
 
-- `package.json` read 3 times in a single session
-- `tsconfig.json` loaded, ignored, loaded again after compaction
-- A 200-line utility file read 4 separate times across the conversation
+So I built v3.1 — and the plugin now actively blocks wasted reads instead of just reporting them.
 
-The math is brutal. A 200-line file is roughly 1,900 tokens. Read it 4 times and you've spent 7,600 tokens on the same information. At $15/M tokens on Opus, that adds up fast.
+## The big one: Smart Read Cache
 
-The worst part? After compaction, Claude loses context and re-reads *everything*. Your carefully loaded files? Gone. So it reads them all again.
+The #1 waste pattern I found in 107 sessions: **Claude re-reads the same file multiple times.**
 
-## What I built
+`page.tsx` — read **189 times** across my sessions. 60 of those were pure duplicates. That's 130K tokens burned on a file Claude already had.
 
-[claude-context-optimizer](https://github.com/egorfedorov/claude-context-optimizer) — a Claude Code plugin that hooks into the tool lifecycle and stops the waste.
-
-The killer feature is **Smart Read Cache**. It's a `PreToolUse` hook that intercepts every `Read` call and blocks it if the file was already loaded and hasn't changed.
-
-Here's the core logic, simplified:
+So I added a `PreToolUse` hook that intercepts every `Read` call:
 
 ```javascript
-// PreToolUse hook — runs before every Read tool call
-
-const entry = cache.files[filePath];
-const currentMtime = statSync(filePath).mtimeMs;
-
 // First read? Always allow.
-if (!entry) {
-  cache.files[filePath] = { mtime: currentMtime, ranges: [[offset, end]] };
-  return; // allow
-}
+if (!entry) return allow();
 
-// File changed since last read? Allow.
-if (currentMtime !== entry.mtime) {
-  return; // allow
-}
+// File changed on disk? Allow.
+if (currentMtime !== entry.mtime) return allow();
 
-// New section (different offset/limit)? Allow.
-if (!isRangeCovered(entry.ranges, offset, end)) {
-  entry.ranges.push([offset, end]);
-  return; // allow
-}
+// Different section? Allow.
+if (!isRangeCovered(entry.ranges, offset, end)) return allow();
 
 // Same file, same range, unchanged. Block it.
 return { decision: 'block', reason: 'Already loaded — file unchanged.' };
 ```
 
-It's smart about edge cases:
-
-- **Compaction** — clears the cache, because Claude actually lost the context
-- **Edit/Write** — invalidates that file's cache entry, because the content changed
-- **Partial reads** — tracks offset/limit ranges and only blocks if the exact range was already covered
-
-When it blocks a read, Claude sees a message like:
+When it blocks, Claude sees:
 
 ```
 Already loaded tracker.js this session (983 lines, ~9.3K tokens).
 File unchanged. Use offset/limit to read a specific section, or Edit to modify it.
 ```
 
-Claude adapts. It stops trying to re-read and works with what it has.
+And Claude **adapts** — it stops trying to re-read and works with what it has.
 
-## Other features
+### It's not dumb about it
 
-Read Cache is the biggest win, but the plugin does more:
+Three edge cases that matter:
 
-**Project Anatomy** — generates a one-file codebase map with file sizes and token estimates. Claude reads one file instead of opening twenty to understand your project.
+- **Compaction** — Claude actually lost the context. Cache clears. Re-reads allowed.
+- **Edit/Write** — file content changed. That file's cache invalidates.
+- **Partial reads** — tracks offset/limit ranges. Only blocks if the exact range was already covered.
 
-**ContextShield** — a second PreToolUse hook that warns before loading files that were historically wasted. If `README.md` was read-but-never-used in 5 past sessions, it tells Claude to use Grep instead.
+## Real numbers: 107 sessions analyzed
 
-**Token Budget** — tracks token accumulation in real-time and warns at configurable thresholds (50%, 70%, 85%, 95%). At 85%+ it lists specific files to drop with exact token savings.
+I ran a retroactive analysis on all my existing sessions — what would Read Cache have saved?
 
-**CLAUDE.md Analyzer** — scans your CLAUDE.md for token bloat: duplicate lines, verbose phrasing ("please make sure to" -> "Always"), oversized code blocks. Shows estimated savings.
+```
+Sessions analyzed:              107
+Total tokens tracked:           23.5M
+Redundant reads found:          1,225
+Tokens that would have been saved: 1.9M (8.0%)
+```
 
-**Weekly Digest** — efficiency score (S/A/B/C/D/F grade), cost breakdown by model, waste trends, actionable tips.
+Top sessions by savings:
 
-Everything runs as hooks. Zero config. Install it and forget it's there.
+| Session | Saved | Total | % |
+|---------|-------|-------|---|
+| Football Slot | 247K | 362K | **68%** |
+| claude-context-optimizer | 62K | 210K | **29%** |
+| Engine3.0 | 63K | 329K | **19%** |
+| DJ Beat Drop | 39K | 276K | **14%** |
 
-## Installation
+Top re-read offenders:
 
-Recommended:
+| File | Total reads | Blocked | Tokens saved |
+|------|-------------|---------|--------------|
+| `page.tsx` | 189 | 60 | 130.9K |
+| `GameInfoModal.svelte` | 23 | 6 | 56.8K |
+| `variables.css` | 34 | 26 | 49.2K |
+| `client.ts` | 46 | 22 | 48.8K |
+| `types.ts` | 60 | 30 | 41.6K |
 
+That's **1.9M tokens** I would have saved. At $15/M on Opus — roughly **$28.50** over two weeks, or ~$60/month.
+
+## What else is new in v3.1
+
+**Project Anatomy** (`/cco-anatomy`) — generates a one-file codebase map:
+
+```
+# Project Anatomy: my-app
+Generated: 2026-03-24 | 31 files | ~46K tokens if all read
+
+| Path | Lines | ~Tokens | Type |
+|------|-------|---------|------|
+| src/tracker.js | 984 | 9.1K | source |
+| src/export.js | 398 | 3.7K | source |
+...
+```
+
+Claude reads this instead of opening 20 files to understand your project.
+
+**45 unit tests** — the plugin is now properly tested. `npm test` runs in under 60ms.
+
+**Honest README** — I renamed "Interactive Dashboard" to "HTML Dashboard Export" because that's what it actually is. No more marketing fluff.
+
+## Install / update
+
+First time:
 ```bash
 npx skills add https://github.com/egorfedorov/claude-context-optimizer
 ```
 
-Or clone and point Claude at it:
-
-```bash
-git clone https://github.com/egorfedorov/claude-context-optimizer.git ~/claude-context-optimizer
-claude --plugin-dir ~/claude-context-optimizer
-```
-
-To update:
-
+Already have it:
 ```bash
 claude plugin update claude-context-optimizer@egorfedorov-plugins
 ```
 
-No telemetry. No network calls. All data stays in `~/.claude-context-optimizer/` on your machine.
-
-## Results
-
-[TODO: fill with real data after 10+ sessions]
-
-After 10 sessions with the plugin, here's what changed:
-
-- Average tokens per session: [BEFORE] -> [AFTER]
-- Redundant reads blocked: [NUMBER] per session
-- Monthly cost impact: ~$[X] saved on Opus
-
-## Privacy note
-
-The plugin tracks file paths and line counts only. Never file contents. Everything is local. You can wipe all data with `/cco-clean --reset-all`.
+Zero config. Zero telemetry. All data stays local.
 
 ---
 
-The repo is at [github.com/egorfedorov/claude-context-optimizer](https://github.com/egorfedorov/claude-context-optimizer). MIT licensed.
+[GitHub repo](https://github.com/egorfedorov/claude-context-optimizer) — MIT licensed.
 
-Star it if it saved you tokens.
+The v2 post got 34 reactions. Let's see if blocking redundant reads is worth a star.
