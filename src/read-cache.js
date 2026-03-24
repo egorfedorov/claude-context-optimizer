@@ -18,6 +18,7 @@ import {
   READ_CACHE_DIR,
   estimateTokens, formatTokens, loadJSON, saveJSON, ensureDataDirs
 } from './utils.js';
+import { isContextIgnored } from './contextignore.js';
 
 ensureDataDirs();
 
@@ -112,6 +113,15 @@ async function main() {
   const ppid = process.ppid;
 
   if (!filePath || filePath.startsWith('/dev/') || filePath.startsWith('/proc/')) {
+    process.exit(0);
+  }
+
+  // Check .contextignore — block files matching ignore patterns
+  const ignoreResult = isContextIgnored(filePath);
+  if (ignoreResult.ignored) {
+    const reason = `🚫 [contextignore] ${basename(filePath)} matches pattern "${ignoreResult.pattern}" in .contextignore. ` +
+      `Use Grep to search inside, or remove the pattern from .contextignore to allow reading.`;
+    console.log(JSON.stringify({ decision: 'block', reason }));
     process.exit(0);
   }
 

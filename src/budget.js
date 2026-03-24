@@ -1,19 +1,20 @@
 #!/usr/bin/env node
 
 /**
- * Context Budget Monitor v2.1
+ * Context Budget Monitor v2.2
  *
  * Tracks token accumulation during a session and warns
  * when approaching a configurable budget limit.
- * Auto-compact: at 90%+ suggests specific files to drop with exact savings.
- * Incremental warnings: every 5K tokens after 90% shows updated recommendations.
+ * Auto-compact: at configurable thresholds (default 80%/90%) outputs
+ * strong directive messages that prompt Claude to run /compact.
+ * Incremental warnings: every 5K tokens after critical threshold shows updated recommendations.
  */
 
 import { join, basename } from 'path';
 import {
   BUDGET_STATE_DIR, SESSIONS_DIR,
   formatTokens, loadConfig, MODEL_COSTS, displayPath,
-  loadJSON, saveJSON, ensureDataDirs
+  loadJSON, saveJSON, ensureDataDirs, loadBudgetConfig
 } from './utils.js';
 
 ensureDataDirs();
@@ -27,6 +28,8 @@ function loadBudgetState(sessionId) {
     filesLoaded: {},
     compactSuggested: false,
     lastCompactSuggestAt: 0,
+    autoCompactSentAt: 0,
+    criticalSentAt: 0,
     startedAt: new Date().toISOString()
   };
 }
@@ -100,6 +103,7 @@ async function main() {
   const toolInput = event.tool_input || {};
   const sessionId = event.session_id || 'unknown';
   const config = loadConfig();
+  const budgetConfig = loadBudgetConfig();
   const state = loadBudgetState(sessionId);
 
   const tokensAdded = estimateToolTokens(toolName, toolInput);
@@ -140,8 +144,39 @@ async function main() {
     }
   }
 
-  // Incremental compact reminders: every 10K tokens after 90%
-  if (usagePercent >= config.autoCompactAt) {
+  // ── Auto-compact directives ──────────────────────────────────────────────
+  if (budgetConfig.autoCompactEnabled) {
+    const { autoCompactThreshold, criticalThreshold } = budgetConfig;
+
+    // Critical threshold (default 90%): urgent directive, repeats every 5K tokens
+    if (usagePercent >= criticalThreshold) {
+      const tokensSinceCritical = state.totalTokensEstimated - (state.criticalSentAt || 0);
+      if (tokensSinceCritical >= 5000 || !state.criticalSentAt) {
+        state.criticalSentAt = state.totalTokensEstimated;
+        const rec = buildCompactRecommendation(state);
+        const reclaimMsg = rec ? ` Free ~${formatTokens(rec.reclaimableTokens)} tokens.` : '';
+        console.error(
+          `[context-budget] CRITICAL: ${usagePercent}% budget used (~${formatTokens(state.totalTokensEstimated)}/${formatTokens(config.budgetTokens)}). ` +
+          `Run /compact immediately or the session will lose older context.${reclaimMsg}`
+        );
+      }
+    }
+    // Auto-compact threshold (default 80%): strong recommendation, repeats every 10K tokens
+    else if (usagePercent >= autoCompactThreshold) {
+      const tokensSinceAutoCompact = state.totalTokensEstimated - (state.autoCompactSentAt || 0);
+      if (tokensSinceAutoCompact >= 10000 || !state.autoCompactSentAt) {
+        state.autoCompactSentAt = state.totalTokensEstimated;
+        const rec = buildCompactRecommendation(state);
+        const reclaimMsg = rec ? ` Free ~${formatTokens(rec.reclaimableTokens)} tokens.` : '';
+        console.error(
+          `[context-budget] Auto-compact recommended — ${usagePercent}% budget used. ` +
+          `Run /compact now to free tokens and keep the session efficient.${reclaimMsg}`
+        );
+      }
+    }
+  }
+  // Legacy fallback: original incremental compact reminders when auto-compact is disabled
+  else if (usagePercent >= config.autoCompactAt) {
     const tokensSinceLast = state.totalTokensEstimated - (state.lastCompactSuggestAt || 0);
     if (tokensSinceLast >= 10000) {
       state.lastCompactSuggestAt = state.totalTokensEstimated;

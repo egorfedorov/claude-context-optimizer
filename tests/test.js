@@ -1,12 +1,18 @@
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { extname, basename } from 'path';
+import { extname, basename, join } from 'path';
 import { homedir } from 'os';
 
 import {
   estimateTokens, formatTokens, displayPath,
-  computeUsefulness, computeConfidence, TOKEN_RATIOS
+  computeUsefulness, computeConfidence, TOKEN_RATIOS,
+  loadBudgetConfig, saveBudgetConfig, clearBudgetConfigCache,
+  BUDGET_CONFIG_FILE, loadJSON
 } from '../src/utils.js';
+import {
+  isContextIgnored, _globToRegex, _parseIgnoreFile, clearContextIgnoreCache
+} from '../src/contextignore.js';
+import { writeFileSync, unlinkSync, mkdirSync, existsSync } from 'fs';
 
 // ── Recreated pure functions from read-cache.js ─────────────────────────────
 
@@ -338,6 +344,267 @@ describe('anatomy logic', () => {
       assert.equal(shouldSkip('bundle.map'), true);
       assert.equal(shouldSkip('dist.zip'), true);
       assert.equal(shouldSkip('data.tar'), true);
+    });
+  });
+});
+
+describe('contextignore', () => {
+  describe('_globToRegex', () => {
+    it('matches exact filenames', () => {
+      const re = _globToRegex('package-lock.json');
+      assert.ok(re.test('package-lock.json'));
+      assert.ok(!re.test('package.json'));
+      assert.ok(!re.test('xpackage-lock.json'));
+    });
+
+    it('matches single-star extension globs', () => {
+      const re = _globToRegex('*.lock');
+      assert.ok(re.test('yarn.lock'));
+      assert.ok(re.test('Gemfile.lock'));
+      assert.ok(!re.test('lockfile'));
+      assert.ok(!re.test('.lock.bak'));
+    });
+
+    it('matches compound extension globs like *.min.js', () => {
+      const re = _globToRegex('*.min.js');
+      assert.ok(re.test('bundle.min.js'));
+      assert.ok(re.test('app.min.js'));
+      assert.ok(!re.test('app.js'));
+      assert.ok(!re.test('app.min.css'));
+    });
+
+    it('matches double-star directory globs', () => {
+      const re = _globToRegex('dist/**');
+      assert.ok(re.test('dist/index.js'));
+      assert.ok(re.test('dist/sub/deep/file.ts'));
+      assert.ok(!re.test('src/dist/index.js'));
+    });
+
+    it('matches wildcard-in-middle patterns', () => {
+      const re = _globToRegex('*.generated.*');
+      assert.ok(re.test('schema.generated.ts'));
+      assert.ok(re.test('api.generated.js'));
+      assert.ok(!re.test('schema.ts'));
+    });
+
+    it('single star does not match across path separators', () => {
+      const re = _globToRegex('*.js');
+      assert.ok(re.test('index.js'));
+      assert.ok(!re.test('src/index.js'));
+    });
+
+    it('escapes regex special characters', () => {
+      const re = _globToRegex('file.name+special.js');
+      assert.ok(re.test('file.name+special.js'));
+      assert.ok(!re.test('fileXnameXspecialXjs'));
+    });
+
+    it('handles ? as single character wildcard', () => {
+      const re = _globToRegex('file?.txt');
+      assert.ok(re.test('file1.txt'));
+      assert.ok(re.test('fileA.txt'));
+      assert.ok(!re.test('file12.txt'));
+      assert.ok(!re.test('file/.txt'));
+    });
+  });
+
+  describe('_parseIgnoreFile', () => {
+    it('returns empty array for non-existent file', () => {
+      const result = _parseIgnoreFile('/tmp/nonexistent-contextignore-' + Date.now());
+      assert.deepEqual(result, []);
+    });
+  });
+
+  describe('isContextIgnored (integration)', () => {
+    // These tests rely on the cwd NOT having a .contextignore,
+    // so they verify the "no patterns loaded" path.
+    // The globToRegex tests above cover the matching logic thoroughly.
+
+    it('returns ignored:false when no .contextignore exists', () => {
+      clearContextIgnoreCache();
+      const originalCwd = process.cwd;
+      process.cwd = () => '/tmp/no-contextignore-here-' + Date.now();
+      try {
+        const result = isContextIgnored('/some/random/file.js');
+        assert.equal(result.ignored, false);
+        assert.equal(result.pattern, '');
+      } finally {
+        process.cwd = originalCwd;
+        clearContextIgnoreCache();
+      }
+    });
+
+    it('returns the matching pattern string when ignored', () => {
+      clearContextIgnoreCache();
+      // Write a temporary .contextignore
+      const tmpDir = '/tmp/contextignore-test-' + Date.now();
+      mkdirSync(tmpDir, { recursive: true });
+      writeFileSync(join(tmpDir, '.contextignore'), '*.lock\npackage-lock.json\ndist/**\n');
+
+      const originalCwd = process.cwd;
+      process.cwd = () => tmpDir;
+      try {
+        const r1 = isContextIgnored('/project/yarn.lock');
+        assert.equal(r1.ignored, true);
+        assert.equal(r1.pattern, '*.lock');
+
+        const r2 = isContextIgnored('/project/package-lock.json');
+        assert.equal(r2.ignored, true);
+        assert.equal(r2.pattern, 'package-lock.json'); // exact match, *.lock doesn't match .json ext
+
+        const r3 = isContextIgnored(join(tmpDir, 'dist', 'bundle.js'));
+        assert.equal(r3.ignored, true);
+        assert.equal(r3.pattern, 'dist/**');
+
+        const r4 = isContextIgnored('/project/src/index.js');
+        assert.equal(r4.ignored, false);
+      } finally {
+        process.cwd = originalCwd;
+        clearContextIgnoreCache();
+        try { unlinkSync(join(tmpDir, '.contextignore')); } catch {}
+      }
+    });
+  });
+});
+
+// ── Budget config (auto-compact) tests ──────────────────────────────────────
+
+describe('budget config', () => {
+  describe('loadBudgetConfig', () => {
+    it('returns defaults when no config file exists', () => {
+      clearBudgetConfigCache();
+      // If config file already exists, test the merge behavior
+      const config = loadBudgetConfig();
+      assert.equal(typeof config.autoCompactEnabled, 'boolean');
+      assert.equal(typeof config.autoCompactThreshold, 'number');
+      assert.equal(typeof config.criticalThreshold, 'number');
+      assert.ok(config.autoCompactThreshold > 0 && config.autoCompactThreshold <= 100);
+      assert.ok(config.criticalThreshold > 0 && config.criticalThreshold <= 100);
+    });
+
+    it('caches config on subsequent calls', () => {
+      clearBudgetConfigCache();
+      const config1 = loadBudgetConfig();
+      const config2 = loadBudgetConfig();
+      assert.strictEqual(config1, config2); // Same reference = cached
+    });
+
+    it('returns fresh config after clearBudgetConfigCache', () => {
+      clearBudgetConfigCache();
+      const config1 = loadBudgetConfig();
+      clearBudgetConfigCache();
+      const config2 = loadBudgetConfig();
+      assert.notStrictEqual(config1, config2); // Different reference = reloaded
+      assert.deepStrictEqual(config1, config2); // Same values
+    });
+  });
+
+  describe('saveBudgetConfig', () => {
+    it('saves and reloads config correctly', () => {
+      clearBudgetConfigCache();
+      const custom = {
+        autoCompactEnabled: false,
+        autoCompactThreshold: 75,
+        criticalThreshold: 85
+      };
+      saveBudgetConfig(custom);
+
+      clearBudgetConfigCache();
+      const loaded = loadBudgetConfig();
+      assert.equal(loaded.autoCompactEnabled, false);
+      assert.equal(loaded.autoCompactThreshold, 75);
+      assert.equal(loaded.criticalThreshold, 85);
+
+      // Restore defaults
+      saveBudgetConfig({
+        autoCompactEnabled: true,
+        autoCompactThreshold: 80,
+        criticalThreshold: 90
+      });
+      clearBudgetConfigCache();
+    });
+
+    it('merges partial config with defaults', () => {
+      clearBudgetConfigCache();
+      saveBudgetConfig({ autoCompactEnabled: false });
+
+      clearBudgetConfigCache();
+      const loaded = loadBudgetConfig();
+      assert.equal(loaded.autoCompactEnabled, false);
+      // Defaults should be preserved for unspecified fields
+      assert.equal(loaded.autoCompactThreshold, 80);
+      assert.equal(loaded.criticalThreshold, 90);
+
+      // Restore defaults
+      saveBudgetConfig({
+        autoCompactEnabled: true,
+        autoCompactThreshold: 80,
+        criticalThreshold: 90
+      });
+      clearBudgetConfigCache();
+    });
+
+    it('updates cache immediately after save', () => {
+      clearBudgetConfigCache();
+      saveBudgetConfig({ autoCompactEnabled: false });
+      // Should return cached value without needing clearBudgetConfigCache
+      const loaded = loadBudgetConfig();
+      assert.equal(loaded.autoCompactEnabled, false);
+
+      // Restore defaults
+      saveBudgetConfig({
+        autoCompactEnabled: true,
+        autoCompactThreshold: 80,
+        criticalThreshold: 90
+      });
+      clearBudgetConfigCache();
+    });
+  });
+
+  describe('config file persistence', () => {
+    it('creates budget-config.json on first load', () => {
+      // The file should exist after loadBudgetConfig has been called
+      assert.ok(existsSync(BUDGET_CONFIG_FILE));
+    });
+
+    it('config file contains valid JSON', () => {
+      const data = loadJSON(BUDGET_CONFIG_FILE);
+      assert.ok(data !== null);
+      assert.equal(typeof data.autoCompactEnabled, 'boolean');
+    });
+  });
+
+  describe('threshold validation', () => {
+    it('autoCompactThreshold defaults to 80', () => {
+      clearBudgetConfigCache();
+      saveBudgetConfig({ autoCompactEnabled: true });
+      clearBudgetConfigCache();
+      const config = loadBudgetConfig();
+      assert.equal(config.autoCompactThreshold, 80);
+
+      // Restore
+      saveBudgetConfig({
+        autoCompactEnabled: true,
+        autoCompactThreshold: 80,
+        criticalThreshold: 90
+      });
+      clearBudgetConfigCache();
+    });
+
+    it('criticalThreshold defaults to 90', () => {
+      clearBudgetConfigCache();
+      saveBudgetConfig({ autoCompactEnabled: true });
+      clearBudgetConfigCache();
+      const config = loadBudgetConfig();
+      assert.equal(config.criticalThreshold, 90);
+
+      // Restore
+      saveBudgetConfig({
+        autoCompactEnabled: true,
+        autoCompactThreshold: 80,
+        criticalThreshold: 90
+      });
+      clearBudgetConfigCache();
     });
   });
 });

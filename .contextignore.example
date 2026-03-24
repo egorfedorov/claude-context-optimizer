@@ -1,0 +1,41 @@
+# Claude Context Optimizer — .contextignore
+# Files matching these patterns will be blocked from full reads.
+# Place this file as .contextignore in your project root
+# or at ~/.claude/.contextignore for global rules.
+#
+# Syntax (like .gitignore):
+#   package-lock.json   → exact filename match
+#   *.lock              → extension glob
+#   *.min.js            → compound extension glob
+#   dist/**             → everything inside a directory
+#   *.generated.*       → wildcard in the middle
+
+# Lock files (huge, never useful to read in full)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+Gemfile.lock
+composer.lock
+Cargo.lock
+poetry.lock
+
+# Generated / compiled
+*.min.js
+*.min.css
+*.bundle.js
+*.chunk.js
+
+# Build output
+dist/**
+build/**
+.next/**
+out/**
+
+# Dependencies
+node_modules/**
+vendor/**
+
+# Large data files
+*.sql
+*.csv
+*.sqlite

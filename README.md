@@ -45,7 +45,7 @@ Read Cache runs as a PreToolUse hook and **blocks** redundant reads when the fil
 
 ```
 💾 [read-cache] tracker.js is already in context (983 lines, ~9.3K tokens saved).
-   File unchanged — no need to re-read! Tip: use offset/limit for a specific section.
+   File unchanged — no need to re-read! Tip: use offset/limit to read a different section.
 ```
 
 - First read: always allowed
@@ -55,6 +55,64 @@ Read Cache runs as a PreToolUse hook and **blocks** redundant reads when the fil
 - Same file, same range, unchanged: **blocked** — saves 100% of those tokens
 
 Typical savings: **30-60% fewer tokens** per session from read deduplication alone.
+
+### NEW: `.contextignore` — block files you never need
+
+Create a `.contextignore` file in your project root (like `.gitignore`) to permanently block wasteful reads. No more loading lockfiles, build output, or generated code.
+
+```
+# .contextignore
+package-lock.json
+yarn.lock
+*.min.js
+*.min.css
+dist/**
+node_modules/**
+*.sql
+```
+
+```
+🚫 [contextignore] package-lock.json matches pattern "package-lock.json" in .contextignore.
+   Use Grep to search inside, or remove the pattern from .contextignore to allow reading.
+```
+
+- Project-level: `.contextignore` in your repo root
+- Global rules: `~/.claude/.contextignore` for patterns across all projects
+- Supports globs: `*.lock`, `dist/**`, `*.min.js`, `*.generated.*`
+- Copy `.contextignore.example` from the plugin to get started
+
+### NEW: Auto-Compact — automatic context cleanup
+
+When your context budget reaches 80%, the plugin automatically tells Claude to run `/compact` instead of just showing a warning. At 90%, it becomes urgent.
+
+```
+[context-budget] ⚡ Auto-compact recommended — 80% budget used.
+   Run /compact now to free ~12.5K tokens and keep the session efficient.
+[context-budget] 🔴 Critical: 90% budget used (~90K/100K tokens).
+   Run /compact immediately or the session will lose older context.
+```
+
+- Toggle with `/cco-budget auto on` or `/cco-budget auto off`
+- Configurable thresholds in `budget-config.json`
+- Smart rate-limiting — won't spam every single tool call
+
+### NEW: Session Replay — pick up where you left off
+
+Every session automatically generates a summary saved to disk. Start your next session by running `/cco-replay` to see what was done before — no need to re-read files or guess context.
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║                    RECENT SESSION SUMMARIES                  ║
+╚══════════════════════════════════════════════════════════════╝
+
+[1] Session Mar 24 14:30 (12 min)
+    Edited: src/read-cache.js, src/utils.js, README.md (3 files)
+    Context: 45K tokens, 12 files read, 28% waste
+
+[2] Session Mar 24 10:15 (25 min)
+    Edited: src/tracker.js, src/budget.js (2 files)
+    Context: 82K tokens, 18 files read, 15% waste
+```
 
 ### NEW: Project Anatomy — codebase map in one file
 
@@ -140,12 +198,12 @@ Run `/cco-digest` for a weekly efficiency grade (S/A/B/C/D/F) with breakdown by 
 
 ### Token Budget — never overspend
 
-Set a token budget and get real-time warnings as you approach the limit. Automatic alerts at 50%, 70%, 85%, 95% with cost estimates.
+Set a token budget and get real-time warnings as you approach the limit. Auto-compact kicks in at 80%, critical alerts at 90%.
 
 ```
-[context-budget] 70% budget used (~70K/100K) | Est. cost: $1.050 (opus)
-[context-budget] 85% budget used (~85K/100K) | Est. cost: $1.275 (opus)
-[context-budget] Run /compact to free ~8.2K tokens:
+[context-budget] 70% of budget used (~70K/100K) | Est. cost: $1.050 (opus)
+[context-budget] ⚡ Auto-compact recommended — 80% budget used.
+[context-budget] You can free ~8.2K tokens with /compact:
   drop README.md (~2.4K), tsconfig.json (~1.1K), package.json (~320)
 ```
 
@@ -177,7 +235,7 @@ When installed as a plugin, commands are namespaced: `/claude-context-optimizer:
 | `/cco` | Session heatmap — visual file-by-file token breakdown |
 | `/cco-report` | Full ROI report — stats, trends, waste analysis, recommendations |
 | `/cco-digest [days]` | Efficiency digest — score, grade, cost analysis (default: 7 days) |
-| `/cco-budget [status\|set\|model]` | Token budget — configure limits and cost model |
+| `/cco-budget [status\|set\|model\|auto]` | Token budget — configure limits, cost model, auto-compact |
 | `/cco-git` | Git-aware suggestions — smart file loading based on diff |
 | `/cco-templates [list\|create\|apply\|delete]` | Context templates — reusable file sets for task types |
 | `/cco-export [md\|html]` | Export reports — Markdown or static HTML dashboard |
@@ -185,6 +243,7 @@ When installed as a plugin, commands are namespaced: `/claude-context-optimizer:
 | `/cco-shield` | ContextShield status — waste protection stats |
 | `/cco-claudemd` | CLAUDE.md analyzer — find and fix token bloat |
 | `/cco-anatomy` | Project anatomy — compact codebase map with file sizes and token estimates |
+| `/cco-replay [N]` | Session replay — recent session summaries for quick context recovery |
 
 ---
 
@@ -331,8 +390,10 @@ claude-context-optimizer/
 ├── src/
 │   ├── utils.js             # Shared constants, formatting, scoring, donation info
 │   ├── read-cache.js        # Smart Read Cache: blocks redundant file reads
+│   ├── contextignore.js     # .contextignore: pattern-based file blocking
+│   ├── replay.js            # Session Replay: recent session summaries
 │   ├── anatomy.js           # Project Anatomy: compact codebase map generator
-│   ├── tracker.js           # Core: file & token tracking engine
+│   ├── tracker.js           # Core: file & token tracking engine + session summaries
 │   ├── context-shield.js    # ContextShield: PreToolUse waste prevention
 │   ├── claudemd-analyzer.js # CLAUDE.md token bloat analyzer
 │   ├── budget.js            # Token budget monitor with alerts

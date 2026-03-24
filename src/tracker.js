@@ -12,7 +12,7 @@
 import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { join, basename, extname, dirname } from 'path';
 import {
-  DATA_DIR, SESSIONS_DIR, PATTERNS_FILE, GLOBAL_STATS_FILE, TEMPLATES_DIR,
+  DATA_DIR, SESSIONS_DIR, PATTERNS_FILE, GLOBAL_STATS_FILE, TEMPLATES_DIR, SUMMARIES_DIR,
   estimateTokens, formatTokens, displayPath, computeUsefulness, computeConfidence,
   getDonationMessage, loadJSON, saveJSON, ensureDataDirs
 } from './utils.js';
@@ -635,6 +635,56 @@ function rebuildGlobalStats() {
   saveJSON(GLOBAL_STATS_FILE, globalStats);
 }
 
+// ── Session summary for replay ──────────────────────────────────────────────
+
+function generateSessionSummary(session) {
+  const fileEntries = Object.entries(session.files).filter(([p]) => !shouldIgnore(p));
+  if (fileEntries.length === 0) return null;
+
+  const editedFiles = fileEntries
+    .filter(([, d]) => d.wasEdited)
+    .map(([p]) => basename(p));
+  const totalReads = fileEntries.length;
+
+  let totalTokens = 0;
+  let wastedTokens = 0;
+  for (const [, fileData] of fileEntries) {
+    const tokensUsed = fileData.estTokens * fileData.reads;
+    totalTokens += tokensUsed;
+    const usefulness = computeUsefulness(fileData);
+    if (usefulness <= 0 && fileData.reads >= 1) {
+      wastedTokens += tokensUsed;
+    }
+  }
+
+  const wastePercent = totalTokens > 0
+    ? Math.round((wastedTokens / totalTokens) * 100)
+    : 0;
+
+  // Calculate session duration
+  const start = new Date(session.startedAt);
+  const end = session.updatedAt ? new Date(session.updatedAt) : new Date();
+  const durationMin = Math.max(1, Math.round((end - start) / 60000));
+
+  // Format timestamp
+  const dateStr = start.toISOString().replace('T', ' ').slice(0, 16);
+
+  const lines = [`Session ${dateStr} (${durationMin} min)`];
+
+  if (editedFiles.length > 0) {
+    const display = editedFiles.length <= 5
+      ? editedFiles.join(', ')
+      : editedFiles.slice(0, 4).join(', ') + `, +${editedFiles.length - 4} more`;
+    lines.push(`Edited: ${display} (${editedFiles.length} file${editedFiles.length !== 1 ? 's' : ''})`);
+  } else {
+    lines.push('Read-only session (no edits)');
+  }
+
+  lines.push(`Context: ${formatTokens(totalTokens)} tokens, ${totalReads} files read, ${wastePercent}% waste`);
+
+  return lines.join('\n');
+}
+
 // ── Compact heatmap with disambiguated paths ────────────────────────────────
 
 function generateHeatmap(session) {
@@ -965,6 +1015,13 @@ async function main() {
         }
 
         console.error(msg);
+      }
+
+      // Generate session summary for replay
+      const summary = generateSessionSummary(session);
+      if (summary) {
+        const summaryFile = join(SUMMARIES_DIR, `${session.id}.txt`);
+        writeFileSync(summaryFile, summary, 'utf-8');
       }
       break;
     }
