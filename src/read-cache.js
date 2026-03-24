@@ -71,6 +71,33 @@ async function main() {
   let event;
   try { event = JSON.parse(input); } catch { process.exit(0); }
 
+  // On compaction, Claude forgets file contents — clear the cache
+  if (event.hook_event_name === 'PreCompact') {
+    const sessionId = event.session_id || 'unknown';
+    const cache = loadCache(sessionId);
+    const fileCount = Object.keys(cache.files).length;
+    if (fileCount > 0) {
+      cache.files = {};
+      saveCache(sessionId, cache);
+      console.error(`[read-cache] Compaction detected — cache cleared (${fileCount} files). Re-reads allowed.`);
+    }
+    process.exit(0);
+  }
+
+  // On Edit/Write, the file content changed — invalidate its cache entry
+  if (event.hook_event_name === 'PostToolUse' && (event.tool_name === 'Edit' || event.tool_name === 'Write')) {
+    const filePath = (event.tool_input || {}).file_path || '';
+    if (filePath) {
+      const sessionId = event.session_id || 'unknown';
+      const cache = loadCache(sessionId);
+      if (cache.files[filePath]) {
+        delete cache.files[filePath];
+        saveCache(sessionId, cache);
+      }
+    }
+    process.exit(0);
+  }
+
   if (event.hook_event_name !== 'PreToolUse') process.exit(0);
   if ((event.tool_name || '') !== 'Read') process.exit(0);
 
