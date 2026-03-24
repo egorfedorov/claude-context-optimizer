@@ -16,7 +16,7 @@ node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js heatmap
 ```
 
 If no data is available yet (empty session), tell the user:
-"No context data tracked yet in this session. Keep working and the optimizer will track file reads, edits, and searches automatically."
+"No data in this session yet. Just keep working — the optimizer tracks your reads, edits, and searches automatically!"
 
 Present the heatmap output to the user and highlight:
 1. Files marked with a warning icon that were read but never used — suggest avoiding them next time

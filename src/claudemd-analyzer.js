@@ -201,7 +201,7 @@ function formatReport(analysis) {
   output += '\n';
 
   if (analysis.issues.length === 0) {
-    output += `  ✓ No issues found. Your CLAUDE.md is clean!\n`;
+    output += `  ✓ Looking good! Your CLAUDE.md is clean and efficient.\n`;
   } else {
     output += `  ISSUES (${analysis.issues.length})\n`;
     output += `  ${'─'.repeat(62)}\n`;
@@ -235,7 +235,7 @@ const cwd = process.argv[2] || process.cwd();
 const files = findClaudeFiles(cwd);
 
 if (files.length === 0) {
-  console.log('No CLAUDE.md files found in the current project.');
+  console.log('No CLAUDE.md found in this project. Create one to give Claude project context!');
   process.exit(0);
 }
 

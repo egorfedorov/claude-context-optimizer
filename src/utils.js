@@ -160,7 +160,7 @@ export function getDonationMessage() {
   return [
     '',
     '  ─────────────────────────────────────────────────────────────',
-    '  Saved tokens? Help keep this project alive with a donation:',
+    '  Like saving tokens? Support the project:',
     `  BTC: ${DONATION_ADDRESSES.btc}`,
     `  ETH: ${DONATION_ADDRESSES.eth}`,
     `  SOL: ${DONATION_ADDRESSES.sol}`,

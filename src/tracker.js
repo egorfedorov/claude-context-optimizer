@@ -698,25 +698,25 @@ function generateHeatmap(session) {
   if (wasteFiles.length > 0) {
     const topWaste = wasteFiles.sort((a, b) => b.tokens - a.tokens).slice(0, 3);
     for (const f of topWaste) {
-      output += `  \u2717 Skip ${f.name} (${formatTokens(f.tokens)} wasted, ${f.reads} read${f.reads > 1 ? 's' : ''}, 0 edits)\n`;
+      output += `  💤 ${f.name}: read but unused (${formatTokens(f.tokens)}, ${f.reads} read${f.reads > 1 ? 's' : ''}). Skip next time?\n`;
     }
   }
 
   if (heavyRereadFiles.length > 0) {
     for (const f of heavyRereadFiles.slice(0, 2)) {
-      output += `  \u21BB ${f.name}: ${f.reads} re-reads \u2192 add to memory/CLAUDE.md\n`;
+      output += `  🔄 ${f.name}: re-read ${f.reads}x — add key info to CLAUDE.md to avoid this\n`;
     }
   }
 
   if (partialPercent < 20 && totalTokens > 10000) {
-    output += `  \u2197 Only ${partialPercent}% partial reads. Use offset/limit on large files.\n`;
+    output += `  💡 Only ${partialPercent}% partial reads — use offset/limit on large files to save tokens\n`;
   }
 
   if (wastePercent <= 15) {
-    output += `  \u2713 Efficient session (${wastePercent}% waste). Nice work.\n`;
+    output += `  🎯 Efficient session — only ${wastePercent}% waste. Nice!\n`;
   }
 
-  output += '\n  \u270F=edited  \u2714=multi-read  \u26A0=waste  \u2197=partial read\n';
+  output += '\n  ✏=edited  ✔=useful read  💤=unused  💡=partial\n';
   output += getDonationMessage();
   output += '\n';
   return output;
@@ -906,9 +906,9 @@ async function main() {
           const savings = calculateWeeklySavings(globalStats);
           if (savings && savings.sessions >= 3) {
             if (savings.improving) {
-              console.error(`[cco] Waste trending down ${savings.improvementPct}% this week. Keep it up!`);
+              console.error(`[cco] Waste down ${savings.improvementPct}% this week — you're getting better!`);
             } else if (savings.avgWaste > 30) {
-              console.error(`[cco] ${savings.avgWaste}% avg waste this week (${savings.sessions} sessions). Try Grep before Read.`);
+              console.error(`[cco] ${savings.avgWaste}% avg waste this week (${savings.sessions} sessions). Tip: Grep before Read saves tokens!`);
             }
           }
 
@@ -923,13 +923,13 @@ async function main() {
                 .slice(0, 2);
               if (topWaste.length > 0) {
                 const names = topWaste.map(([p]) => basename(p)).join(', ');
-                console.error(`[cco] Frequently wasted: ${names}. Consider skipping.`);
+                console.error(`[cco] Often unused: ${names}. You can probably skip these.`);
               }
               // Mention auto-template if available
               const projectName = basename(projKey);
               const templateFile = join(TEMPLATES_DIR, `auto-${projectName}.json`);
               if (existsSync(templateFile)) {
-                console.error(`[cco] Template "auto-${projectName}" available. Use /cco-templates apply auto-${projectName}`);
+                console.error(`[cco] Auto-template ready! Run: /cco-templates apply auto-${projectName}`);
               }
               break;
             }

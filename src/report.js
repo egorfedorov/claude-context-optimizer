@@ -17,7 +17,7 @@ function generateFullReport() {
   const stats = loadJSON(GLOBAL_STATS_FILE);
 
   if (!stats || stats.totalSessions === 0) {
-    console.log('No tracking data yet. Use Claude Code normally and data will be collected automatically.');
+    console.log('No data yet — just use Claude Code normally and tracking starts automatically!');
     return;
   }
 
@@ -87,7 +87,7 @@ function generateFullReport() {
   }
 
   if (stats.topWastedFiles && stats.topWastedFiles.length > 0) {
-    report += '  TOP WASTED FILES (read but never used)\n';
+    report += '  FILES TO SKIP NEXT TIME (read but never used)\n';
     report += '  ' + '\u2500'.repeat(50) + '\n';
 
     for (const f of stats.topWastedFiles.slice(0, 10)) {
@@ -110,20 +110,20 @@ function generateFullReport() {
   report += '  ' + '\u2500'.repeat(50) + '\n';
 
   if (overallWaste > 40) {
-    report += '  [!] High waste ratio. Consider:\n';
+    report += '  Room to improve! Try:\n';
     report += '      - Use Grep/Glob to find specific files before reading\n';
     report += '      - Read only relevant sections with offset/limit\n';
     report += '      - Use Agent tool for exploratory searches\n';
   } else if (overallWaste > 20) {
-    report += '  [~] Moderate waste. You can improve by:\n';
+    report += '  Not bad! Save more by:\n';
     report += '      - Avoiding reading large config files fully\n';
     report += '      - Using /compact when switching tasks\n';
   } else {
-    report += '  [OK] Context usage is efficient. Keep it up!\n';
+    report += '  You're a context pro — tokens well spent!\n';
   }
 
   if (stats.avgTokensPerSession > 80000) {
-    report += '  [!] High avg token usage. Consider splitting large tasks into sub-sessions.\n';
+    report += '  Large sessions detected — try splitting big tasks into focused sub-sessions.\n';
   }
 
   report += '\n';
@@ -132,7 +132,7 @@ function generateFullReport() {
 
 function generateSessionList() {
   if (!existsSync(SESSIONS_DIR)) {
-    console.log('No sessions tracked yet.');
+    console.log('No sessions yet — start using Claude Code and tracking begins automatically!');
     return;
   }
 

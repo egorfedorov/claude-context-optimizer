@@ -120,7 +120,7 @@ function generateDigest(days) {
   output += `  \u255A${'═'.repeat(62)}\u255D\n\n`;
 
   if (sessions.length === 0) {
-    output += '  No sessions found in this period. Start using Claude Code!\n';
+    output += '  No sessions in this period yet. Just use Claude Code and data appears here automatically!\n';
     console.log(output);
     return;
   }
@@ -181,19 +181,19 @@ function generateDigest(days) {
   output += `  ${'─'.repeat(54)}\n`;
 
   if (efficiency.score >= 80) {
-    output += `  You're a context efficiency pro! Keep it up.\n`;
+    output += `  You're a context efficiency master! Keep it up.\n`;
   } else {
     if (efficiency.breakdown.wasteScore < 70) {
-      output += `  - Too many files read without being used. Try Grep first to find\n`;
-      output += `    the right file, then Read only what you need.\n`;
+      output += `  - Some files were read but never used. Try Grep first to pinpoint\n`;
+      output += `    what you need, then Read only that.\n`;
     }
     if (efficiency.breakdown.editScore < 40) {
-      output += `  - Low edit-to-read ratio. Are you exploring too much before acting?\n`;
-      output += `    Try describing the task precisely so Claude reads fewer files.\n`;
+      output += `  - Lots of reading, not much editing. Give Claude a precise task\n`;
+      output += `    description so it reads fewer files.\n`;
     }
     if (efficiency.breakdown.reReadPenalty < 60) {
-      output += `  - Files being re-read too often. Use /compact less aggressively,\n`;
-      output += `    or keep key files in context with templates.\n`;
+      output += `  - Files getting re-read a lot. Use templates to keep key files\n`;
+      output += `    in context, or go easy on /compact.\n`;
     }
   }
 

@@ -75,7 +75,7 @@ function buildCompactRecommendation(state) {
   if (droppable.length === 0) return null;
 
   const reclaimable = droppable.reduce((sum, [, d]) => sum + d.tokens, 0);
-  let msg = `[context-budget] Run /compact to free ~${formatTokens(reclaimable)} tokens:`;
+  let msg = `[context-budget] You can free ~${formatTokens(reclaimable)} tokens with /compact:`;
   for (const [path, d] of droppable) {
     msg += `\n  drop ${displayPath(path, 40)} (~${formatTokens(d.tokens)}, ${d.reads} reads, 0 edits)`;
   }
@@ -147,7 +147,7 @@ async function main() {
       state.lastCompactSuggestAt = state.totalTokensEstimated;
       const rec = buildCompactRecommendation(state);
       if (rec && rec.reclaimableTokens > 5000) {
-        console.error(`[context-budget] Still at ${usagePercent}% — ${formatTokens(rec.reclaimableTokens)} reclaimable via /compact`);
+        console.error(`[context-budget] Still at ${usagePercent}% — run /compact to reclaim ~${formatTokens(rec.reclaimableTokens)} tokens`);
       }
     }
   }

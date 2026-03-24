@@ -44,13 +44,14 @@ The #1 token waste in Claude Code: re-reading the same file multiple times per s
 Read Cache runs as a PreToolUse hook and **blocks** redundant reads when the file hasn't changed.
 
 ```
-⛔ [read-cache] Already loaded tracker.js this session (983 lines, ~9.3K tokens).
-   File unchanged. Use offset/limit to read a specific section, or Edit to modify it.
+💾 [read-cache] tracker.js is already in context (983 lines, ~9.3K tokens saved).
+   File unchanged — no need to re-read! Tip: use offset/limit for a specific section.
 ```
 
 - First read: always allowed
 - File modified since last read: allowed (detects via mtime)
 - Different section (offset/limit): allowed if not already covered
+- Agent subprocess reads: tracked separately — won't block reads in the main conversation
 - Same file, same range, unchanged: **blocked** — saves 100% of those tokens
 
 Typical savings: **30-60% fewer tokens** per session from read deduplication alone.
@@ -79,7 +80,7 @@ Generated: 2024-01-15 | 45 files | ~38K tokens if all read
 ContextShield runs as a **PreToolUse hook** and warns you *before* loading known-waste files. It checks historical patterns and suggests alternatives in real-time.
 
 ```
-[context-shield] README.md was WASTED in 5 sessions (~12.4K tokens burned).
+[context-shield] README.md went unused in 5 sessions (~12.4K tokens).
                  Use Grep to find specific content instead of full Read.
 [context-shield] utils.js is usually edited with: tracker.js, budget.js.
                  Consider loading them together.

@@ -23,7 +23,7 @@ From the patterns data, present:
 4. **Co-occurrence Groups**: Files that are usually edited together
 
 Format as a clean status report. If no pattern data exists yet, tell the user:
-"ContextShield is active but hasn't collected enough data yet. It learns from your usage patterns — keep working and it will start protecting you from wasteful reads."
+"ContextShield is warming up! It learns from your usage patterns and will start giving you smart suggestions after a few sessions."
 
 End the report with:
 ```

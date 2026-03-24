@@ -67,14 +67,14 @@ async function main() {
   const wasteData = proj.wastedReads[filePath];
   if (wasteData && wasteData.sessions >= 5) {
     warnings.push(
-      `[context-shield] ${basename(filePath)} was WASTED in ${wasteData.sessions} sessions ` +
-      `(~${formatTokens(wasteData.totalTokensWasted)} tokens burned). ` +
-      `Use Grep to find specific content instead of full Read.`
+      `[context-shield] ${basename(filePath)} went unused in ${wasteData.sessions} past sessions ` +
+      `(~${formatTokens(wasteData.totalTokensWasted)} tokens). ` +
+      `Try Grep to find what you need instead of reading the whole file.`
     );
   } else if (wasteData && wasteData.sessions >= 3) {
     warnings.push(
-      `[context-shield] ${basename(filePath)} was unused in ${wasteData.sessions} past sessions. ` +
-      `Consider: do you really need the full file? Try Grep or offset/limit.`
+      `[context-shield] Heads up: ${basename(filePath)} wasn't needed in ${wasteData.sessions} past sessions. ` +
+      `Try Grep or offset/limit to grab just what you need.`
     );
   }
 
@@ -86,8 +86,8 @@ async function main() {
       const editRate = freqData.totalEdits / freqData.totalReads;
       if (editRate < 0.1 && freqData.totalReads >= 5) {
         warnings.push(
-          `[context-shield] ${basename(filePath)}: read ${freqData.totalReads}x across ${freqData.sessions} sessions ` +
-          `but edited only ${freqData.totalEdits}x. Use offset/limit to read only the section you need.`
+          `[context-shield] ${basename(filePath)}: read ${freqData.totalReads}x but edited only ${freqData.totalEdits}x ` +
+          `across ${freqData.sessions} sessions. Reading less = faster results — try offset/limit!`
         );
       }
     }
@@ -103,8 +103,8 @@ async function main() {
     if (related.length > 0) {
       const names = related.map(([p]) => basename(p)).join(', ');
       warnings.push(
-        `[context-shield] ${basename(filePath)} is usually edited with: ${names}. ` +
-        `Consider loading them together.`
+        `[context-shield] Pro tip: ${basename(filePath)} is often edited with: ${names}. ` +
+        `Load them together to save time!`
       );
     }
   }
