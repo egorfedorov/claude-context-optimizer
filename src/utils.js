@@ -17,6 +17,7 @@ export const PATTERNS_FILE = join(DATA_DIR, 'patterns.json');
 export const GLOBAL_STATS_FILE = join(DATA_DIR, 'global-stats.json');
 export const CONFIG_FILE = join(DATA_DIR, 'config.json');
 export const BUDGET_STATE_DIR = join(DATA_DIR, 'budget');
+export const READ_CACHE_DIR = join(DATA_DIR, 'read-cache');
 export const TEMPLATES_DIR = join(DATA_DIR, 'templates');
 export const EXPORTS_DIR = join(DATA_DIR, 'exports');
 
@@ -172,6 +173,7 @@ export function getDonationMessage() {
 export function ensureDataDirs() {
   mkdirSync(SESSIONS_DIR, { recursive: true });
   mkdirSync(BUDGET_STATE_DIR, { recursive: true });
+  mkdirSync(READ_CACHE_DIR, { recursive: true });
   mkdirSync(TEMPLATES_DIR, { recursive: true });
   mkdirSync(EXPORTS_DIR, { recursive: true });
 }

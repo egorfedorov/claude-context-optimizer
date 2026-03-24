@@ -639,8 +639,8 @@
     </div>
     <h1>Stop <span class="highlight">burning tokens</span><br>on files Claude never uses</h1>
     <p class="hero-sub">
-      The average session wastes 30-50% of tokens on irrelevant context.
-      This plugin tracks everything silently and tells you exactly where your tokens go.
+      The average session wastes 30-50% of tokens on redundant file reads.
+      This plugin blocks re-reads automatically and saves 30-60% of wasted tokens.
     </p>
     <div class="hero-actions">
       <a href="#install" class="btn btn-primary">Install in 10 seconds</a>
@@ -709,8 +709,8 @@
       </div>
       <div class="step">
         <div class="step-num">3</div>
-        <h3>Real-time Guidance</h3>
-        <p>Warns you about waste as it happens. "This file was unused in 3 past sessions." Budget alerts. Smart suggestions.</p>
+        <h3>Active Prevention</h3>
+        <p>Blocks redundant file reads automatically. Warns about historically wasted files. Budget alerts when you're spending too fast.</p>
       </div>
     </div>
   </div>
@@ -762,9 +762,9 @@
 
     <div class="auto-grid">
       <div class="auto-item">
-        <div class="auto-when">Session Start</div>
+        <div class="auto-when">Every Re-Read</div>
         <div class="auto-what">
-          <p><strong>Weekly savings streak</strong> &mdash; shows waste trend. Warns about files that are always wasted in this project.</p>
+          <p><strong>Smart Read Cache</strong> &mdash; automatically blocks re-reading unchanged files. Detects mtime changes, allows new sections. Saves 30-60% of tokens.</p>
         </div>
       </div>
       <div class="auto-item">
@@ -783,6 +783,12 @@
         <div class="auto-when">Session End</div>
         <div class="auto-what">
           <p><strong>Performance comparison</strong> &mdash; "12% waste. Better than your avg (19%)!" Motivates improvement.</p>
+        </div>
+      </div>
+      <div class="auto-item">
+        <div class="auto-when">Session Start</div>
+        <div class="auto-what">
+          <p><strong>Weekly savings streak</strong> &mdash; shows waste trend. Warns about files that are always wasted in this project.</p>
         </div>
       </div>
       <div class="auto-item">
@@ -842,6 +848,16 @@
         <p>Run <code>/cco-templates create bug-fix</code> to save file presets for common tasks. Load them instantly with <code>apply</code>.</p>
       </div>
       <div class="feature">
+        <div class="feature-icon red">&#x26D4;</div>
+        <h3>Smart Read Cache</h3>
+        <p>Blocks redundant file reads automatically. If Claude already loaded a file and it hasn't changed, the read is <strong>blocked</strong> — saving 100% of those tokens. Typical savings: <strong>30-60%</strong>.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon green">&#x1F5FA;</div>
+        <h3>Project Anatomy</h3>
+        <p>Run <code>/cco-anatomy</code> to generate a compact codebase map. Every file with size, tokens, and category. Claude reads one file instead of twenty.</p>
+      </div>
+      <div class="feature">
         <div class="feature-icon red">&#x1F6E1;</div>
         <h3>ContextShield</h3>
         <p>PreToolUse hook that warns <strong>before</strong> loading known-waste files. Suggests Grep or offset/limit alternatives. Zero config.</p>
@@ -853,7 +869,7 @@
       </div>
       <div class="feature">
         <div class="feature-icon blue">&#x1F4CA;</div>
-        <h3>Interactive Dashboard</h3>
+        <h3>HTML Dashboard Export</h3>
         <p>Run <code>/cco-export html</code> for a Chart.js powered dashboard with waste trends, token usage, project breakdown, and edit timelines.</p>
       </div>
       <div class="feature">

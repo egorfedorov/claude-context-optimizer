@@ -1,6 +1,6 @@
 {
   "name": "claude-context-optimizer",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "ContextShield, CLAUDE.md analyzer, interactive dashboard, confidence learning, and token optimization for Claude Code",
   "author": {
     "name": "Egor Fedorov"
