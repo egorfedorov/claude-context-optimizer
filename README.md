@@ -214,6 +214,14 @@ To make it persistent, add to `~/.claude/settings.json`:
 }
 ```
 
+### Updating
+
+```bash
+claude plugin update claude-context-optimizer@egorfedorov-plugins
+```
+
+Then restart Claude Code to apply the update.
+
 ### Requirements
 
 - Node.js >= 18
