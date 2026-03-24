@@ -1,15 +1,28 @@
 #!/usr/bin/env node
 
 /**
- * Read Cache v1.1
+ * Read Cache v2.0 — Smart Context-Aware Blocking
  *
- * PreToolUse hook that BLOCKS redundant file reads within the same session.
- * Maintains a per-session cache of files already read. If a file was fully
- * loaded and its mtime hasn't changed, the read is blocked to save tokens.
- * Partial reads (offset/limit) are allowed if they cover a new range.
+ * PreToolUse hook that prevents redundant file reads while giving the AI
+ * enough navigational context to work effectively.
  *
- * v1.1: Tracks process context (PPID) so Agent subprocess reads don't
- * block reads in the main conversation. Smarter hint messages.
+ * v2.0 improvements over v1.1:
+ *   1. File Structure Digest — on block, returns a "file map" with function
+ *      names, classes, sections and their line numbers (~100 tokens instead
+ *      of re-reading ~18K tokens). Gives AI navigation ability.
+ *   2. Staleness Detection — allows re-reads when context has likely shifted:
+ *      - 20K+ tokens of other files loaded since this file (displacement)
+ *      - OR 8+ other files loaded since (displacement by count)
+ *      - OR 10+ minutes since last read (time decay)
+ *   3. Better Messages — actionable hints with specific offset/limit examples
+ *      derived from the file's structural map.
+ *
+ * v1.1 features preserved:
+ *   - PPID tracking for Agent subprocess isolation
+ *   - Range tracking for partial reads
+ *   - Edit/Write invalidation
+ *   - PreCompact cache clearing
+ *   - .contextignore integration
  */
 
 import { basename, extname, join } from 'path';
@@ -19,8 +32,22 @@ import {
   estimateTokens, formatTokens, loadJSON, saveJSON, ensureDataDirs
 } from './utils.js';
 import { isContextIgnored } from './contextignore.js';
+import { parseFileStructure, formatDigest } from './file-digest.js';
 
 ensureDataDirs();
+
+// ── Configuration ─────────────────────────────────────────────────────────────
+
+/** Tokens loaded by other files since last read that triggers staleness. */
+const STALE_DISPLACEMENT_TOKENS = 20_000;
+
+/** Number of other files loaded since last read that triggers staleness. */
+const STALE_DISPLACEMENT_FILES = 8;
+
+/** Time in ms since last read that triggers staleness (10 minutes). */
+const STALE_TIME_MS = 10 * 60 * 1000;
+
+// ── Cache I/O ─────────────────────────────────────────────────────────────────
 
 function loadCache(sessionId) {
   const file = join(READ_CACHE_DIR, `${sessionId}.json`);
@@ -30,6 +57,8 @@ function loadCache(sessionId) {
 function saveCache(sessionId, cache) {
   saveJSON(join(READ_CACHE_DIR, `${sessionId}.json`), cache);
 }
+
+// ── Range coverage ────────────────────────────────────────────────────────────
 
 /** Check if [offset, end] is fully covered by existing ranges. */
 function isRangeCovered(ranges, offset, end) {
@@ -50,11 +79,71 @@ function isRangeCovered(ranges, offset, end) {
   return false;
 }
 
+// ── Staleness detection ───────────────────────────────────────────────────────
+
+/**
+ * Check if a cache entry is "stale" — meaning the file's content has likely
+ * been evicted from the AI's active context.
+ *
+ * Two signals:
+ *   1. Displacement: enough other files/tokens were loaded after this file
+ *      that the original content was probably compressed/evicted.
+ *   2. Time decay: enough real time passed that context has likely shifted.
+ *
+ * Returns { stale: boolean, reason: string }.
+ */
+function checkStaleness(cache, filePath) {
+  const entry = cache.files[filePath];
+  if (!entry || !entry.readAtMs) return { stale: false, reason: '' };
+
+  const readTime = entry.readAtMs;
+  let newerFiles = 0;
+  let newerTokens = 0;
+
+  for (const [path, other] of Object.entries(cache.files)) {
+    if (path === filePath) continue;
+    if ((other.readAtMs || 0) > readTime) {
+      newerFiles++;
+      newerTokens += other.tokens || 0;
+    }
+  }
+
+  // Displacement check — token-based
+  if (newerTokens >= STALE_DISPLACEMENT_TOKENS) {
+    return {
+      stale: true,
+      reason: `${formatTokens(newerTokens)} tokens of other files loaded since last read`
+    };
+  }
+
+  // Displacement check — file count based
+  if (newerFiles >= STALE_DISPLACEMENT_FILES) {
+    return {
+      stale: true,
+      reason: `${newerFiles} other files loaded since last read`
+    };
+  }
+
+  // Time decay check
+  const elapsed = Date.now() - readTime;
+  if (elapsed >= STALE_TIME_MS) {
+    const mins = Math.round(elapsed / 60_000);
+    return {
+      stale: true,
+      reason: `${mins} min since last read`
+    };
+  }
+
+  return { stale: false, reason: '' };
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 function getMtime(filePath) {
   try { return statSync(filePath).mtimeMs; } catch { return null; }
 }
 
-function allow(sessionId, cache, filePath, mtime, offset, end, ext, ppid) {
+function allow(sessionId, cache, filePath, mtime, offset, end, ext, ppid, logMsg) {
   const tokens = estimateTokens(end - offset, ext);
   const existing = cache.files[filePath];
   cache.files[filePath] = {
@@ -62,12 +151,46 @@ function allow(sessionId, cache, filePath, mtime, offset, end, ext, ppid) {
     lines: end - offset,
     tokens,
     readAt: new Date().toISOString(),
+    readAtMs: Date.now(),
     ranges: [[offset, end]],
     ppids: existing ? [...new Set([...(existing.ppids || []), ppid])] : [ppid]
   };
   saveCache(sessionId, cache);
+  if (logMsg) console.error(logMsg);
   process.exit(0);
 }
+
+// ── Build digest block message ────────────────────────────────────────────────
+
+function buildBlockMessage(filePath, entry, wasPartialRequest) {
+  const name = basename(filePath);
+  let landmarks, digest;
+  try {
+    landmarks = parseFileStructure(filePath);
+    digest = formatDigest(landmarks, entry.lines);
+  } catch {
+    landmarks = [];
+    digest = '';
+  }
+
+  // Pick a useful offset/limit suggestion from the landmarks
+  let suggestion = '';
+  if (landmarks.length > 1) {
+    const mid = landmarks[Math.floor(landmarks.length / 2)];
+    suggestion = `\n→ Example: Read with offset=${mid.line - 1}, limit=50 to see ${mid.label}`;
+  }
+
+  const partialHint = wasPartialRequest ? ' This section is already loaded.' : '';
+
+  const reason =
+    `⛔ [read-cache] Already loaded ${name} this session ` +
+    `(${entry.lines} lines, ~${formatTokens(entry.tokens)} tokens).` +
+    `${partialHint} File unchanged.\n${digest}${suggestion}`;
+
+  return reason;
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
   let input = '';
@@ -77,7 +200,7 @@ async function main() {
   let event;
   try { event = JSON.parse(input); } catch { process.exit(0); }
 
-  // On compaction, Claude forgets file contents — clear the cache
+  // ── PreCompact: clear cache (context is being compressed) ───────────
   if (event.hook_event_name === 'PreCompact') {
     const sessionId = event.session_id || 'unknown';
     const cache = loadCache(sessionId);
@@ -90,7 +213,7 @@ async function main() {
     process.exit(0);
   }
 
-  // On Edit/Write, the file content changed — invalidate its cache entry
+  // ── PostToolUse: invalidate cache on Edit/Write ─────────────────────
   if (event.hook_event_name === 'PostToolUse' && (event.tool_name === 'Edit' || event.tool_name === 'Write')) {
     const filePath = (event.tool_input || {}).file_path || '';
     if (filePath) {
@@ -116,7 +239,7 @@ async function main() {
     process.exit(0);
   }
 
-  // Check .contextignore — block files matching ignore patterns
+  // ── .contextignore check ────────────────────────────────────────────
   const ignoreResult = isContextIgnored(filePath);
   if (ignoreResult.ignored) {
     const reason = `🚫 [contextignore] ${basename(filePath)} matches pattern "${ignoreResult.pattern}" in .contextignore. ` +
@@ -132,58 +255,56 @@ async function main() {
   const cache = loadCache(sessionId);
   const entry = cache.files[filePath];
 
-  // First read — always allow
+  // ── First read — always allow ───────────────────────────────────────
   if (!entry) {
     allow(sessionId, cache, filePath, getMtime(filePath), offset, end, ext, ppid);
   }
 
-  // Check mtime
+  // ── File deleted — allow (Read tool will return error naturally) ─────
   const currentMtime = getMtime(filePath);
-  if (currentMtime === null) process.exit(0); // file gone — allow, will fail naturally
+  if (currentMtime === null) process.exit(0);
 
-  // File modified since last read — reset cache entry and allow
+  // ── File modified since last read — allow ───────────────────────────
   if (currentMtime !== entry.mtime) {
-    allow(sessionId, cache, filePath, currentMtime, offset, end, ext, ppid);
+    allow(sessionId, cache, filePath, currentMtime, offset, end, ext, ppid,
+      `[read-cache] ${basename(filePath)} changed on disk — cache refreshed.`);
   }
 
-  // Different process context (e.g., main conversation vs Agent subprocess).
-  // Agent reads go into the agent's context, not the main conversation,
-  // so we must not block reads from a different process context.
+  // ── Different process context (Agent subprocess) — allow ────────────
   if (!(entry.ppids || []).includes(ppid)) {
     entry.ppids = [...new Set([...(entry.ppids || []), ppid])];
     entry.readAt = new Date().toISOString();
+    entry.readAtMs = Date.now();
     saveCache(sessionId, cache);
-    process.exit(0); // allow — different context
+    process.exit(0);
   }
 
-  // File unchanged — check range coverage
+  // ── New range not yet covered — allow ───────────────────────────────
   if (!isRangeCovered(entry.ranges, offset, end)) {
-    // New range — allow and record
     entry.ranges.push([offset, end]);
     entry.ppids = [...new Set([...(entry.ppids || []), ppid])];
     entry.lines += limit;
     entry.tokens += estimateTokens(limit, ext);
     entry.readAt = new Date().toISOString();
+    entry.readAtMs = Date.now();
     saveCache(sessionId, cache);
     process.exit(0);
   }
 
-  // Redundant read — BLOCK
+  // ── Staleness check — context may have shifted ──────────────────────
+  const staleness = checkStaleness(cache, filePath);
+  if (staleness.stale) {
+    allow(sessionId, cache, filePath, currentMtime, offset, end, ext, ppid,
+      `[read-cache] Re-read allowed: ${basename(filePath)} context is stale (${staleness.reason}).`);
+  }
+
+  // ── Redundant read — BLOCK with structural digest ───────────────────
   cache.totalTokensSaved += estimateTokens(limit, ext);
   cache.blockedReads += 1;
   saveCache(sessionId, cache);
 
-  // Smart hint: if user specified offset/limit and it's cached, say so.
-  // If full-file read, suggest offset/limit for a different section.
   const wasPartialRequest = !!(toolInput.offset || toolInput.limit);
-  const hint = wasPartialRequest
-    ? 'This section is already loaded.'
-    : 'Tip: use offset/limit to read a different section.';
-
-  const reason =
-    `💾 [read-cache] ${basename(filePath)} is already in context ` +
-    `(${entry.lines} lines, ~${formatTokens(entry.tokens)} tokens saved). ` +
-    `File unchanged — no need to re-read! ${hint}`;
+  const reason = buildBlockMessage(filePath, entry, wasPartialRequest);
 
   console.log(JSON.stringify({ decision: 'block', reason }));
 }

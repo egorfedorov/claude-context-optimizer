@@ -608,3 +608,377 @@ describe('budget config', () => {
     });
   });
 });
+
+// ── File Digest tests ─────────────────────────────────────────────────────────
+
+import { parseFileStructure, formatDigest } from '../src/file-digest.js';
+
+describe('file-digest', () => {
+  describe('parseFileStructure', () => {
+    it('returns empty array for non-existent file', () => {
+      const result = parseFileStructure('/tmp/nonexistent-file-' + Date.now() + '.js');
+      assert.deepEqual(result, []);
+    });
+
+    it('detects JS functions', () => {
+      const tmp = '/tmp/test-digest-func-' + Date.now() + '.js';
+      writeFileSync(tmp, [
+        'import { foo } from "bar";',
+        'import { baz } from "qux";',
+        '',
+        'function handleClick() {',
+        '  console.log("clicked");',
+        '}',
+        '',
+        'async function fetchData() {',
+        '  return fetch("/api");',
+        '}',
+        '',
+        'export default handleClick;',
+      ].join('\n'));
+      try {
+        const landmarks = parseFileStructure(tmp);
+        const labels = landmarks.map(l => l.label);
+        assert.ok(labels.some(l => l.includes('imports')), 'should detect import block');
+        assert.ok(labels.some(l => l.includes('handleClick')), 'should detect handleClick');
+        assert.ok(labels.some(l => l.includes('fetchData')), 'should detect fetchData');
+        assert.ok(labels.some(l => l.includes('export default')), 'should detect export default');
+      } finally {
+        try { unlinkSync(tmp); } catch {}
+      }
+    });
+
+    it('detects classes and interfaces', () => {
+      const tmp = '/tmp/test-digest-class-' + Date.now() + '.ts';
+      writeFileSync(tmp, [
+        'interface UserProps {',
+        '  name: string;',
+        '}',
+        '',
+        'export class UserService {',
+        '  constructor() {}',
+        '  getUser() { return null; }',
+        '}',
+        '',
+        'type ID = string | number;',
+      ].join('\n'));
+      try {
+        const landmarks = parseFileStructure(tmp);
+        const labels = landmarks.map(l => l.label);
+        assert.ok(labels.some(l => l.includes('UserProps')), 'should detect interface');
+        assert.ok(labels.some(l => l.includes('UserService')), 'should detect class');
+        assert.ok(labels.some(l => l.includes('ID')), 'should detect type alias');
+      } finally {
+        try { unlinkSync(tmp); } catch {}
+      }
+    });
+
+    it('detects Svelte sections', () => {
+      const tmp = '/tmp/test-digest-svelte-' + Date.now() + '.svelte';
+      writeFileSync(tmp, [
+        '<script lang="ts">',
+        '  let count = 0;',
+        '  function increment() { count++; }',
+        '</script>',
+        '',
+        '<button on:click={increment}>',
+        '  {count}',
+        '</button>',
+        '',
+        '<style>',
+        '  button { color: red; }',
+        '</style>',
+      ].join('\n'));
+      try {
+        const landmarks = parseFileStructure(tmp);
+        const labels = landmarks.map(l => l.label);
+        assert.ok(labels.some(l => l === '<script>'), 'should detect <script>');
+        assert.ok(labels.some(l => l.includes('increment')), 'should detect function inside script');
+        assert.ok(labels.some(l => l === '<style>'), 'should detect <style>');
+      } finally {
+        try { unlinkSync(tmp); } catch {}
+      }
+    });
+
+    it('detects Python functions and classes', () => {
+      const tmp = '/tmp/test-digest-py-' + Date.now() + '.py';
+      writeFileSync(tmp, [
+        'import os',
+        'from pathlib import Path',
+        '',
+        'class FileProcessor:',
+        '    def __init__(self):',
+        '        pass',
+        '',
+        '    async def process(self, path):',
+        '        return Path(path).read_text()',
+        '',
+        'def main():',
+        '    fp = FileProcessor()',
+      ].join('\n'));
+      try {
+        const landmarks = parseFileStructure(tmp);
+        const labels = landmarks.map(l => l.label);
+        assert.ok(labels.some(l => l.includes('FileProcessor')), 'should detect class');
+        assert.ok(labels.some(l => l.includes('__init__')), 'should detect __init__');
+        assert.ok(labels.some(l => l.includes('process')), 'should detect async def');
+        assert.ok(labels.some(l => l.includes('main')), 'should detect main');
+      } finally {
+        try { unlinkSync(tmp); } catch {}
+      }
+    });
+
+    it('detects Go funcs and types', () => {
+      const tmp = '/tmp/test-digest-go-' + Date.now() + '.go';
+      writeFileSync(tmp, [
+        'package main',
+        '',
+        'import "fmt"',
+        '',
+        'type Server struct {',
+        '    port int',
+        '}',
+        '',
+        'func (s *Server) Start() {',
+        '    fmt.Println("starting")',
+        '}',
+        '',
+        'func NewServer(port int) *Server {',
+        '    return &Server{port: port}',
+        '}',
+      ].join('\n'));
+      try {
+        const landmarks = parseFileStructure(tmp);
+        const labels = landmarks.map(l => l.label);
+        assert.ok(labels.some(l => l.includes('Server') && l.includes('struct')), 'should detect struct');
+        assert.ok(labels.some(l => l.includes('Start')), 'should detect method');
+        assert.ok(labels.some(l => l.includes('NewServer')), 'should detect func');
+      } finally {
+        try { unlinkSync(tmp); } catch {}
+      }
+    });
+
+    it('detects Rust items', () => {
+      const tmp = '/tmp/test-digest-rs-' + Date.now() + '.rs';
+      writeFileSync(tmp, [
+        'pub struct Config {',
+        '    pub port: u16,',
+        '}',
+        '',
+        'pub enum Mode {',
+        '    Debug,',
+        '    Release,',
+        '}',
+        '',
+        'impl Config {',
+        '    pub fn new() -> Self {',
+        '        Config { port: 8080 }',
+        '    }',
+        '}',
+        '',
+        'pub trait Service {',
+        '    fn start(&self);',
+        '}',
+      ].join('\n'));
+      try {
+        const landmarks = parseFileStructure(tmp);
+        const labels = landmarks.map(l => l.label);
+        assert.ok(labels.some(l => l.includes('struct Config')), 'should detect struct');
+        assert.ok(labels.some(l => l.includes('enum Mode')), 'should detect enum');
+        assert.ok(labels.some(l => l.includes('impl Config')), 'should detect impl');
+        assert.ok(labels.some(l => l.includes('fn new')), 'should detect fn');
+        assert.ok(labels.some(l => l.includes('trait Service')), 'should detect trait');
+      } finally {
+        try { unlinkSync(tmp); } catch {}
+      }
+    });
+
+    it('collapses multiple imports into a single range', () => {
+      const tmp = '/tmp/test-digest-imports-' + Date.now() + '.js';
+      writeFileSync(tmp, [
+        'import { a } from "a";',
+        'import { b } from "b";',
+        'import { c } from "c";',
+        'import { d } from "d";',
+        '',
+        'function main() {}',
+      ].join('\n'));
+      try {
+        const landmarks = parseFileStructure(tmp);
+        const importEntries = landmarks.filter(l => l.label.includes('import'));
+        assert.equal(importEntries.length, 1, 'should collapse to single import entry');
+        assert.ok(importEntries[0].label.includes('1'), 'should start at line 1');
+        assert.ok(importEntries[0].label.includes('4'), 'should end at line 4');
+      } finally {
+        try { unlinkSync(tmp); } catch {}
+      }
+    });
+
+    it('detects JSON top-level keys', () => {
+      const tmp = '/tmp/test-digest-json-' + Date.now() + '.json';
+      writeFileSync(tmp, JSON.stringify({
+        name: "test",
+        version: "1.0.0",
+        dependencies: { foo: "^1.0" },
+        scripts: { test: "node test" }
+      }, null, 2));
+      try {
+        const landmarks = parseFileStructure(tmp);
+        const labels = landmarks.map(l => l.label);
+        assert.ok(labels.some(l => l.includes('name')), 'should detect "name"');
+        assert.ok(labels.some(l => l.includes('version')), 'should detect "version"');
+        assert.ok(labels.some(l => l.includes('dependencies')), 'should detect "dependencies"');
+        assert.ok(labels.some(l => l.includes('scripts')), 'should detect "scripts"');
+      } finally {
+        try { unlinkSync(tmp); } catch {}
+      }
+    });
+  });
+
+  describe('formatDigest', () => {
+    it('returns message for empty landmarks', () => {
+      const result = formatDigest([], 100);
+      assert.ok(result.includes('No structural landmarks'));
+      assert.ok(result.includes('100'));
+    });
+
+    it('formats landmarks with line numbers', () => {
+      const landmarks = [
+        { line: 1, label: 'imports (1–5)' },
+        { line: 10, label: 'function main()' },
+        { line: 50, label: 'class Foo' },
+      ];
+      const result = formatDigest(landmarks, 200);
+      assert.ok(result.includes('File map'));
+      assert.ok(result.includes('200 lines'));
+      assert.ok(result.includes('function main()'));
+      assert.ok(result.includes('class Foo'));
+      assert.ok(result.includes('10'));
+      assert.ok(result.includes('50'));
+    });
+
+    it('caps at ~20 entries for large files', () => {
+      const landmarks = Array.from({ length: 50 }, (_, i) => ({
+        line: i * 10,
+        label: `item_${i}`
+      }));
+      const result = formatDigest(landmarks, 500);
+      const entryLines = result.split('\n').filter(l => l.trim().match(/^\d+:/));
+      assert.ok(entryLines.length <= 21, `should cap at ~20 entries, got ${entryLines.length}`);
+    });
+  });
+});
+
+// ── Staleness detection tests (using recreated logic) ─────────────────────────
+
+describe('staleness detection', () => {
+  // Recreate checkStaleness as a pure function for testing
+  const STALE_DISPLACEMENT_TOKENS = 20_000;
+  const STALE_DISPLACEMENT_FILES = 8;
+  const STALE_TIME_MS = 10 * 60 * 1000;
+
+  function checkStaleness(cache, filePath) {
+    const entry = cache.files[filePath];
+    if (!entry || !entry.readAtMs) return { stale: false, reason: '' };
+
+    const readTime = entry.readAtMs;
+    let newerFiles = 0;
+    let newerTokens = 0;
+
+    for (const [path, other] of Object.entries(cache.files)) {
+      if (path === filePath) continue;
+      if ((other.readAtMs || 0) > readTime) {
+        newerFiles++;
+        newerTokens += other.tokens || 0;
+      }
+    }
+
+    if (newerTokens >= STALE_DISPLACEMENT_TOKENS) {
+      return { stale: true, reason: 'token displacement' };
+    }
+    if (newerFiles >= STALE_DISPLACEMENT_FILES) {
+      return { stale: true, reason: 'file displacement' };
+    }
+    const elapsed = Date.now() - readTime;
+    if (elapsed >= STALE_TIME_MS) {
+      return { stale: true, reason: 'time decay' };
+    }
+    return { stale: false, reason: '' };
+  }
+
+  it('returns not stale for missing entry', () => {
+    const cache = { files: {} };
+    assert.equal(checkStaleness(cache, '/foo.js').stale, false);
+  });
+
+  it('returns not stale for fresh entry with no newer files', () => {
+    const cache = {
+      files: {
+        '/foo.js': { readAtMs: Date.now(), tokens: 5000 }
+      }
+    };
+    assert.equal(checkStaleness(cache, '/foo.js').stale, false);
+  });
+
+  it('detects staleness by token displacement', () => {
+    const now = Date.now();
+    const cache = {
+      files: {
+        '/old.js': { readAtMs: now - 60000, tokens: 5000 },
+        '/new1.js': { readAtMs: now - 30000, tokens: 12000 },
+        '/new2.js': { readAtMs: now - 20000, tokens: 12000 },
+      }
+    };
+    const result = checkStaleness(cache, '/old.js');
+    assert.equal(result.stale, true);
+    assert.ok(result.reason.includes('token'));
+  });
+
+  it('detects staleness by file count displacement', () => {
+    const now = Date.now();
+    const files = { '/old.js': { readAtMs: now - 60000, tokens: 1000 } };
+    for (let i = 0; i < 9; i++) {
+      files[`/new${i}.js`] = { readAtMs: now - 50000 + i * 1000, tokens: 500 };
+    }
+    const cache = { files };
+    const result = checkStaleness(cache, '/old.js');
+    assert.equal(result.stale, true);
+    assert.ok(result.reason.includes('file'));
+  });
+
+  it('detects staleness by time decay', () => {
+    const cache = {
+      files: {
+        '/old.js': { readAtMs: Date.now() - 11 * 60 * 1000, tokens: 5000 }
+      }
+    };
+    const result = checkStaleness(cache, '/old.js');
+    assert.equal(result.stale, true);
+    assert.ok(result.reason.includes('time'));
+  });
+
+  it('does not trigger staleness for small displacement', () => {
+    const now = Date.now();
+    const cache = {
+      files: {
+        '/old.js': { readAtMs: now - 60000, tokens: 5000 },
+        '/new1.js': { readAtMs: now - 30000, tokens: 3000 },
+        '/new2.js': { readAtMs: now - 20000, tokens: 3000 },
+      }
+    };
+    const result = checkStaleness(cache, '/old.js');
+    assert.equal(result.stale, false);
+  });
+
+  it('ignores files older than the target', () => {
+    const now = Date.now();
+    const cache = {
+      files: {
+        '/target.js': { readAtMs: now - 60000, tokens: 5000 },
+        '/older.js': { readAtMs: now - 120000, tokens: 50000 },
+      }
+    };
+    const result = checkStaleness(cache, '/target.js');
+    assert.equal(result.stale, false, 'older files should not count as displacement');
+  });
+});
