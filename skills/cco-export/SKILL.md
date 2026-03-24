@@ -2,7 +2,7 @@
 name: cco-export
 description: Export context report as Markdown or HTML
 license: MIT
-argument-hint: [md|html] (default: md)
+argument-hint: "[md|html] (default: md)"
 allowed-tools: [Bash]
 ---
 

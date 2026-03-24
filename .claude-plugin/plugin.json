@@ -1,7 +1,7 @@
 {
   "name": "claude-context-optimizer",
-  "version": "2.1.0",
-  "description": "Intelligent context tracking, token ROI analysis, and auto-optimization for Claude Code sessions.",
+  "version": "3.0.0",
+  "description": "ContextShield, CLAUDE.md analyzer, interactive dashboard, confidence learning, and token optimization for Claude Code",
   "author": {
     "name": "Egor Fedorov"
   },

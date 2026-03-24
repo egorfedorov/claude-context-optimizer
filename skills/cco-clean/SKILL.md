@@ -2,7 +2,7 @@
 name: cco-clean
 description: Clean up old tracking data and reset statistics
 license: MIT
-argument-hint: [--sessions-older-than <days>] [--reset-all]
+argument-hint: "[--sessions-older-than <days>] [--reset-all]"
 allowed-tools: [Bash]
 ---
 

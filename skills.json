@@ -12,6 +12,7 @@
     "./skills/cco-export",
     "./skills/cco-clean",
     "./skills/cco-shield",
-    "./skills/cco-claudemd"
+    "./skills/cco-claudemd",
+    "./skills/smart-loader"
   ]
 }
