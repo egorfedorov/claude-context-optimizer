@@ -38,6 +38,52 @@ At $15/M tokens (Opus), a developer spending $100/month is lighting **$30-50 on 
 
 ## Features
 
+### NEW: ContextShield — proactive waste prevention
+
+ContextShield runs as a **PreToolUse hook** and warns you *before* loading known-waste files. It checks historical patterns and suggests alternatives in real-time.
+
+```
+[context-shield] README.md was WASTED in 5 sessions (~12.4K tokens burned).
+                 Use Grep to find specific content instead of full Read.
+[context-shield] utils.js is usually edited with: tracker.js, budget.js.
+                 Consider loading them together.
+```
+
+Run `/cco-shield` to see protection status and stats.
+
+### NEW: CLAUDE.md Analyzer — trim the bloat
+
+Run `/cco-claudemd` to analyze your CLAUDE.md for token waste: duplicates, verbose patterns, oversized code blocks, excessive whitespace. Get concrete suggestions with estimated savings.
+
+```
+  CLAUDE.MD ANALYSIS
+  ══════════════════════════════════════════════════════════════
+  File: /project/CLAUDE.md
+  Size: 342 lines | ~2.9K tokens
+
+  ISSUES (4)
+  ──────────────────────────────────────────────────────────────
+  ⚠ 3 duplicate line(s) found (~25 saveable)
+  ● "please make sure to" found 4x — Simplify to: "Always X" (~12 saveable)
+  ● Code block at line 45 is 38 lines — consider shortening (~233 saveable)
+  ○ 28% empty/separator lines — reduce for token savings (~98 saveable)
+
+  POTENTIAL SAVINGS: ~368 tokens
+```
+
+### NEW: Confidence Learning — smart pattern scoring
+
+File patterns now have confidence scores (0.0-1.0) based on session count, usefulness consistency, and recency. High-confidence patterns produce stronger recommendations; old unused patterns decay naturally.
+
+### NEW: Interactive Dashboard — Chart.js analytics
+
+Run `/cco-export html` to generate an interactive dashboard with:
+- Waste trend line chart
+- Token usage bar chart
+- Project breakdown doughnut
+- Edits-per-session timeline
+- Click-to-copy donation wallets
+
 ### Context Heatmap — see where your tokens go
 
 Run `/cco` to get a visual breakdown of every file in your session. Green = useful. Red = waste.
@@ -92,10 +138,6 @@ Create reusable context sets for different task types:
 
 The plugin learns from your behavior. When you start a new task, it silently suggests files you'll probably need based on historical patterns. No configuration required.
 
-### HTML Export — shareable dashboards
-
-Run `/cco-export html` to generate a beautiful dark-themed dashboard you can open in any browser or share with your team.
-
 ---
 
 ## All Commands
@@ -110,8 +152,10 @@ When installed as a plugin, commands are namespaced: `/claude-context-optimizer:
 | `/cco-budget [status\|set\|model]` | Token budget — configure limits and cost model |
 | `/cco-git` | Git-aware suggestions — smart file loading based on diff |
 | `/cco-templates [list\|create\|apply\|delete]` | Context templates — reusable file sets for task types |
-| `/cco-export [md\|html]` | Export reports — Markdown or HTML dashboard |
+| `/cco-export [md\|html]` | Export reports — Markdown or interactive HTML dashboard |
 | `/cco-clean` | Cleanup — remove old tracking data |
+| `/cco-shield` | ContextShield status — waste protection stats |
+| `/cco-claudemd` | CLAUDE.md analyzer — find and fix token bloat |
 
 ---
 
@@ -162,6 +206,11 @@ Once installed, the plugin works **automatically** — no commands needed. Here'
 - Warns about files that were consistently wasted in this project
 - Mentions auto-generated templates if available
 
+**Before every file read (ContextShield):**
+- Checks if the file was wasted in 3+ past sessions — warns with token count
+- Suggests Grep for known-waste files instead of full Read
+- Shows co-occurrence groups ("this file is usually edited with X and Y")
+
 **On every file read:**
 - Warns if a file has been read 3+ times without edits (suggests offset/limit)
 - Warns if a file was wasted in 2+ past sessions ("Try Grep for specific content instead")
@@ -191,27 +240,35 @@ You use Claude Code normally
          │
          ▼
 ┌─────────────────────┐
+│  PreToolUse Hook     │  ContextShield: warns before loading known-waste files.
+│  context-shield.js   │  Checks history, suggests Grep/offset/limit alternatives.
+└─────────┬───────────┘
+          │
+          ▼
+┌─────────────────────┐
 │  PostToolUse Hook    │  Silent. Runs on every Read/Edit/Write/Glob/Grep/Agent.
 │  tracker.js          │  Records: file path, line count, token estimate, timestamp.
+│  budget.js           │  Tracks token accumulation, warns at thresholds.
 └─────────┬───────────┘
           │
           ▼
 ┌─────────────────────┐
 │  Session Store       │  ~/.claude-context-optimizer/sessions/<id>.json
-│  Per-file tracking   │  Reads, edits, usefulness score, token estimate.
+│  Per-file tracking   │  Reads, edits, usefulness score, confidence score.
 └─────────┬───────────┘
           │
           ▼
 ┌─────────────────────┐
 │  SessionEnd Hook     │  Finalizes session. Computes waste. Updates patterns DB.
-│  Pattern Learning    │  Tracks which files are consistently useful/wasted.
+│  Confidence Learning │  Patterns scored 0.0-1.0, decay over time.
 └─────────┬───────────┘
           │
           ▼
 ┌─────────────────────┐
-│  Reports & Insights  │  /cco, /cco-report, /cco-digest
-│  Budget Alerts       │  Real-time warnings when approaching token limits.
-│  Smart Suggestions   │  File recommendations based on git state + history.
+│  Reports & Insights  │  /cco, /cco-report, /cco-digest, /cco-claudemd
+│  Interactive Charts  │  HTML dashboard with Chart.js analytics
+│  ContextShield       │  Proactive waste prevention before file reads
+│  Smart Suggestions   │  Confidence-scored recommendations
 └─────────────────────┘
 ```
 
@@ -254,13 +311,15 @@ claude-context-optimizer/
 ├── .claude-plugin/
 │   └── plugin.json          # Plugin manifest
 ├── src/
-│   ├── utils.js             # Shared constants, formatting, scoring
+│   ├── utils.js             # Shared constants, formatting, scoring, donation info
 │   ├── tracker.js           # Core: file & token tracking engine
+│   ├── context-shield.js    # ContextShield: PreToolUse waste prevention
+│   ├── claudemd-analyzer.js # CLAUDE.md token bloat analyzer
 │   ├── budget.js            # Token budget monitor with alerts
 │   ├── digest.js            # Efficiency score & weekly digest
 │   ├── git-context.js       # Git-aware context suggestions
 │   ├── report.js            # ROI report generator
-│   └── export.js            # MD/HTML report exporter
+│   └── export.js            # Interactive Chart.js HTML dashboard exporter
 ├── skills/
 │   ├── cco/SKILL.md               # /cco — session heatmap
 │   ├── cco-report/SKILL.md        # /cco-report — full ROI report
@@ -270,6 +329,8 @@ claude-context-optimizer/
 │   ├── cco-export/SKILL.md        # /cco-export — report export
 │   ├── cco-templates/SKILL.md     # /cco-templates — template manager
 │   ├── cco-clean/SKILL.md         # /cco-clean — data cleanup
+│   ├── cco-shield/SKILL.md        # /cco-shield — ContextShield status
+│   ├── cco-claudemd/SKILL.md      # /cco-claudemd — CLAUDE.md analyzer
 │   └── smart-loader/SKILL.md      # Auto-suggestion skill (model-invoked)
 ├── agents/
 │   └── context-analyzer.md  # Deep analysis agent
@@ -313,6 +374,20 @@ A: Yes. The PostToolUse hook fires for all tool calls, including those made by s
 
 ---
 
+## Support Development
+
+context-optimizer is **100% free and open source**. No paywalls, no premium tiers, no telemetry. If it saves you money on tokens, consider supporting development with a donation:
+
+| Chain | Address |
+|-------|---------|
+| **BTC** | `bc1q428exz5t2h9rzk7z5ya70madh0j3rs6h4gfgyd` |
+| **ETH (ERC-20)** | `0xB3f0C8e42B7cA9d65920cEfe82e3fef1B5C9d0C9` |
+| **SOL** | `8ctK8nt3CBkPZGfWQXX8TsnqUYUy4JAbT1EMhr8rsQxm` |
+
+Every donation helps keep this project maintained and evolving. The more users save on tokens, the more features we build to save even more.
+
+---
+
 ## Contributing
 
 PRs welcome. Areas that need help:
@@ -321,7 +396,7 @@ PRs welcome. Areas that need help:
 - [ ] VSCode extension for visual heatmap overlay
 - [ ] Team sharing — aggregate patterns across team members
 - [ ] Integration with Claude Code's built-in `/cost` command
-- [ ] Dashboard web UI for browsing session history
+- [ ] Multi-language CLAUDE.md analysis
 
 ---
 
@@ -332,5 +407,6 @@ MIT — do whatever you want with it.
 ---
 
 <p align="center">
-  <sub>Built with frustration at wasted tokens and love for efficiency.</sub>
+  <sub>Built with frustration at wasted tokens and love for efficiency.</sub><br/>
+  <sub>If we saved you money, <a href="#support-development">return the favor</a>.</sub>
 </p>

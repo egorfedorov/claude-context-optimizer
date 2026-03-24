@@ -624,6 +624,7 @@
       <li><a href="#features">Features</a></li>
       <li><a href="#how">How It Works</a></li>
       <li><a href="#commands">Commands</a></li>
+      <li><a href="#donate">Donate</a></li>
       <li><a href="#install" class="nav-cta">Install</a></li>
     </ul>
   </div>
@@ -840,6 +841,26 @@
         <h3>Context Templates</h3>
         <p>Run <code>/cco-templates create bug-fix</code> to save file presets for common tasks. Load them instantly with <code>apply</code>.</p>
       </div>
+      <div class="feature">
+        <div class="feature-icon red">&#x1F6E1;</div>
+        <h3>ContextShield</h3>
+        <p>PreToolUse hook that warns <strong>before</strong> loading known-waste files. Suggests Grep or offset/limit alternatives. Zero config.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon green">&#x1F4DD;</div>
+        <h3>CLAUDE.md Analyzer</h3>
+        <p>Run <code>/cco-claudemd</code> to find token bloat: duplicates, verbose patterns, oversized code blocks. Get concrete savings estimates.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon blue">&#x1F4CA;</div>
+        <h3>Interactive Dashboard</h3>
+        <p>Run <code>/cco-export html</code> for a Chart.js powered dashboard with waste trends, token usage, project breakdown, and edit timelines.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon yellow">&#x1F9E0;</div>
+        <h3>Confidence Learning</h3>
+        <p>File patterns scored 0.0-1.0 based on sessions, consistency, and recency. High-confidence patterns power smarter suggestions.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -891,15 +912,50 @@
   </div>
 </section>
 
+<!-- Donate -->
+<section id="donate" style="padding: 80px 0;">
+  <div class="container" style="text-align: center; max-width: 700px;">
+    <div class="section-label">Support</div>
+    <h2 style="margin-bottom: 16px;">Saved tokens? Help keep this alive</h2>
+    <p style="color: var(--text-dim); font-size: 1.05rem; margin-bottom: 32px;">
+      context-optimizer is 100% free, open source, and has no telemetry. If it saved you money on Claude tokens, consider supporting development so we can keep building features that save you even more.
+    </p>
+    <div style="display:grid; gap:12px; max-width:560px; margin:0 auto; text-align:left;">
+      <div onclick="navigator.clipboard.writeText('bc1q428exz5t2h9rzk7z5ya70madh0j3rs6h4gfgyd')" style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:border-color 0.2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div>
+          <div style="font-weight:600;font-size:0.85rem;color:var(--yellow);margin-bottom:4px;">Bitcoin (BTC)</div>
+          <code style="font-size:0.78rem;color:var(--text-dim);word-break:break-all;">bc1q428exz5t2h9rzk7z5ya70madh0j3rs6h4gfgyd</code>
+        </div>
+        <span style="color:var(--text-dim);font-size:0.75rem;white-space:nowrap;margin-left:12px;">click to copy</span>
+      </div>
+      <div onclick="navigator.clipboard.writeText('0xB3f0C8e42B7cA9d65920cEfe82e3fef1B5C9d0C9')" style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:border-color 0.2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div>
+          <div style="font-weight:600;font-size:0.85rem;color:var(--blue);margin-bottom:4px;">Ethereum (ETH / ERC-20)</div>
+          <code style="font-size:0.78rem;color:var(--text-dim);word-break:break-all;">0xB3f0C8e42B7cA9d65920cEfe82e3fef1B5C9d0C9</code>
+        </div>
+        <span style="color:var(--text-dim);font-size:0.75rem;white-space:nowrap;margin-left:12px;">click to copy</span>
+      </div>
+      <div onclick="navigator.clipboard.writeText('8ctK8nt3CBkPZGfWQXX8TsnqUYUy4JAbT1EMhr8rsQxm')" style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:border-color 0.2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div>
+          <div style="font-weight:600;font-size:0.85rem;color:var(--green);margin-bottom:4px;">Solana (SOL)</div>
+          <code style="font-size:0.78rem;color:var(--text-dim);word-break:break-all;">8ctK8nt3CBkPZGfWQXX8TsnqUYUy4JAbT1EMhr8rsQxm</code>
+        </div>
+        <span style="color:var(--text-dim);font-size:0.75rem;white-space:nowrap;margin-left:12px;">click to copy</span>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- Footer -->
 <footer>
   <div class="container">
     <div class="footer-links">
       <a href="https://github.com/egorfedorov/claude-context-optimizer">GitHub</a>
       <a href="https://github.com/egorfedorov/claude-context-optimizer/issues">Issues</a>
+      <a href="#donate">Donate</a>
       <a href="https://github.com/egorfedorov/claude-context-optimizer/blob/main/LICENSE">MIT License</a>
     </div>
-    <p>Built with frustration at wasted tokens and love for efficiency.</p>
+    <p>Built with frustration at wasted tokens and love for efficiency. If we saved you money, <a href="#donate">return the favor</a>.</p>
   </div>
 </footer>
 

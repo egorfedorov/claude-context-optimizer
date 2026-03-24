@@ -1,7 +1,7 @@
 {
   "name": "claude-context-optimizer",
-  "version": "2.1.0",
-  "description": "Intelligent context tracking, token ROI analysis, and auto-optimization. Stop burning tokens on files Claude never uses.",
+  "version": "3.0.0",
+  "description": "Intelligent context tracking, ContextShield waste prevention, CLAUDE.md analysis, and token ROI optimization. Stop burning tokens on files Claude never uses.",
   "skills": [
     "./skills/cco",
     "./skills/cco-report",
@@ -10,6 +10,8 @@
     "./skills/cco-git",
     "./skills/cco-templates",
     "./skills/cco-export",
-    "./skills/cco-clean"
+    "./skills/cco-clean",
+    "./skills/cco-shield",
+    "./skills/cco-claudemd"
   ]
 }

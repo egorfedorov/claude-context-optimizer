@@ -1,7 +1,7 @@
 {
   "name": "claude-context-optimizer",
-  "version": "2.1.0",
-  "description": "Intelligent context tracking and token optimization for Claude Code",
+  "version": "3.0.0",
+  "description": "ContextShield, CLAUDE.md analyzer, interactive dashboard, confidence learning, and token optimization for Claude Code",
   "type": "module",
   "main": "src/tracker.js",
   "bin": {

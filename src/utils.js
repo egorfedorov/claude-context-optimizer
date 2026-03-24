@@ -122,6 +122,51 @@ export function computeUsefulness(fileData) {
   return score;
 }
 
+// ── Confidence scoring ──────────────────────────────────────────────────────
+
+/**
+ * Compute confidence score (0.0 - 1.0) for a file pattern.
+ * Based on: sessions seen, usefulness consistency, recency.
+ */
+export function computeConfidence(freqData, daysSinceLastSession = 0) {
+  if (!freqData || !freqData.sessions) return 0;
+
+  // Base: more sessions = more confidence (caps at 10 sessions = 1.0)
+  const sessionScore = Math.min(1, freqData.sessions / 10);
+
+  // Consistency: what % of sessions was this file useful?
+  const usefulRatio = freqData.sessions > 0
+    ? (freqData.usefulness || 0) / freqData.sessions
+    : 0;
+
+  // Recency decay: lose 10% confidence per 30 days of inactivity
+  const decayFactor = Math.max(0, 1 - (daysSinceLastSession / 300));
+
+  // Weighted score
+  const confidence = (sessionScore * 0.4 + usefulRatio * 0.5 + decayFactor * 0.1);
+  return Math.round(confidence * 100) / 100;
+}
+
+// ── Donation info ───────────────────────────────────────────────────────────
+
+export const DONATION_ADDRESSES = {
+  btc: 'bc1q428exz5t2h9rzk7z5ya70madh0j3rs6h4gfgyd',
+  eth: '0xB3f0C8e42B7cA9d65920cEfe82e3fef1B5C9d0C9',
+  sol: '8ctK8nt3CBkPZGfWQXX8TsnqUYUy4JAbT1EMhr8rsQxm',
+};
+
+export function getDonationMessage() {
+  return [
+    '',
+    '  ─────────────────────────────────────────────────────────────',
+    '  Saved tokens? Help keep this project alive with a donation:',
+    `  BTC: ${DONATION_ADDRESSES.btc}`,
+    `  ETH: ${DONATION_ADDRESSES.eth}`,
+    `  SOL: ${DONATION_ADDRESSES.sol}`,
+    '  ─────────────────────────────────────────────────────────────',
+  ].join('\n');
+}
+
 // ── Data directory initialization ────────────────────────────────────────────
 
 export function ensureDataDirs() {

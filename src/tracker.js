@@ -13,8 +13,8 @@ import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from '
 import { join, basename, extname, dirname } from 'path';
 import {
   DATA_DIR, SESSIONS_DIR, PATTERNS_FILE, GLOBAL_STATS_FILE, TEMPLATES_DIR,
-  estimateTokens, formatTokens, displayPath, computeUsefulness,
-  loadJSON, saveJSON, ensureDataDirs
+  estimateTokens, formatTokens, displayPath, computeUsefulness, computeConfidence,
+  getDonationMessage, loadJSON, saveJSON, ensureDataDirs
 } from './utils.js';
 
 ensureDataDirs();
@@ -372,14 +372,17 @@ function finalizeSession(session) {
     }
 
     if (!proj.fileFrequency[filePath]) {
-      proj.fileFrequency[filePath] = { sessions: 0, totalReads: 0, totalEdits: 0, usefulness: 0 };
+      proj.fileFrequency[filePath] = { sessions: 0, totalReads: 0, totalEdits: 0, usefulness: 0, lastSeen: null, confidence: 0 };
     }
     proj.fileFrequency[filePath].sessions++;
     proj.fileFrequency[filePath].totalReads += fileData.reads;
     proj.fileFrequency[filePath].totalEdits += fileData.edits;
+    proj.fileFrequency[filePath].lastSeen = new Date().toISOString();
     if (isUseful) {
       proj.fileFrequency[filePath].usefulness++;
     }
+    // Update confidence score
+    proj.fileFrequency[filePath].confidence = computeConfidence(proj.fileFrequency[filePath], 0);
 
     if (fileData.wasEdited) {
       editedFiles.push(filePath);
@@ -714,6 +717,8 @@ function generateHeatmap(session) {
   }
 
   output += '\n  \u270F=edited  \u2714=multi-read  \u26A0=waste  \u2197=partial read\n';
+  output += getDonationMessage();
+  output += '\n';
   return output;
 }
 
@@ -735,13 +740,18 @@ function generateSuggestions(cwd) {
   }
   if (!proj) proj = getProjectPatterns(patterns, cwd);
 
-  // Files that are almost always useful
+  // Files that are almost always useful — using confidence scoring
+  const now = new Date();
   for (const [filePath, data] of Object.entries(proj.fileFrequency)) {
     if (filePath.startsWith(cwd) && data.usefulness >= 2 && data.totalEdits > 0) {
+      const daysSince = data.lastSeen
+        ? Math.round((now - new Date(data.lastSeen)) / (1000 * 60 * 60 * 24))
+        : 30;
+      const confidence = computeConfidence(data, daysSince);
       suggestions.preload.push({
         file: filePath,
         reason: `Edited in ${data.totalEdits}/${data.sessions} sessions`,
-        confidence: Math.min(100, Math.round((data.usefulness / data.sessions) * 100))
+        confidence: Math.round(confidence * 100)
       });
     }
   }

@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/src/context-shield.js"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Read|Edit|Write|Glob|Grep|Agent",

@@ -11,7 +11,8 @@
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 import {
-  SESSIONS_DIR, formatTokens, computeUsefulness, MODEL_COSTS
+  SESSIONS_DIR, formatTokens, computeUsefulness, MODEL_COSTS,
+  getDonationMessage
 } from './utils.js';
 
 function getSessionsInRange(days) {
@@ -196,6 +197,7 @@ function generateDigest(days) {
     }
   }
 
+  output += getDonationMessage();
   output += '\n';
   console.log(output);
 }
