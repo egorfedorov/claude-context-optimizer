@@ -63,3 +63,9 @@ After toggling, confirm the new setting to the user. Explain:
   with legacy compact suggestions at 90%+.
 
 Explain that budget warnings will appear automatically during the session as hook feedback when thresholds are crossed.
+
+## Effective Budget Multiplier
+
+At 50%+ budget usage, the monitor shows how much CCO improves your effective context budget.
+For example, "1.4x more effective" means CCO blocked enough redundant reads to make your 200K context behave like 280K.
+This metric comes from read-cache savings (blocked reads + file digests).

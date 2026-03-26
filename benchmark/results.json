@@ -1,0 +1,58 @@
+{
+  "timestamp": "2026-03-26T02:30:24.035Z",
+  "version": "1.0.0",
+  "totalSavingsPercent": 63,
+  "totalTokensWithout": 95514,
+  "totalTokensWith": 35465,
+  "scenarios": [
+    {
+      "name": "Read Cache Dedup",
+      "description": "Second read of same file → file digest instead of full content",
+      "withoutCCO": 9082,
+      "withCCO": 4579,
+      "savingsPercent": 50
+    },
+    {
+      "name": "Read Cache (5x reads)",
+      "description": "File read 5 times in a session",
+      "withoutCCO": 22705,
+      "withCCO": 4693,
+      "savingsPercent": 79
+    },
+    {
+      "name": "File Digest vs Full Read",
+      "description": "Navigational digest (~landmarks) vs full file content",
+      "withoutCCO": 4541,
+      "withCCO": 38,
+      "savingsPercent": 99
+    },
+    {
+      "name": "Read Cache Dedup",
+      "description": "Second read of same file → file digest instead of full content",
+      "withoutCCO": 12076,
+      "withCCO": 6075,
+      "savingsPercent": 50
+    },
+    {
+      "name": "Contextignore Block",
+      "description": "Lockfile/generated file blocked entirely by .contextignore",
+      "withoutCCO": 8827,
+      "withCCO": 0,
+      "savingsPercent": 100
+    },
+    {
+      "name": "File Digest vs Full Read",
+      "description": "Navigational digest (~landmarks) vs full file content",
+      "withoutCCO": 3117,
+      "withCCO": 36,
+      "savingsPercent": 99
+    },
+    {
+      "name": "Typical Session (10 files, 45 min)",
+      "description": "Realistic coding session with mixed reads/edits across 10 files",
+      "withoutCCO": 35166,
+      "withCCO": 20044,
+      "savingsPercent": 43
+    }
+  ]
+}

@@ -187,6 +187,26 @@ async function main() {
     }
   }
 
+  // ── Effective budget multiplier at key thresholds ──
+  if (usagePercent >= 50 && !state.multiplierShown) {
+    try {
+      const cacheFile = join(BUDGET_STATE_DIR, '..', 'read-cache', `${sessionId}.json`);
+      const cacheData = loadJSON(cacheFile);
+      if (cacheData && cacheData.totalTokensSaved > 0) {
+        const saved = cacheData.totalTokensSaved;
+        const total = state.totalTokensEstimated + saved;
+        const multiplier = total > 0 ? (total / state.totalTokensEstimated).toFixed(1) : '1.0';
+        if (parseFloat(multiplier) > 1.1) {
+          console.error(
+            `[context-budget] CCO makes your budget ${multiplier}x more effective ` +
+            `(${formatTokens(saved)} tokens saved this session)`
+          );
+          state.multiplierShown = true;
+        }
+      }
+    } catch { /* don't block */ }
+  }
+
   saveBudgetState(state);
   process.exit(0);
 }

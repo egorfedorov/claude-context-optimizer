@@ -945,6 +945,27 @@ async function main() {
         trackToolUse(session, `Agent:${toolInput.subagent_type || 'general'}`);
       }
 
+      // ── Live session mini-stats (every 15 tool calls) ──
+      if (session.totalToolCalls > 0 && session.totalToolCalls % 15 === 0) {
+        try {
+          const cacheFile = join(DATA_DIR, 'read-cache', `${sessionId}.json`);
+          const cache = loadJSON(cacheFile);
+          if (cache && cache.totalTokensSaved > 0) {
+            const totalTracked = Object.values(session.files)
+              .reduce((sum, f) => sum + (f.estTokens || 0), 0);
+            const saved = cache.totalTokensSaved;
+            const total = totalTracked + saved;
+            const pct = total > 0 ? Math.round((saved / total) * 100) : 0;
+            if (pct > 0) {
+              console.error(
+                `[cco] Session pulse: ${formatTokens(totalTracked)} used, ` +
+                `${formatTokens(saved)} saved by CCO (${pct}% efficiency)`
+              );
+            }
+          }
+        } catch { /* don't block on stats failure */ }
+      }
+
       break;
     }
 

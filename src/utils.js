@@ -23,12 +23,13 @@ export const TEMPLATES_DIR = join(DATA_DIR, 'templates');
 export const EXPORTS_DIR = join(DATA_DIR, 'exports');
 export const SUMMARIES_DIR = join(DATA_DIR, 'summaries');
 
-// ── Model costs ($/M tokens) ────────────────────────────────────────────────
+// ── Model costs ($/M input tokens) — https://anthropic.com/pricing ──────────
 
 export const MODEL_COSTS = {
-  haiku: 0.80,
-  sonnet: 3,
-  opus: 15
+  haiku: 0.80,       // Claude Haiku 4.5
+  sonnet: 3,         // Claude Sonnet 4.6
+  opus: 15,          // Claude Opus 4.6
+  'opus-extended': 15 // Opus 4.6 with extended thinking (same input price)
 };
 
 // ── Token estimation ─────────────────────────────────────────────────────────
