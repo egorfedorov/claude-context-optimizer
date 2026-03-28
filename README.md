@@ -249,15 +249,7 @@ When installed as a plugin, commands are namespaced: `/claude-context-optimizer:
 
 ## Installation
 
-### Option 1 — Skills CLI (recommended)
-
-```bash
-npx skills add https://github.com/egorfedorov/claude-context-optimizer
-```
-
-Installs skills globally to `~/.agents/skills/` and symlinks them to Claude Code. Works with Amp, Cline, Codex, Cursor, Gemini CLI, and other compatible agents.
-
-### Option 2 — Plugin directory
+### Option 1 — Plugin directory (recommended)
 
 ```bash
 git clone https://github.com/egorfedorov/claude-context-optimizer.git ~/claude-context-optimizer
@@ -273,6 +265,18 @@ To make it persistent, add to `~/.claude/settings.json`:
   ]
 }
 ```
+
+This gives you **full functionality**: skills, auto-tracking hooks, Read Cache, ContextShield, and budget alerts.
+
+### Option 2 — Skills CLI
+
+```bash
+npx skills add https://github.com/egorfedorov/claude-context-optimizer
+```
+
+Installs skills globally to `~/.agents/skills/` and symlinks them to Claude Code. Works with Amp, Cline, Codex, Cursor, Gemini CLI, and other compatible agents.
+
+> **Note:** Skills CLI installs skill prompts only. Auto-tracking hooks (Read Cache, ContextShield, budget alerts) require the plugin directory installation (Option 1) to function.
 
 ### Updating
 

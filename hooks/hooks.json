@@ -6,11 +6,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/src/read-cache.js"
+            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/read-cache.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/read-cache.js\""
           },
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/src/context-shield.js"
+            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/context-shield.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/context-shield.js\""
           }
         ]
       }
@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/src/read-cache.js"
+            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/read-cache.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/read-cache.js\""
           }
         ]
       },
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js"
+            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\""
           }
         ]
       },
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/src/budget.js"
+            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/budget.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/budget.js\""
           }
         ]
       }
@@ -49,11 +49,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/src/read-cache.js"
+            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/read-cache.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/read-cache.js\""
           },
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js"
+            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\""
           }
         ]
       }
@@ -63,7 +63,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js"
+            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\""
           }
         ]
       }
@@ -73,7 +73,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js"
+            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\""
           }
         ]
       }
