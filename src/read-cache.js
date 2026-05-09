@@ -29,23 +29,40 @@ import { basename, extname, join } from 'path';
 import { statSync } from 'fs';
 import {
   READ_CACHE_DIR,
-  estimateTokens, formatTokens, loadJSON, saveJSON, ensureDataDirs
+  estimateTokens, formatTokens, loadJSON, saveJSON, ensureDataDirs,
+  loadConfig, getEffectiveBudget
 } from './utils.js';
 import { isContextIgnored } from './contextignore.js';
 import { parseFileStructure, formatDigest } from './file-digest.js';
 
 ensureDataDirs();
 
-// ── Configuration ─────────────────────────────────────────────────────────────
+// ── Adaptive staleness configuration ──────────────────────────────────────────
+// Thresholds scale with the user's effective context budget so the cache
+// behaves correctly on both 200K (Sonnet) and 1M (Opus 4.7 1M) windows.
+//
+// Default ratios (calibrated against 200K window where the previous fixed
+// values were 20K/8/10min) — the same fractions on 1M give ~100K/40/10min
+// which keeps Read Cache aggressive without false re-allows.
 
-/** Tokens loaded by other files since last read that triggers staleness. */
-const STALE_DISPLACEMENT_TOKENS = 20_000;
+const STALE_TOKEN_RATIO = 0.10;   // 10% of budget moved → other file likely evicted
+const STALE_FILES_FRACTION_BASE = 8;  // base value for 200K
+const STALE_TIME_MS_DEFAULT = 10 * 60 * 1000;
 
-/** Number of other files loaded since last read that triggers staleness. */
-const STALE_DISPLACEMENT_FILES = 8;
-
-/** Time in ms since last read that triggers staleness (10 minutes). */
-const STALE_TIME_MS = 10 * 60 * 1000;
+let _thresholdCache = null;
+function getStaleThresholds() {
+  if (_thresholdCache) return _thresholdCache;
+  const config = loadConfig();
+  const budget = getEffectiveBudget(config);
+  // Tokens: 10% of effective budget, clamped to [10K, 200K]
+  const tokens = Math.max(10_000, Math.min(200_000, Math.round(budget * STALE_TOKEN_RATIO)));
+  // Files: scale gently with budget (8 @ 200K, 32 @ 1M)
+  const files = Math.max(6, Math.min(40, Math.round(STALE_FILES_FRACTION_BASE * (budget / 200_000))));
+  // Time: respect env override
+  const timeMs = parseInt(process.env.CCO_STALE_TIME_MS || '', 10) || STALE_TIME_MS_DEFAULT;
+  _thresholdCache = { tokens, files, timeMs, budget };
+  return _thresholdCache;
+}
 
 // ── Cache I/O ─────────────────────────────────────────────────────────────────
 
@@ -96,6 +113,8 @@ function checkStaleness(cache, filePath) {
   const entry = cache.files[filePath];
   if (!entry || !entry.readAtMs) return { stale: false, reason: '' };
 
+  const { tokens: tokTh, files: fileTh, timeMs } = getStaleThresholds();
+
   const readTime = entry.readAtMs;
   let newerFiles = 0;
   let newerTokens = 0;
@@ -108,25 +127,22 @@ function checkStaleness(cache, filePath) {
     }
   }
 
-  // Displacement check — token-based
-  if (newerTokens >= STALE_DISPLACEMENT_TOKENS) {
+  if (newerTokens >= tokTh) {
     return {
       stale: true,
       reason: `${formatTokens(newerTokens)} tokens of other files loaded since last read`
     };
   }
 
-  // Displacement check — file count based
-  if (newerFiles >= STALE_DISPLACEMENT_FILES) {
+  if (newerFiles >= fileTh) {
     return {
       stale: true,
       reason: `${newerFiles} other files loaded since last read`
     };
   }
 
-  // Time decay check
   const elapsed = Date.now() - readTime;
-  if (elapsed >= STALE_TIME_MS) {
+  if (elapsed >= timeMs) {
     const mins = Math.round(elapsed / 60_000);
     return {
       stale: true,
@@ -137,10 +153,19 @@ function checkStaleness(cache, filePath) {
   return { stale: false, reason: '' };
 }
 
+// Exposed for testing — recreate threshold lookup in unit tests.
+export const _staleConfig = getStaleThresholds;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function getMtime(filePath) {
   try { return statSync(filePath).mtimeMs; } catch { return null; }
+}
+
+/** Cap PPID list to last N entries to bound memory. */
+function trimPpids(ppids, max = 20) {
+  const unique = [...new Set(ppids)];
+  return unique.slice(-max);
 }
 
 function allow(sessionId, cache, filePath, mtime, offset, end, ext, ppid, logMsg) {
@@ -153,7 +178,7 @@ function allow(sessionId, cache, filePath, mtime, offset, end, ext, ppid, logMsg
     readAt: new Date().toISOString(),
     readAtMs: Date.now(),
     ranges: [[offset, end]],
-    ppids: existing ? [...new Set([...(existing.ppids || []), ppid])] : [ppid]
+    ppids: trimPpids(existing ? [...(existing.ppids || []), ppid] : [ppid])
   };
   saveCache(sessionId, cache);
   if (logMsg) console.error(logMsg);
@@ -272,7 +297,7 @@ async function main() {
 
   // ── Different process context (Agent subprocess) — allow ────────────
   if (!(entry.ppids || []).includes(ppid)) {
-    entry.ppids = [...new Set([...(entry.ppids || []), ppid])];
+    entry.ppids = trimPpids([...(entry.ppids || []), ppid]);
     entry.readAt = new Date().toISOString();
     entry.readAtMs = Date.now();
     saveCache(sessionId, cache);
@@ -282,7 +307,7 @@ async function main() {
   // ── New range not yet covered — allow ───────────────────────────────
   if (!isRangeCovered(entry.ranges, offset, end)) {
     entry.ranges.push([offset, end]);
-    entry.ppids = [...new Set([...(entry.ppids || []), ppid])];
+    entry.ppids = trimPpids([...(entry.ppids || []), ppid]);
     entry.lines += limit;
     entry.tokens += estimateTokens(limit, ext);
     entry.readAt = new Date().toISOString();

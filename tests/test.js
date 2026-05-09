@@ -4,11 +4,15 @@ import { extname, basename, join } from 'path';
 import { homedir } from 'os';
 
 import {
-  estimateTokens, formatTokens, displayPath,
+  estimateTokens, estimateTokensFromString, formatTokens, displayPath,
   computeUsefulness, computeConfidence, TOKEN_RATIOS,
   loadBudgetConfig, saveBudgetConfig, clearBudgetConfigCache,
-  BUDGET_CONFIG_FILE, loadJSON
+  BUDGET_CONFIG_FILE, loadJSON,
+  MODEL_COSTS, getModelCost, getModelContextWindow,
+  getEffectiveBudget, categorizeFile, shouldSkipFile, shouldIgnoreForTracking
 } from '../src/utils.js';
+import { analyzePrompt, buildImprovedPrompt } from '../src/prompt-coach.js';
+import { estimateToolTokens, computeCost } from '../src/budget.js';
 import {
   isContextIgnored, _globToRegex, _parseIgnoreFile, clearContextIgnoreCache
 } from '../src/contextignore.js';
@@ -34,50 +38,9 @@ function isRangeCovered(ranges, offset, end) {
   return false;
 }
 
-// ── Recreated pure functions from anatomy.js ────────────────────────────────
-
-const SOURCE_EXTS = new Set([
-  '.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs',
-  '.cpp', '.c', '.h', '.hpp', '.rb', '.java', '.swift', '.kt',
-]);
-const CONFIG_EXTS = new Set(['.json', '.yaml', '.yml', '.toml', '.ini']);
-const STYLE_EXTS = new Set(['.css', '.scss', '.less']);
-const DOC_EXTS = new Set(['.md', '.txt', '.rst']);
-const SKIP_EXTS = new Set([
-  '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp',
-  '.woff', '.woff2', '.ttf', '.eot', '.otf',
-  '.lock', '.map', '.min.js', '.min.css',
-  '.zip', '.tar', '.gz', '.br', '.zst',
-  '.mp3', '.mp4', '.wav', '.ogg', '.webm',
-  '.pdf', '.doc', '.docx', '.xls', '.xlsx',
-]);
-const SKIP_NAMES = new Set([
-  'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
-  'bun.lockb', 'Cargo.lock', 'Gemfile.lock', 'poetry.lock',
-]);
-
-function categorize(filePath) {
-  const ext = extname(filePath);
-  const name = basename(filePath);
-  const lower = filePath.toLowerCase();
-  if (/\.(test|spec)\./.test(name) || /\/__tests__\//.test(lower) || /\/tests?\//.test(lower)) return 'test';
-  if (DOC_EXTS.has(ext) || /\/docs?\//.test(lower)) return 'docs';
-  if (SOURCE_EXTS.has(ext)) return 'source';
-  if (STYLE_EXTS.has(ext) || /\.styled\./.test(name)) return 'style';
-  if (CONFIG_EXTS.has(ext) || /\.config\./.test(name) || /\.env/.test(name) ||
-      name.startsWith('tsconfig') || name === 'Makefile' || name === 'CMakeLists.txt' ||
-      name === 'Dockerfile' || name === '.eslintrc' || name === '.prettierrc') return 'config';
-  return 'other';
-}
-
-function shouldSkip(filePath) {
-  const ext = extname(filePath);
-  const name = basename(filePath);
-  if (SKIP_EXTS.has(ext)) return true;
-  if (SKIP_NAMES.has(name)) return true;
-  if (name.endsWith('.min.js') || name.endsWith('.min.css')) return true;
-  return false;
-}
+// Use the unified classification from utils — single source of truth.
+const categorize = categorizeFile;
+const shouldSkip = shouldSkipFile;
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 
@@ -980,5 +943,226 @@ describe('staleness detection', () => {
     };
     const result = checkStaleness(cache, '/target.js');
     assert.equal(result.stale, false, 'older files should not count as displacement');
+  });
+});
+
+// ── Model cost tests (Opus 4.7-aware) ───────────────────────────────────────
+
+describe('model costs', () => {
+  it('opus-4.7 has correct prices', () => {
+    const c = getModelCost('opus-4.7');
+    assert.equal(c.input, 15);
+    assert.equal(c.output, 75);
+    assert.equal(c.contextWindow, 200_000);
+  });
+
+  it('opus-4.7-1m has 1M context and surcharge', () => {
+    const c = getModelCost('opus-4.7-1m');
+    assert.equal(c.contextWindow, 1_000_000);
+    assert.ok(c.input > 15, 'input price should be higher for 1M tier');
+    assert.ok(c.output > 75, 'output price should be higher for 1M tier');
+  });
+
+  it('haiku-4.5 has correct prices', () => {
+    const c = getModelCost('haiku-4.5');
+    assert.equal(c.input, 1);
+    assert.equal(c.output, 5);
+  });
+
+  it('falls back to opus when model unknown', () => {
+    const c = getModelCost('unknown-model-xyz');
+    assert.equal(c.input, 15);
+  });
+
+  it('getModelContextWindow returns correct window', () => {
+    assert.equal(getModelContextWindow('opus-4.7-1m'), 1_000_000);
+    assert.equal(getModelContextWindow('haiku-4.5'), 200_000);
+  });
+});
+
+describe('getEffectiveBudget', () => {
+  it('caps budget at model context window', () => {
+    const budget = getEffectiveBudget({ budgetTokens: 2_000_000, model: 'opus-4.7' });
+    assert.equal(budget, 200_000);
+  });
+
+  it('honours user budget below model window', () => {
+    const budget = getEffectiveBudget({ budgetTokens: 50_000, model: 'opus-4.7' });
+    assert.equal(budget, 50_000);
+  });
+
+  it('allows up to 1M for opus-4.7-1m', () => {
+    const budget = getEffectiveBudget({ budgetTokens: 1_000_000, model: 'opus-4.7-1m' });
+    assert.equal(budget, 1_000_000);
+  });
+});
+
+// ── Unified classification (regression — was duplicated before) ──────────────
+
+describe('unified classification', () => {
+  it('categorizeFile detects new languages', () => {
+    assert.equal(categorizeFile('app.svelte'), 'source');
+    assert.equal(categorizeFile('app.vue'), 'source');
+    assert.equal(categorizeFile('foo.ex'), 'source');
+    assert.equal(categorizeFile('script.sh'), 'script');
+  });
+
+  it('shouldIgnoreForTracking covers transients and lockfiles', () => {
+    assert.equal(shouldIgnoreForTracking('/dev/stdin'), true);
+    assert.equal(shouldIgnoreForTracking('/proc/self/maps'), true);
+    assert.equal(shouldIgnoreForTracking('toolu_abc.json'), true);
+    assert.equal(shouldIgnoreForTracking('node_modules/foo.js'), true);
+    assert.equal(shouldIgnoreForTracking('package-lock.json'), true);
+    assert.equal(shouldIgnoreForTracking('src/index.ts'), false);
+    assert.equal(shouldIgnoreForTracking(''), true);
+    assert.equal(shouldIgnoreForTracking(null), true);
+  });
+});
+
+// ── Token estimation: new languages ─────────────────────────────────────────
+
+describe('estimateTokens (extended ratios)', () => {
+  it('uses ratio for .svelte', () => {
+    assert.equal(estimateTokens(100, '.svelte'), Math.round((100 * 35) / 3.6));
+  });
+  it('uses ratio for .sh', () => {
+    assert.equal(estimateTokens(100, '.sh'), Math.round((100 * 35) / 3.5));
+  });
+  it('uses ratio for .php', () => {
+    assert.equal(estimateTokens(100, '.php'), Math.round((100 * 35) / 3.7));
+  });
+});
+
+describe('estimateTokensFromString', () => {
+  it('returns 0 for empty/null', () => {
+    assert.equal(estimateTokensFromString(''), 0);
+    assert.equal(estimateTokensFromString(null), 0);
+  });
+  it('uses default ratio for no extension', () => {
+    const s = 'a'.repeat(370);
+    assert.equal(estimateTokensFromString(s), 100);
+  });
+  it('respects extension ratio', () => {
+    const s = 'a'.repeat(420);
+    assert.equal(estimateTokensFromString(s, '.md'), 100);
+  });
+});
+
+// ── Prompt Coach tests ──────────────────────────────────────────────────────
+
+describe('prompt-coach', () => {
+  describe('analyzePrompt', () => {
+    it('returns F for empty prompts', () => {
+      const a = analyzePrompt('');
+      assert.equal(a.grade, 'F');
+      assert.equal(a.score, 0);
+    });
+
+    it('low score for vague unbounded prompt', () => {
+      const a = analyzePrompt('improve everything in the codebase');
+      assert.ok(a.score < 50, `expected <50, got ${a.score}`);
+      assert.ok(a.suggestions.length > 0);
+      assert.ok(a.signals.hasUnbounded);
+    });
+
+    it('high score for specific prompt with file path and success criteria', () => {
+      const a = analyzePrompt(
+        'Add input validation to src/auth/login.ts:42 in the validateEmail() function so the unit test in tests/auth.test.ts passes'
+      );
+      assert.ok(a.score >= 70, `expected >=70, got ${a.score}`);
+      assert.ok(a.signals.filePathsFound.length > 0);
+      assert.ok(a.signals.hasLineRef);
+      assert.ok(a.signals.hasSuccess);
+    });
+
+    it('detects vague verbs', () => {
+      const a = analyzePrompt('please optimize the auth module');
+      assert.ok(a.signals.hasVagueVerb);
+    });
+
+    it('detects strong verbs', () => {
+      const a = analyzePrompt('rename `getUser` to `fetchUser` in src/api.ts');
+      assert.ok(a.signals.hasStrongVerb);
+      assert.ok(a.signals.filePathsFound.length > 0);
+    });
+
+    it('flags very short prompts', () => {
+      const a = analyzePrompt('fix it');
+      assert.ok(a.suggestions.some(s => s.toLowerCase().includes('short')));
+    });
+
+    it('extracts mentioned file paths', () => {
+      const a = analyzePrompt('change src/foo.ts and tests/bar.spec.js');
+      assert.ok(a.signals.filePathsFound.includes('src/foo.ts'));
+      assert.ok(a.signals.filePathsFound.includes('tests/bar.spec.js'));
+    });
+
+    it('does not extract domain-like substrings as file paths', () => {
+      const a = analyzePrompt('the bug is at example.com');
+      assert.equal(a.signals.filePathsFound.length, 0);
+    });
+  });
+
+  describe('buildImprovedPrompt', () => {
+    it('returns original prompt when no suggestions', () => {
+      const a = { suggestions: [], signals: {} };
+      assert.equal(buildImprovedPrompt('hello', a), 'hello');
+    });
+
+    it('appends self-check guardrails when prompt is weak', () => {
+      const a = analyzePrompt('improve everything');
+      const improved = buildImprovedPrompt('improve everything', a);
+      assert.ok(improved.length > 'improve everything'.length);
+      assert.ok(improved.includes('Self-check'));
+    });
+  });
+});
+
+// ── Budget — token + cost estimation ────────────────────────────────────────
+
+describe('budget', () => {
+  describe('estimateToolTokens', () => {
+    it('Read counts only as input', () => {
+      const t = estimateToolTokens('Read', { limit: 100 });
+      assert.ok(t.input > 0);
+      assert.equal(t.output, 0);
+    });
+
+    it('Write counts as output', () => {
+      const t = estimateToolTokens('Write', { content: 'a'.repeat(370) });
+      assert.ok(t.output >= 100);
+      assert.ok(t.input < t.output);
+    });
+
+    it('Edit splits between input (old) and output (new)', () => {
+      const t = estimateToolTokens('Edit', {
+        old_string: 'a'.repeat(370),
+        new_string: 'b'.repeat(740)
+      });
+      assert.ok(t.input > 0);
+      assert.ok(t.output > t.input);
+    });
+
+    it('MCP tools get default tokens', () => {
+      const t = estimateToolTokens('mcp__github__create_issue', {});
+      assert.ok(t.input > 0);
+      assert.ok(t.output > 0);
+    });
+  });
+
+  describe('computeCost', () => {
+    it('charges input + output at model rates', () => {
+      const state = { inputTokensEstimated: 1_000_000, outputTokensEstimated: 1_000_000 };
+      const cost = computeCost(state, 'opus-4.7');
+      // 1M * $15 input + 1M * $75 output = $90
+      assert.equal(cost, 90);
+    });
+
+    it('opus-4.7-1m costs more than opus-4.7', () => {
+      const state = { inputTokensEstimated: 1_000_000, outputTokensEstimated: 0 };
+      const c1 = computeCost(state, 'opus-4.7');
+      const c2 = computeCost(state, 'opus-4.7-1m');
+      assert.ok(c2 > c1);
+    });
   });
 });

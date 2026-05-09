@@ -79,12 +79,16 @@ async function main() {
   }
 
   // ── Check 2: Large file without offset/limit ──
+  // Skip warning when the file has historically been useful (e.g. schemas,
+  // type defs, specs) — it's read-only by nature but legitimately needed.
   const isPartial = !!(toolInput.offset || toolInput.limit);
   if (!isPartial) {
     const freqData = proj.fileFrequency[filePath];
     if (freqData && freqData.sessions >= 2) {
       const editRate = freqData.totalEdits / freqData.totalReads;
-      if (editRate < 0.1 && freqData.totalReads >= 5) {
+      const usefulRatio = (freqData.usefulness || 0) / freqData.sessions;
+      const isLegitReadOnly = usefulRatio >= 0.5; // useful in half+ of sessions
+      if (editRate < 0.1 && freqData.totalReads >= 5 && !isLegitReadOnly) {
         warnings.push(
           `[context-shield] ${basename(filePath)}: read ${freqData.totalReads}x but edited only ${freqData.totalEdits}x ` +
           `across ${freqData.sessions} sessions. Reading less = faster results — try offset/limit!`

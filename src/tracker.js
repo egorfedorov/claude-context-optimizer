@@ -14,64 +14,14 @@ import { join, basename, extname, dirname } from 'path';
 import {
   DATA_DIR, SESSIONS_DIR, PATTERNS_FILE, GLOBAL_STATS_FILE, TEMPLATES_DIR, SUMMARIES_DIR,
   estimateTokens, formatTokens, displayPath, computeUsefulness, computeConfidence,
-  getDonationMessage, loadJSON, saveJSON, ensureDataDirs
+  getDonationMessage, loadJSON, saveJSON, ensureDataDirs,
+  shouldIgnoreForTracking, getFileLines, getProjectRoot
 } from './utils.js';
 
 ensureDataDirs();
 
-// ── Ignore patterns: skip tracking for these files ──────────────────────────
-const IGNORE_PATTERNS = [
-  /^toolu_/,
-  /^\/dev\//,
-  /^\/proc\//,
-  /^\/tmp\/claude/,
-  /^data:/,
-  /\.(png|jpg|jpeg|gif|svg|ico|webp|bmp|tiff)$/i,
-  /\.(mp3|mp4|wav|ogg|webm|avi|mov)$/i,
-  /\.(zip|tar|gz|bz2|7z|rar)$/i,
-  /\.(woff|woff2|ttf|eot|otf)$/i,
-  /\.(pdf)$/i,
-  /node_modules\//,
-  /\.git\//,
-  /package-lock\.json$/,
-  /yarn\.lock$/,
-  /pnpm-lock\.yaml$/,
-];
-
-function shouldIgnore(filePath) {
-  if (!filePath) return true;
-  return IGNORE_PATTERNS.some(p => p.test(filePath) || p.test(basename(filePath)));
-}
-
-// ── File utilities ──────────────────────────────────────────────────────────
-
-function getFileLines(filePath) {
-  try {
-    const stat = statSync(filePath);
-    if (stat.size > 10 * 1024 * 1024) return 0;
-    const content = readFileSync(filePath, 'utf-8');
-    return content.split('\n').length;
-  } catch {
-    return 0;
-  }
-}
-
-function getProjectRoot(filePath) {
-  try {
-    let dir = dirname(filePath);
-    for (let i = 0; i < 10; i++) {
-      if (existsSync(join(dir, '.git'))) return dir;
-      if (existsSync(join(dir, 'package.json'))) return dir;
-      if (existsSync(join(dir, 'Cargo.toml'))) return dir;
-      if (existsSync(join(dir, 'go.mod'))) return dir;
-      if (existsSync(join(dir, 'pyproject.toml'))) return dir;
-      const parent = dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
-    }
-  } catch { /* ignore */ }
-  return null;
-}
+// Backwards-compatible local alias — use unified shouldIgnoreForTracking.
+const shouldIgnore = shouldIgnoreForTracking;
 
 // ── Session management ──────────────────────────────────────────────────────
 

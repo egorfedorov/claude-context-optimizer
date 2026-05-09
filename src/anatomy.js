@@ -10,60 +10,16 @@
  */
 
 import { execSync } from 'child_process';
-import { readFileSync, readdirSync, statSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join, extname, basename, relative } from 'path';
-import { estimateTokens, formatTokens } from './utils.js';
+import {
+  estimateTokens, formatTokens,
+  categorizeFile, shouldSkipFile, SKIP_DIRS
+} from './utils.js';
 
-// ── File classification ─────────────────────────────────────────────────────
-
-const SOURCE_EXTS = new Set([
-  '.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs',
-  '.cpp', '.c', '.h', '.hpp', '.rb', '.java', '.swift', '.kt',
-]);
-const CONFIG_EXTS = new Set(['.json', '.yaml', '.yml', '.toml', '.ini']);
-const STYLE_EXTS = new Set(['.css', '.scss', '.less']);
-const DOC_EXTS = new Set(['.md', '.txt', '.rst']);
-const SKIP_EXTS = new Set([
-  '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp',
-  '.woff', '.woff2', '.ttf', '.eot', '.otf',
-  '.lock', '.map', '.min.js', '.min.css',
-  '.zip', '.tar', '.gz', '.br', '.zst',
-  '.mp3', '.mp4', '.wav', '.ogg', '.webm',
-  '.pdf', '.doc', '.docx', '.xls', '.xlsx',
-]);
-const SKIP_NAMES = new Set([
-  'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
-  'bun.lockb', 'Cargo.lock', 'Gemfile.lock', 'poetry.lock',
-]);
-
-function categorize(filePath) {
-  const ext = extname(filePath);
-  const name = basename(filePath);
-  const lower = filePath.toLowerCase();
-
-  // Test files first (before source, since .test.ts is also .ts)
-  if (/\.(test|spec)\./.test(name) || /\/__tests__\//.test(lower) || /\/tests?\//.test(lower)) {
-    return 'test';
-  }
-  if (DOC_EXTS.has(ext) || /\/docs?\//.test(lower)) return 'docs';
-  if (SOURCE_EXTS.has(ext)) return 'source';
-  if (STYLE_EXTS.has(ext) || /\.styled\./.test(name)) return 'style';
-  if (CONFIG_EXTS.has(ext) || /\.config\./.test(name) || /\.env/.test(name) ||
-      name.startsWith('tsconfig') || name === 'Makefile' || name === 'CMakeLists.txt' ||
-      name === 'Dockerfile' || name === '.eslintrc' || name === '.prettierrc') {
-    return 'config';
-  }
-  return 'other';
-}
-
-function shouldSkip(filePath) {
-  const ext = extname(filePath);
-  const name = basename(filePath);
-  if (SKIP_EXTS.has(ext)) return true;
-  if (SKIP_NAMES.has(name)) return true;
-  if (name.endsWith('.min.js') || name.endsWith('.min.css')) return true;
-  return false;
-}
+// Backwards-compatible local aliases.
+const categorize = categorizeFile;
+const shouldSkip = shouldSkipFile;
 
 // ── File listing ────────────────────────────────────────────────────────────
 
@@ -89,9 +45,7 @@ function getFileList(projectDir) {
 }
 
 function walkDir(dir, root) {
-  const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '__pycache__', '.venv', 'vendor']);
   const results = [];
-
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {

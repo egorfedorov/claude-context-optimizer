@@ -15,6 +15,16 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/prompt-coach.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/prompt-coach.js\""
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
@@ -26,7 +36,7 @@
         ]
       },
       {
-        "matcher": "Read|Edit|Write|Glob|Grep|Agent",
+        "matcher": "Read|Edit|Write|Glob|Grep|Agent|mcp__.*",
         "hooks": [
           {
             "type": "command",
@@ -35,7 +45,7 @@
         ]
       },
       {
-        "matcher": "Read|Edit|Write|Glob|Grep|Agent",
+        "matcher": "Read|Edit|Write|Glob|Grep|Agent|mcp__.*",
         "hooks": [
           {
             "type": "command",

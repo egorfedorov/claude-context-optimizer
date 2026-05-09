@@ -3,7 +3,8 @@
 </p>
 
 <p align="center">
-  <strong>Stop burning tokens on files Claude never uses.</strong>
+  <strong>Stop burning tokens on weak prompts and redundant reads.</strong><br/>
+  <sub>Tuned for Claude Opus 4.7 — including the 1M-context tier.</sub>
 </p>
 
 <p align="center">
@@ -36,9 +37,93 @@ At $15/M tokens (Opus), a developer spending $100/month is lighting **$30-50 on 
 
 ---
 
+## What's new in v3.6 — Opus 4.7 update
+
+The most expensive token leak isn't redundant reads — it's **weak prompts that send Claude
+reading 20 files to guess what you wanted.** v3.6 attacks both sides of the problem.
+
+### NEW: Prompt Coach — grade and improve every prompt before it runs
+
+A `UserPromptSubmit` hook scores your prompt on four dimensions and silently injects
+suggestions for Claude when the score is below 80:
+
+```
+[prompt-coach] Prompt quality: D (38/100).
+Suggestions to make this prompt produce better results:
+  - Name the specific file(s), function(s), or module(s) you want changed.
+  - Bound the scope: instead of "all bugs / rewrite everything", pick one concrete failure.
+  - State the success condition: what tests pass? what error disappears?
+```
+
+Run `/cco-coach` to grade an arbitrary prompt or see your prompt history (with average score).
+Strong prompts produce sharper edits, fewer reads, lower bills. The coach is **deterministic
+and runs locally** — no model call, no telemetry.
+
+### NEW: Smart Context Pack — optimal file set for your task
+
+```bash
+$ /cco-pack "refactor login flow to support OAuth"
+
+  SMART CONTEXT PACK
+  Files proposed: 7
+  Est. tokens: 18.4K (24% of context budget cap)
+
+  1. src/auth/login.ts  (relevance 100, ~3.2K tokens)
+     reason: mentioned in prompt
+     read: offset=42, limit=120 — around `function handleLogin()`
+
+  2. src/auth/oauth.ts  (relevance 85, ~2.1K tokens)
+     reason: modified in git working tree
+     read: full file
+
+  3. src/auth/session.ts  (relevance 65, ~1.8K tokens)
+     reason: historically useful (edited in 8/12 sessions)
+     read: offset=0, limit=80
+  ...
+```
+
+Mentioned files + git diff + historical patterns + keyword match → ranked, token-budget aware.
+Stops at 25% of your effective context. With Opus 4.7 1M that's 250K of "safe to load now".
+
+### NEW: 1M context tier support — `opus-4.7-1m`
+
+```bash
+/cco-budget model opus-4.7-1m
+```
+
+Switching models retunes the entire plugin:
+- **Read Cache staleness thresholds scale** — 100K/40-files/10min instead of 20K/8-files/10min,
+  so you don't get false re-reads in massive contexts.
+- **Cost calculation uses 1M-tier prices** — $22.50/M input, $112.50/M output.
+- **Budget warnings stop firing at 5%** of a 1M window — they fire at the percentages of *your*
+  effective budget.
+
+### NEW: Real cost tracking (input + output)
+
+Old behaviour: counted only input tokens. New: counts input AND output (Edit/Write content)
+and uses the model's real prices. Your reported cost is now the cost you actually pay.
+
+### NEW: MCP tool tracking
+
+PostToolUse matchers now include `mcp__*` — Linear, Slack, GitHub, Postgres, etc. show up
+in token reports alongside Read/Edit/Write.
+
+### NEW: `/cco-doctor` — health check
+
+```
+✔ versions in sync (plugin.json vs package.json) — v3.6.0
+✔ hooks.json is valid JSON                       — 6 event types wired
+✔ data directory writable                        — ~/.claude-context-optimizer
+✔ user config                                    — model=opus-4.7, budget=200.0K, window=200.0K
+```
+
+Catches the "installed but nothing happens" class of issues in under a second.
+
+---
+
 ## Features
 
-### NEW: Smart Read Cache — block redundant reads automatically
+### Smart Read Cache — block redundant reads automatically
 
 The #1 token waste in Claude Code: re-reading the same file multiple times per session.
 Read Cache runs as a PreToolUse hook and **blocks** redundant reads when the file hasn't changed.
@@ -244,6 +329,9 @@ When installed as a plugin, commands are namespaced: `/claude-context-optimizer:
 | `/cco-claudemd` | CLAUDE.md analyzer — find and fix token bloat |
 | `/cco-anatomy` | Project anatomy — compact codebase map with file sizes and token estimates |
 | `/cco-replay [N]` | Session replay — recent session summaries for quick context recovery |
+| `/cco-coach [prompt]` | **NEW** — Prompt quality score (S/A/B/C/D/F) + concrete suggestions to improve |
+| `/cco-pack [task]` | **NEW** — Build optimal context pack for a task: ranked files with offset/limit |
+| `/cco-doctor` | **NEW** — Plugin health check (versions, hooks, data dir, model config) |
 
 ---
 
@@ -392,19 +480,22 @@ claude-context-optimizer/
 ├── .claude-plugin/
 │   └── plugin.json          # Plugin manifest
 ├── src/
-│   ├── utils.js             # Shared constants, formatting, scoring, donation info
-│   ├── read-cache.js        # Smart Read Cache: blocks redundant file reads
+│   ├── utils.js             # Shared: constants, classification, model costs, atomic JSON I/O
+│   ├── read-cache.js        # Smart Read Cache (adaptive 1M-aware staleness)
 │   ├── contextignore.js     # .contextignore: pattern-based file blocking
 │   ├── replay.js            # Session Replay: recent session summaries
 │   ├── anatomy.js           # Project Anatomy: compact codebase map generator
 │   ├── tracker.js           # Core: file & token tracking engine + session summaries
 │   ├── context-shield.js    # ContextShield: PreToolUse waste prevention
 │   ├── claudemd-analyzer.js # CLAUDE.md token bloat analyzer
-│   ├── budget.js            # Token budget monitor with alerts
+│   ├── budget.js            # Token budget monitor (input + output, model-aware costs)
 │   ├── digest.js            # Efficiency score & weekly digest
 │   ├── git-context.js       # Git-aware context suggestions
 │   ├── report.js            # ROI report generator
-│   └── export.js            # Chart.js HTML dashboard exporter
+│   ├── export.js            # Chart.js HTML dashboard exporter
+│   ├── prompt-coach.js      # NEW — UserPromptSubmit hook + CLI: prompt quality scoring
+│   ├── smart-pack.js        # NEW — Optimal file pack builder (git + history + keywords)
+│   └── doctor.js            # NEW — Health check CLI
 ├── skills/
 │   ├── cco/SKILL.md               # /cco — session heatmap
 │   ├── cco-report/SKILL.md        # /cco-report — full ROI report
@@ -417,6 +508,9 @@ claude-context-optimizer/
 │   ├── cco-shield/SKILL.md        # /cco-shield — ContextShield status
 │   ├── cco-claudemd/SKILL.md      # /cco-claudemd — CLAUDE.md analyzer
 │   ├── cco-anatomy/SKILL.md       # /cco-anatomy — project anatomy
+│   ├── cco-coach/SKILL.md         # NEW — /cco-coach prompt quality grader
+│   ├── cco-pack/SKILL.md          # NEW — /cco-pack smart context pack
+│   ├── cco-doctor/SKILL.md        # NEW — /cco-doctor health check
 │   └── smart-loader/SKILL.md      # Auto-suggestion skill (model-invoked)
 ├── agents/
 │   └── context-analyzer.md  # Deep analysis agent
@@ -451,8 +545,13 @@ A: No. Hook scripts run asynchronously and typically complete in <10ms.
 **Q: How accurate are the token estimates?**
 A: They use a ~4 tokens/line heuristic. Not exact, but consistent across sessions for reliable trends.
 
-**Q: Can I use this with Claude Sonnet / Haiku?**
-A: Yes. Set your model with `/cco-budget model sonnet` for accurate cost estimates.
+**Q: Can I use this with Claude Sonnet / Haiku / Opus 4.7 1M?**
+A: Yes. `/cco-budget model haiku-4.5` / `sonnet-4.6` / `opus-4.7` / `opus-4.7-1m` — each retunes
+context window, prices, and Read Cache staleness thresholds.
+
+**Q: Does Prompt Coach call any LLM?**
+A: No. It uses deterministic local heuristics (regex + scoring). Zero API calls,
+zero latency added to your prompt submission, runs in &lt;5ms.
 
 **Q: Will this work with subagents?**
 A: Yes. The PostToolUse hook fires for all tool calls, including those made by subagents.

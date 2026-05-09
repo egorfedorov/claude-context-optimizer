@@ -1,53 +1,57 @@
 ---
 name: cco-budget
-description: Configure token budget limits, auto-compact settings, and view current budget status
+description: Configure token budget limits, auto-compact settings, and view current budget status (model-aware — supports Opus 4.7 1M context tier)
 license: MIT
-argument-hint: "[status | set <tokens> | model <haiku|sonnet|opus> | auto <on|off>]"
+argument-hint: "[status | set <tokens> | model <haiku|haiku-4.5|sonnet|sonnet-4.6|opus|opus-4.7|opus-4.7-1m> | auto <on|off>]"
 allowed-tools: [Bash, Read, Write]
 ---
 
 # Context Budget Manager
 
-Manage the token budget for Claude Code sessions.
+Manage the token budget for Claude Code sessions. Now model-aware — picks the
+right effective context window for Opus 4.7 (200K) vs Opus 4.7 1M (1M).
 
 Parse $ARGUMENTS:
 
 ## `status` (or no arguments)
-Show current budget configuration, usage, and auto-compact settings:
+Show current budget config + auto-compact settings:
 ```bash
 cat ~/.claude-context-optimizer/config.json 2>/dev/null
 echo "---"
 cat ~/.claude-context-optimizer/budget-config.json 2>/dev/null
 ```
-If no config exists, show defaults (100K tokens, warn at 50/70/85/95%).
-Show auto-compact status: enabled/disabled, thresholds (default: auto-compact at 80%, critical at 90%).
+If no config exists, show defaults (200K tokens for Opus 4.7, warn at 50/70/85/95%).
 
 ## `set <tokens>`
-Update the budget limit. Parse the token count from arguments.
-Create or update `~/.claude-context-optimizer/config.json`:
+Update the budget limit. Parse the token count (`200K`, `1M`, `500000` all OK).
+Update `~/.claude-context-optimizer/config.json`:
 ```json
 {
   "budgetTokens": <parsed_number>,
   "warnAt": [50, 70, 85, 95],
   "autoCompactAt": 90,
-  "model": "opus"
+  "model": "opus-4.7"
 }
 ```
+If `budgetTokens` exceeds the chosen model's context window, warn the user.
 
 ## `model <name>`
-Set the model for cost estimation (haiku, sonnet, opus).
-Update the `model` field in config.json.
+Set the model for cost estimation. Supported keys:
+- `haiku-4.5` (alias `haiku`) — $1/$5 per M, 200K
+- `sonnet-4.6` (alias `sonnet`) — $3/$15 per M, 200K
+- `opus-4.7` (alias `opus`) — $15/$75 per M, 200K
+- `opus-4.7-1m` — $22.50/$112.50 per M, **1M** context window
+
+Update the `model` field in config.json. If switching to `opus-4.7-1m` and the
+current `budgetTokens` is below 500K, ask if the user wants to bump it to 1M.
 
 ## `auto <on|off>`
-Toggle auto-compact behavior. When enabled, the budget monitor will output strong
-directive messages at configurable thresholds to prompt Claude to run /compact.
+Toggle auto-compact at thresholds (80% / 90%). Update
+`~/.claude-context-optimizer/budget-config.json`:
+- `auto on` → `autoCompactEnabled: true`
+- `auto off` → `autoCompactEnabled: false`
 
-Update `~/.claude-context-optimizer/budget-config.json`:
-- `auto on` — set `autoCompactEnabled` to `true`
-- `auto off` — set `autoCompactEnabled` to `false`
-
-Read the existing budget-config.json first, then update only the `autoCompactEnabled` field.
-If the file doesn't exist, create it with defaults:
+Defaults if file missing:
 ```json
 {
   "autoCompactEnabled": true,
@@ -56,16 +60,14 @@ If the file doesn't exist, create it with defaults:
 }
 ```
 
-After toggling, confirm the new setting to the user. Explain:
-- **When enabled (default):** At 80% budget usage, a strong recommendation to run /compact is emitted.
-  At 90%, a critical warning is emitted. These repeat every 10K/5K tokens respectively.
-- **When disabled:** Only the standard threshold warnings (50/70/85/95%) are shown,
-  with legacy compact suggestions at 90%+.
+## Cost calculation
 
-Explain that budget warnings will appear automatically during the session as hook feedback when thresholds are crossed.
+The budget monitor now estimates **input + output** tokens separately and uses
+the model's real input/output prices. Example: `Edit` with a 200-char `new_string`
+counts as ~54 output tokens, charged at the model's output rate.
 
 ## Effective Budget Multiplier
 
-At 50%+ budget usage, the monitor shows how much CCO improves your effective context budget.
-For example, "1.4x more effective" means CCO blocked enough redundant reads to make your 200K context behave like 280K.
-This metric comes from read-cache savings (blocked reads + file digests).
+At 50%+ budget usage, the monitor shows how much CCO multiplies your effective
+budget — e.g. "1.6x more effective" if Read Cache + file digests saved enough
+redundant reads to make your 200K context behave like ~320K.

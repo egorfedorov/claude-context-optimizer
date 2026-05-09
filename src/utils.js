@@ -2,11 +2,11 @@
  * Shared utilities for Context Optimizer
  *
  * Single source of truth for constants, formatting, token estimation,
- * usefulness scoring, JSON I/O, and config management.
+ * usefulness scoring, JSON I/O, file classification, and config management.
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
-import { join, basename } from 'path';
+import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, statSync } from 'fs';
+import { join, basename, extname } from 'path';
 import { homedir } from 'os';
 
 // ── Data directories ─────────────────────────────────────────────────────────
@@ -22,31 +22,76 @@ export const READ_CACHE_DIR = join(DATA_DIR, 'read-cache');
 export const TEMPLATES_DIR = join(DATA_DIR, 'templates');
 export const EXPORTS_DIR = join(DATA_DIR, 'exports');
 export const SUMMARIES_DIR = join(DATA_DIR, 'summaries');
+export const PROMPTS_DIR = join(DATA_DIR, 'prompts');
 
-// ── Model costs ($/M input tokens) — https://anthropic.com/pricing ──────────
+// ── Model costs ($/M tokens — input/output) — anthropic.com/pricing ──────────
+// Updated for current model lineup. Output costs included for accurate ROI.
 
 export const MODEL_COSTS = {
-  haiku: 0.80,       // Claude Haiku 4.5
-  sonnet: 3,         // Claude Sonnet 4.6
-  opus: 15,          // Claude Opus 4.6
-  'opus-extended': 15 // Opus 4.6 with extended thinking (same input price)
+  'haiku':         { input: 1,    output: 5,    contextWindow: 200_000  },
+  'haiku-4.5':     { input: 1,    output: 5,    contextWindow: 200_000  },
+  'sonnet':        { input: 3,    output: 15,   contextWindow: 200_000  },
+  'sonnet-4.6':    { input: 3,    output: 15,   contextWindow: 200_000  },
+  'opus':          { input: 15,   output: 75,   contextWindow: 200_000  },
+  'opus-4.7':      { input: 15,   output: 75,   contextWindow: 200_000  },
+  'opus-4.7-1m':   { input: 22.5, output: 112.5, contextWindow: 1_000_000 }, // 1M-context tier
+  'opus-extended': { input: 15,   output: 75,   contextWindow: 200_000  },
 };
+
+// Backwards-compatible numeric accessor (input price only — used by old callsites).
+export const MODEL_INPUT_COST = Object.fromEntries(
+  Object.entries(MODEL_COSTS).map(([k, v]) => [k, v.input])
+);
+
+export function getModelCost(model) {
+  return MODEL_COSTS[model] || MODEL_COSTS.opus;
+}
+
+export function getModelContextWindow(model) {
+  return getModelCost(model).contextWindow;
+}
 
 // ── Token estimation ─────────────────────────────────────────────────────────
+// chars-per-token ratios — roughly calibrated against tiktoken cl100k_base.
 
 export const TOKEN_RATIOS = {
-  '.json': 3.2, '.yaml': 3.5, '.yml': 3.5, '.toml': 3.5,
-  '.ts': 3.8, '.tsx': 3.8, '.js': 3.8, '.jsx': 3.8,
-  '.py': 4.0, '.rb': 4.0, '.go': 3.7, '.rs': 3.7,
-  '.cpp': 3.6, '.c': 3.6, '.h': 3.6, '.hpp': 3.6,
-  '.md': 4.2, '.txt': 4.5, '.html': 3.5, '.css': 3.8,
-  '.svg': 3.0, '.xml': 3.2,
+  // Data / config
+  '.json': 3.2, '.yaml': 3.5, '.yml': 3.5, '.toml': 3.5, '.ini': 3.6, '.env': 3.6,
+  // JS / TS family
+  '.ts': 3.8, '.tsx': 3.8, '.js': 3.8, '.jsx': 3.8, '.mjs': 3.8, '.cjs': 3.8,
+  '.svelte': 3.6, '.vue': 3.6, '.astro': 3.7,
+  // Python / Ruby / Go / Rust
+  '.py': 4.0, '.pyi': 4.0, '.rb': 4.0, '.go': 3.7, '.rs': 3.7,
+  // C / C++
+  '.cpp': 3.6, '.c': 3.6, '.h': 3.6, '.hpp': 3.6, '.cc': 3.6, '.cxx': 3.6,
+  // Other compiled
+  '.java': 3.6, '.kt': 3.7, '.scala': 3.6, '.swift': 3.7, '.dart': 3.7, '.cs': 3.7,
+  // JVM / functional
+  '.clj': 3.8, '.cljs': 3.8, '.ex': 3.9, '.exs': 3.9, '.erl': 3.9, '.fs': 3.7, '.hs': 3.7,
+  // Shell / scripting
+  '.sh': 3.5, '.bash': 3.5, '.zsh': 3.5, '.fish': 3.5, '.ps1': 3.5,
+  '.lua': 3.8, '.pl': 3.8, '.r': 3.8, '.php': 3.7,
+  // Docs / markup
+  '.md': 4.2, '.mdx': 4.2, '.txt': 4.5, '.rst': 4.3, '.tex': 3.8,
+  '.html': 3.5, '.htm': 3.5, '.xml': 3.2,
+  // Styles
+  '.css': 3.8, '.scss': 3.8, '.sass': 3.8, '.less': 3.8, '.styl': 3.8,
+  // Other
+  '.svg': 3.0, '.proto': 3.6, '.graphql': 3.7, '.gql': 3.7, '.sql': 3.6,
 };
 
+const AVG_CHARS_PER_LINE = 35;
+
 export function estimateTokens(lineCount, ext) {
-  const avgCharsPerLine = 35;
   const ratio = TOKEN_RATIOS[ext] || 3.7;
-  return Math.round((lineCount * avgCharsPerLine) / ratio);
+  return Math.round((lineCount * AVG_CHARS_PER_LINE) / ratio);
+}
+
+/** Estimate tokens directly from a string. Used by prompt-coach and budget. */
+export function estimateTokensFromString(str, ext = '') {
+  if (!str) return 0;
+  const ratio = TOKEN_RATIOS[ext] || 3.7;
+  return Math.round(str.length / ratio);
 }
 
 // ── Formatting ───────────────────────────────────────────────────────────────
@@ -77,7 +122,7 @@ export function displayPath(filePath, maxLen = 35) {
   return display;
 }
 
-// ── JSON I/O ─────────────────────────────────────────────────────────────────
+// ── JSON I/O (atomic writes) ─────────────────────────────────────────────────
 
 export function loadJSON(file) {
   if (!existsSync(file)) return null;
@@ -88,17 +133,31 @@ export function loadJSON(file) {
   }
 }
 
+/**
+ * Atomic JSON write: write to temp + rename.
+ * Prevents corruption when parallel hook processes write the same file
+ * (e.g. main session + subagent finalizing concurrently).
+ */
 export function saveJSON(file, data) {
-  writeFileSync(file, JSON.stringify(data, null, 2));
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    writeFileSync(tmp, JSON.stringify(data, null, 2));
+    renameSync(tmp, file);
+  } catch (err) {
+    // Best-effort: fall back to direct write so we don't lose data.
+    try { writeFileSync(file, JSON.stringify(data, null, 2)); } catch { /* drop */ }
+    try { if (existsSync(tmp)) { /* leave tmp for inspection */ } } catch { /* ignore */ }
+    throw err;
+  }
 }
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
 const DEFAULT_CONFIG = {
-  budgetTokens: 100000,
+  budgetTokens: 200000,        // 200K — sane default for Sonnet/Opus 4.7
   warnAt: [50, 70, 85, 95],
   autoCompactAt: 90,
-  model: 'opus'
+  model: 'opus-4.7'
 };
 
 export function loadConfig() {
@@ -107,6 +166,20 @@ export function loadConfig() {
   mkdirSync(DATA_DIR, { recursive: true });
   saveJSON(CONFIG_FILE, DEFAULT_CONFIG);
   return { ...DEFAULT_CONFIG };
+}
+
+export function saveConfig(config) {
+  saveJSON(CONFIG_FILE, { ...DEFAULT_CONFIG, ...config });
+}
+
+/**
+ * Effective budget — model-aware. Honours explicit budgetTokens but caps to
+ * the model's context window if user hasn't customised it.
+ */
+export function getEffectiveBudget(config) {
+  const cfg = config || loadConfig();
+  const window = getModelContextWindow(cfg.model);
+  return Math.min(cfg.budgetTokens || DEFAULT_CONFIG.budgetTokens, window);
 }
 
 // ── Budget config (auto-compact settings) ────────────────────────────────────
@@ -119,11 +192,6 @@ const DEFAULT_BUDGET_CONFIG = {
 
 let _budgetConfigCache = null;
 
-/**
- * Load budget-specific config (auto-compact settings).
- * Lazily loaded and cached for performance since this runs on every PostToolUse.
- * Creates the config file with defaults if it doesn't exist.
- */
 export function loadBudgetConfig() {
   if (_budgetConfigCache) return _budgetConfigCache;
   const config = loadJSON(BUDGET_CONFIG_FILE);
@@ -137,23 +205,17 @@ export function loadBudgetConfig() {
   return _budgetConfigCache;
 }
 
-/**
- * Save budget config and update cache.
- */
 export function saveBudgetConfig(config) {
   const merged = { ...DEFAULT_BUDGET_CONFIG, ...config };
   saveJSON(BUDGET_CONFIG_FILE, merged);
   _budgetConfigCache = merged;
 }
 
-/**
- * Clear the budget config cache (useful for testing or after external changes).
- */
 export function clearBudgetConfigCache() {
   _budgetConfigCache = null;
 }
 
-// ── Usefulness scoring (consistent across all modules) ───────────────────────
+// ── Usefulness scoring ───────────────────────────────────────────────────────
 
 export function computeUsefulness(fileData) {
   let score = 0;
@@ -172,30 +234,134 @@ export function computeUsefulness(fileData) {
 
 // ── Confidence scoring ──────────────────────────────────────────────────────
 
-/**
- * Compute confidence score (0.0 - 1.0) for a file pattern.
- * Based on: sessions seen, usefulness consistency, recency.
- */
 export function computeConfidence(freqData, daysSinceLastSession = 0) {
   if (!freqData || !freqData.sessions) return 0;
-
-  // Base: more sessions = more confidence (caps at 10 sessions = 1.0)
   const sessionScore = Math.min(1, freqData.sessions / 10);
-
-  // Consistency: what % of sessions was this file useful?
   const usefulRatio = freqData.sessions > 0
     ? (freqData.usefulness || 0) / freqData.sessions
     : 0;
-
-  // Recency decay: lose 10% confidence per 30 days of inactivity
   const decayFactor = Math.max(0, 1 - (daysSinceLastSession / 300));
-
-  // Weighted score
   const confidence = (sessionScore * 0.4 + usefulRatio * 0.5 + decayFactor * 0.1);
   return Math.round(confidence * 100) / 100;
 }
 
-// ── Donation info ───────────────────────────────────────────────────────────
+// ── Unified file classification (single source of truth) ─────────────────────
+
+export const SOURCE_EXTS = new Set([
+  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
+  '.py', '.pyi', '.go', '.rs', '.cpp', '.c', '.h', '.hpp', '.cc', '.cxx',
+  '.rb', '.java', '.kt', '.scala', '.swift', '.dart', '.cs',
+  '.clj', '.cljs', '.ex', '.exs', '.erl', '.fs', '.hs',
+  '.lua', '.pl', '.r', '.php',
+  '.svelte', '.vue', '.astro',
+]);
+export const CONFIG_EXTS = new Set(['.json', '.yaml', '.yml', '.toml', '.ini', '.env', '.proto', '.graphql', '.gql']);
+export const STYLE_EXTS = new Set(['.css', '.scss', '.sass', '.less', '.styl']);
+export const DOC_EXTS = new Set(['.md', '.mdx', '.txt', '.rst', '.tex']);
+export const SHELL_EXTS = new Set(['.sh', '.bash', '.zsh', '.fish', '.ps1']);
+
+export const SKIP_EXTS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp', '.bmp', '.tiff',
+  '.woff', '.woff2', '.ttf', '.eot', '.otf',
+  '.lock', '.map',
+  '.zip', '.tar', '.gz', '.bz2', '.7z', '.rar', '.br', '.zst',
+  '.mp3', '.mp4', '.wav', '.ogg', '.webm', '.avi', '.mov',
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx',
+]);
+
+export const SKIP_NAMES = new Set([
+  'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
+  'bun.lockb', 'Cargo.lock', 'Gemfile.lock', 'poetry.lock', 'composer.lock',
+]);
+
+export const SKIP_DIRS = new Set([
+  'node_modules', '.git', 'dist', 'build', '.next', '.nuxt', '.turbo',
+  '__pycache__', '.venv', 'venv', 'vendor', 'target', '.cache',
+]);
+
+export function categorizeFile(filePath) {
+  const ext = extname(filePath);
+  const name = basename(filePath);
+  const lower = filePath.toLowerCase();
+
+  // Test files first (before source, since .test.ts is also .ts)
+  if (/\.(test|spec)\./.test(name) || /\/__tests__\//.test(lower) || /\/tests?\//.test(lower)) {
+    return 'test';
+  }
+  if (DOC_EXTS.has(ext) || /\/docs?\//.test(lower)) return 'docs';
+  if (SOURCE_EXTS.has(ext)) return 'source';
+  if (STYLE_EXTS.has(ext) || /\.styled\./.test(name)) return 'style';
+  if (SHELL_EXTS.has(ext)) return 'script';
+  if (CONFIG_EXTS.has(ext) || /\.config\./.test(name) || /\.env/.test(name) ||
+      name.startsWith('tsconfig') || name === 'Makefile' || name === 'CMakeLists.txt' ||
+      name === 'Dockerfile' || name === '.eslintrc' || name === '.prettierrc') {
+    return 'config';
+  }
+  return 'other';
+}
+
+export function shouldSkipFile(filePath) {
+  const ext = extname(filePath);
+  const name = basename(filePath);
+  if (SKIP_EXTS.has(ext)) return true;
+  if (SKIP_NAMES.has(name)) return true;
+  if (name.endsWith('.min.js') || name.endsWith('.min.css')) return true;
+  return false;
+}
+
+/**
+ * Tracker-level ignore: also covers transient/system paths and binary blobs.
+ * Used by the PostToolUse tracker to drop noise events.
+ */
+const TRACKER_IGNORE_PATTERNS = [
+  /^toolu_/,
+  /^\/dev\//,
+  /^\/proc\//,
+  /^\/tmp\/claude/,
+  /^data:/,
+  /node_modules\//,
+  /\.git\//,
+];
+
+export function shouldIgnoreForTracking(filePath) {
+  if (!filePath) return true;
+  if (TRACKER_IGNORE_PATTERNS.some(p => p.test(filePath))) return true;
+  return shouldSkipFile(filePath);
+}
+
+// ── File metadata helpers ────────────────────────────────────────────────────
+
+export function getFileLines(filePath, maxBytes = 10 * 1024 * 1024) {
+  try {
+    const stat = statSync(filePath);
+    if (stat.size > maxBytes) return 0;
+    const content = readFileSync(filePath, 'utf-8');
+    return content.split('\n').length;
+  } catch {
+    return 0;
+  }
+}
+
+export function getProjectRoot(filePath) {
+  try {
+    let dir = filePath;
+    // If filePath is a file, walk from its dir
+    try { if (statSync(dir).isFile()) dir = dir.replace(/\/[^/]+$/, ''); } catch { /* ignore */ }
+    for (let i = 0; i < 10; i++) {
+      if (existsSync(join(dir, '.git'))) return dir;
+      if (existsSync(join(dir, 'package.json'))) return dir;
+      if (existsSync(join(dir, 'Cargo.toml'))) return dir;
+      if (existsSync(join(dir, 'go.mod'))) return dir;
+      if (existsSync(join(dir, 'pyproject.toml'))) return dir;
+      const parent = dir.replace(/\/[^/]+$/, '');
+      if (parent === dir || !parent) break;
+      dir = parent;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+// ── Donation / quiet mode ────────────────────────────────────────────────────
 
 export const DONATION_ADDRESSES = {
   btc: 'bc1q428exz5t2h9rzk7z5ya70madh0j3rs6h4gfgyd',
@@ -203,7 +369,15 @@ export const DONATION_ADDRESSES = {
   sol: '8ctK8nt3CBkPZGfWQXX8TsnqUYUy4JAbT1EMhr8rsQxm',
 };
 
+/** Suppress donation banner in machine-consumed outputs. */
+export function isQuietMode() {
+  return process.env.CCO_QUIET === '1' ||
+         process.env.CCO_QUIET === 'true' ||
+         process.env.CI === 'true';
+}
+
 export function getDonationMessage() {
+  if (isQuietMode()) return '';
   return [
     '',
     '  ─────────────────────────────────────────────────────────────',
@@ -224,4 +398,20 @@ export function ensureDataDirs() {
   mkdirSync(TEMPLATES_DIR, { recursive: true });
   mkdirSync(EXPORTS_DIR, { recursive: true });
   mkdirSync(SUMMARIES_DIR, { recursive: true });
+  mkdirSync(PROMPTS_DIR, { recursive: true });
+}
+
+// ── Plugin version (single source of truth) ─────────────────────────────────
+
+let _pluginVersion = null;
+export function getPluginVersion() {
+  if (_pluginVersion) return _pluginVersion;
+  try {
+    const here = new URL('../package.json', import.meta.url);
+    const pkg = JSON.parse(readFileSync(here, 'utf-8'));
+    _pluginVersion = pkg.version;
+  } catch {
+    _pluginVersion = '0.0.0';
+  }
+  return _pluginVersion;
 }

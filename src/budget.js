@@ -1,20 +1,25 @@
 #!/usr/bin/env node
 
 /**
- * Context Budget Monitor v2.2
+ * Context Budget Monitor v3.0
  *
- * Tracks token accumulation during a session and warns
- * when approaching a configurable budget limit.
- * Auto-compact: at configurable thresholds (default 80%/90%) outputs
- * strong directive messages that prompt Claude to run /compact.
- * Incremental warnings: every 5K tokens after critical threshold shows updated recommendations.
+ * Tracks token accumulation during a session (input + estimated output) and
+ * warns when approaching a configurable budget limit. Model-aware: uses the
+ * effective context window for the configured model (e.g. 1M for opus-4.7-1m).
+ *
+ * v3.0:
+ *   - Tracks output tokens too (Edit/Write content size).
+ *   - Cost calculation uses real input + output prices from MODEL_COSTS.
+ *   - Effective budget honours model context window (avoids "50% used" at 50K
+ *     when the actual window is 1M).
  */
 
-import { join, basename } from 'path';
+import { join } from 'path';
 import {
-  BUDGET_STATE_DIR, SESSIONS_DIR,
-  formatTokens, loadConfig, MODEL_COSTS, displayPath,
-  loadJSON, saveJSON, ensureDataDirs, loadBudgetConfig
+  BUDGET_STATE_DIR,
+  formatTokens, loadConfig, getModelCost, getEffectiveBudget,
+  displayPath, loadJSON, saveJSON, ensureDataDirs, loadBudgetConfig,
+  estimateTokensFromString
 } from './utils.js';
 
 ensureDataDirs();
@@ -24,6 +29,8 @@ function loadBudgetState(sessionId) {
   return loadJSON(file) || {
     sessionId,
     totalTokensEstimated: 0,
+    inputTokensEstimated: 0,
+    outputTokensEstimated: 0,
     warningsSent: [],
     filesLoaded: {},
     compactSuggested: false,
@@ -39,35 +46,49 @@ function saveBudgetState(state) {
   saveJSON(file, state);
 }
 
+/**
+ * Estimate input + output tokens consumed by a tool call.
+ * Returns { input, output }.
+ */
 function estimateToolTokens(toolName, toolInput) {
   switch (toolName) {
     case 'Read': {
+      // Input = file contents echoed back into context.
       const lines = toolInput?.limit || 2000;
-      return Math.round((lines * 35) / 3.7);
+      return { input: Math.round((lines * 35) / 3.7), output: 0 };
     }
     case 'Edit': {
       const oldLen = (toolInput?.old_string || '').length;
       const newLen = (toolInput?.new_string || '').length;
-      return Math.round((oldLen + newLen) / 3.7) + 50;
+      // Output: the new string Claude generated.
+      return {
+        input: Math.round(oldLen / 3.7) + 50,
+        output: Math.round(newLen / 3.7) + 30
+      };
     }
     case 'Write': {
       const contentLen = (toolInput?.content || '').length;
-      return Math.round(contentLen / 3.7) + 30;
+      // Pure output — Claude wrote the whole file.
+      return { input: 30, output: Math.round(contentLen / 3.7) };
     }
     case 'Grep':
-      return 200;
+      return { input: 200, output: 50 };
     case 'Glob':
-      return 100;
+      return { input: 100, output: 30 };
     case 'Agent':
-      return 500;
+      // Subagents emit a summary back; estimate moderate output.
+      return { input: 500, output: 1000 };
     default:
-      return 50;
+      // MCP and unknown tools — small default.
+      if (toolName && toolName.startsWith('mcp__')) {
+        return { input: 200, output: 300 };
+      }
+      return { input: 50, output: 50 };
   }
 }
 
 /**
  * Build a compact recommendation with specific files to drop.
- * Returns { message, reclaimableTokens, files[] }
  */
 function buildCompactRecommendation(state) {
   const droppable = Object.entries(state.filesLoaded)
@@ -84,6 +105,13 @@ function buildCompactRecommendation(state) {
   }
 
   return { message: msg, reclaimableTokens: reclaimable, files: droppable.map(([p]) => p) };
+}
+
+function computeCost(state, model) {
+  const cost = getModelCost(model);
+  const inDollars = (state.inputTokensEstimated / 1_000_000) * cost.input;
+  const outDollars = (state.outputTokensEstimated / 1_000_000) * cost.output;
+  return inDollars + outDollars;
 }
 
 async function main() {
@@ -106,38 +134,37 @@ async function main() {
   const budgetConfig = loadBudgetConfig();
   const state = loadBudgetState(sessionId);
 
-  const tokensAdded = estimateToolTokens(toolName, toolInput);
-  state.totalTokensEstimated += tokensAdded;
+  const { input: inAdded, output: outAdded } = estimateToolTokens(toolName, toolInput);
+  state.inputTokensEstimated += inAdded;
+  state.outputTokensEstimated += outAdded;
+  state.totalTokensEstimated = state.inputTokensEstimated + state.outputTokensEstimated;
 
   const filePath = toolInput?.file_path;
   if (filePath) {
     if (!state.filesLoaded[filePath]) {
       state.filesLoaded[filePath] = { tokens: 0, reads: 0, edits: 0 };
     }
-    state.filesLoaded[filePath].tokens += tokensAdded;
+    state.filesLoaded[filePath].tokens += inAdded;
     if (toolName === 'Read') state.filesLoaded[filePath].reads++;
     if (toolName === 'Edit' || toolName === 'Write') state.filesLoaded[filePath].edits++;
   }
 
-  const usagePercent = Math.round((state.totalTokensEstimated / config.budgetTokens) * 100);
+  const effectiveBudget = getEffectiveBudget(config);
+  const usagePercent = Math.round((state.totalTokensEstimated / effectiveBudget) * 100);
 
   // Standard threshold warnings
   for (const threshold of config.warnAt) {
     if (usagePercent >= threshold && !state.warningsSent.includes(threshold)) {
       state.warningsSent.push(threshold);
 
-      const cost = (state.totalTokensEstimated / 1000000) * (MODEL_COSTS[config.model] || 15);
-      let msg = `[context-budget] ${usagePercent}% budget used (~${formatTokens(state.totalTokensEstimated)}/${formatTokens(config.budgetTokens)})`;
-      msg += ` | Est. cost: $${cost.toFixed(3)} (${config.model})`;
+      const cost = computeCost(state, config.model);
+      let msg = `[context-budget] ${usagePercent}% budget used (~${formatTokens(state.totalTokensEstimated)}/${formatTokens(effectiveBudget)})`;
+      msg += ` | Cost: $${cost.toFixed(3)} (${config.model}: in ${formatTokens(state.inputTokensEstimated)} / out ${formatTokens(state.outputTokensEstimated)})`;
 
-      // At 85%+, show compact recommendation
       if (threshold >= 85) {
         const rec = buildCompactRecommendation(state);
-        if (rec) {
-          msg += '\n' + rec.message;
-        } else {
-          msg += ` | Consider /compact to free context`;
-        }
+        if (rec) msg += '\n' + rec.message;
+        else msg += ` | Consider /compact to free context`;
       }
 
       console.error(msg);
@@ -148,7 +175,6 @@ async function main() {
   if (budgetConfig.autoCompactEnabled) {
     const { autoCompactThreshold, criticalThreshold } = budgetConfig;
 
-    // Critical threshold (default 90%): urgent directive, repeats every 5K tokens
     if (usagePercent >= criticalThreshold) {
       const tokensSinceCritical = state.totalTokensEstimated - (state.criticalSentAt || 0);
       if (tokensSinceCritical >= 5000 || !state.criticalSentAt) {
@@ -156,13 +182,11 @@ async function main() {
         const rec = buildCompactRecommendation(state);
         const reclaimMsg = rec ? ` Free ~${formatTokens(rec.reclaimableTokens)} tokens.` : '';
         console.error(
-          `[context-budget] CRITICAL: ${usagePercent}% budget used (~${formatTokens(state.totalTokensEstimated)}/${formatTokens(config.budgetTokens)}). ` +
+          `[context-budget] CRITICAL: ${usagePercent}% budget used (~${formatTokens(state.totalTokensEstimated)}/${formatTokens(effectiveBudget)}). ` +
           `Run /compact immediately or the session will lose older context.${reclaimMsg}`
         );
       }
-    }
-    // Auto-compact threshold (default 80%): strong recommendation, repeats every 10K tokens
-    else if (usagePercent >= autoCompactThreshold) {
+    } else if (usagePercent >= autoCompactThreshold) {
       const tokensSinceAutoCompact = state.totalTokensEstimated - (state.autoCompactSentAt || 0);
       if (tokensSinceAutoCompact >= 10000 || !state.autoCompactSentAt) {
         state.autoCompactSentAt = state.totalTokensEstimated;
@@ -174,9 +198,7 @@ async function main() {
         );
       }
     }
-  }
-  // Legacy fallback: original incremental compact reminders when auto-compact is disabled
-  else if (usagePercent >= config.autoCompactAt) {
+  } else if (usagePercent >= config.autoCompactAt) {
     const tokensSinceLast = state.totalTokensEstimated - (state.lastCompactSuggestAt || 0);
     if (tokensSinceLast >= 10000) {
       state.lastCompactSuggestAt = state.totalTokensEstimated;
@@ -212,3 +234,6 @@ async function main() {
 }
 
 main().catch(() => process.exit(0));
+
+// Exposed for tests
+export { estimateToolTokens, buildCompactRecommendation, computeCost };
