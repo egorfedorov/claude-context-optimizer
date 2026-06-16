@@ -27,7 +27,9 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: javascript-typescript
-          queries: security-and-quality
+          # security-only — keep the Security tab focused on real vulnerabilities,
+          # not code-quality nits (e.g. unused variables).
+          queries: security-extended
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
