@@ -30,7 +30,7 @@ import { statSync } from 'fs';
 import {
   READ_CACHE_DIR,
   estimateTokens, formatTokens, loadJSON, saveJSON, ensureDataDirs,
-  loadConfig, getEffectiveBudget, isMainModule
+  loadConfig, getEffectiveBudget, isMainModule, getFileLines
 } from './utils.js';
 import { isContextIgnored } from './contextignore.js';
 import { parseFileStructure, formatDigest } from './file-digest.js';
@@ -157,6 +157,26 @@ function checkStaleness(cache, filePath) {
 // Exposed for testing — recreate threshold lookup in unit tests.
 export const _staleConfig = getStaleThresholds;
 
+// ── Big-file first-read nudge ─────────────────────────────────────────────────
+/**
+ * Decide whether to show a file's structural map instead of loading the whole
+ * thing on its FIRST full read. Pure — unit-tested.
+ *
+ * Fires only when: enabled, this is the first time we see the file (no entry),
+ * the read is untargeted (no offset/limit — Claude is about to slurp it all),
+ * and the file is very large. The block is one-shot: it creates a placeholder
+ * entry, so the very next read (targeted or full) is allowed and cached. Worst
+ * case is a single cheap extra round-trip; best case saves ~14K+ tokens when
+ * Claude only needed one section.
+ */
+export function shouldNudgeBigFile({ entry, hasOffset, hasLimit, lines, threshold, enabled }) {
+  if (!enabled) return false;
+  if (entry) return false;
+  if (hasOffset || hasLimit) return false;
+  if (!lines || lines < threshold) return false;
+  return true;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function getMtime(filePath) {
@@ -281,8 +301,35 @@ async function main() {
   const cache = loadCache(sessionId);
   const entry = cache.files[filePath];
 
-  // ── First read — always allow ───────────────────────────────────────
+  // ── First read — map-then-load nudge for very large files ───────────
   if (!entry) {
+    const cfg = loadConfig();
+    const enabled = cfg.bigFileDigest !== false;
+    const threshold = cfg.bigFileThreshold || 1500;
+    const lines = (enabled && !toolInput.offset && !toolInput.limit) ? getFileLines(filePath) : 0;
+
+    if (shouldNudgeBigFile({
+      entry, hasOffset: !!toolInput.offset, hasLimit: !!toolInput.limit, lines, threshold, enabled,
+    })) {
+      const mtime = getMtime(filePath);
+      // Placeholder entry (no covered ranges) so the NEXT read is allowed & cached.
+      cache.files[filePath] = {
+        mtime, lines, tokens: estimateTokens(lines, ext),
+        readAt: new Date().toISOString(), readAtMs: Date.now(),
+        ranges: [], ppids: [ppid], nudged: true,
+      };
+      cache.bigFileNudges = (cache.bigFileNudges || 0) + 1;
+      saveCache(sessionId, cache);
+
+      let digest = '';
+      try { digest = formatDigest(parseFileStructure(filePath), lines); } catch { /* best-effort */ }
+      const reason =
+        `🗺️ [read-cache] ${basename(filePath)} is ${lines} lines (~${formatTokens(estimateTokens(lines, ext))} tokens). ` +
+        `Here's its map — Read with offset/limit for the section you need, or Read it again to load the whole file.\n${digest}`;
+      console.log(JSON.stringify({ decision: 'block', reason }));
+      process.exit(0);
+    }
+
     allow(sessionId, cache, filePath, getMtime(filePath), offset, end, ext, ppid);
   }
 
@@ -325,7 +372,11 @@ async function main() {
   }
 
   // ── Redundant read — BLOCK with structural digest ───────────────────
-  cache.totalTokensSaved += estimateTokens(limit, ext);
+  // Count what the re-read would ACTUALLY have reloaded — capped at the tokens
+  // already cached for this file — not the raw `limit` (default 2000 lines),
+  // which would wildly over-credit re-reads of small files. Honest accounting.
+  const wouldReload = Math.min(estimateTokens(limit, ext), entry.tokens || estimateTokens(limit, ext));
+  cache.totalTokensSaved += wouldReload;
   cache.blockedReads += 1;
   saveCache(sessionId, cache);
 

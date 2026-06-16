@@ -13,6 +13,7 @@ import {
   PATTERNS_FILE, SESSIONS_DIR,
   estimateTokens, formatTokens, loadJSON, ensureDataDirs, isMainModule
 } from './utils.js';
+import { emitNotice } from './notices.js';
 
 ensureDataDirs();
 
@@ -56,6 +57,7 @@ async function main() {
   const filePath = toolInput.file_path || '';
   if (!filePath || filePath.startsWith('/dev/') || filePath.startsWith('/proc/')) process.exit(0);
 
+  const sessionId = event.session_id || 'unknown';
   const patterns = loadPatterns();
   const projectRoot = findProjectForPath(patterns, filePath);
   const proj = getProjectPatterns(patterns, projectRoot);
@@ -113,9 +115,10 @@ async function main() {
     }
   }
 
-  // Output warnings
-  for (const w of warnings) {
-    console.error(w);
+  // Emit at most one shield tip per file, gated by the session noise budget —
+  // these are pure FYI, so they must never crowd out Claude's working context.
+  if (warnings.length) {
+    emitNotice(sessionId, { kind: `shield:${basename(filePath)}`, text: warnings[0] });
   }
 
   // ContextShield never blocks — only warns

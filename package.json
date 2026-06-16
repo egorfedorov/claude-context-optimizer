@@ -1,7 +1,7 @@
 {
   "name": "claude-context-optimizer",
-  "version": "4.0.0",
-  "description": "Opus 4.8-aware context optimization: 1M-context tuning, accurate token costs, prompt coach, smart context packs, ContextShield, CLAUDE.md analyzer, MCP tool tracking",
+  "version": "4.1.0",
+  "description": "Opus 4.8-aware context optimization: silent-by-default hooks, honest NET token savings, big-file map-then-load, Context Control Center, per-task tracking, prompt coach",
   "type": "module",
   "main": "src/tracker.js",
   "bin": {
