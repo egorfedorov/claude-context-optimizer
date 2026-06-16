@@ -15,7 +15,7 @@ import {
   DATA_DIR, SESSIONS_DIR, PATTERNS_FILE, GLOBAL_STATS_FILE, TEMPLATES_DIR, SUMMARIES_DIR,
   estimateTokens, formatTokens, displayPath, computeUsefulness, computeConfidence,
   getDonationMessage, loadJSON, saveJSON, ensureDataDirs,
-  shouldIgnoreForTracking, getFileLines, getProjectRoot
+  shouldIgnoreForTracking, getFileLines, getProjectRoot, isMainModule
 } from './utils.js';
 
 ensureDataDirs();
@@ -1005,7 +1005,9 @@ async function main() {
   process.exit(0);
 }
 
-main().catch(err => {
-  console.error(`[cco] Error: ${err.message}`);
-  process.exit(0);
-});
+if (isMainModule(import.meta.url)) {
+  main().catch(err => {
+    console.error(`[cco] Error: ${err.message}`);
+    process.exit(0);
+  });
+}

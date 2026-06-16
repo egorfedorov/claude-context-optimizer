@@ -4,7 +4,7 @@
 
 <p align="center">
   <strong>Stop burning tokens on weak prompts and redundant reads.</strong><br/>
-  <sub>Tuned for Claude Opus 4.7 — including the 1M-context tier.</sub>
+  <sub>Tuned for Claude Opus 4.8 — full 1M context at standard price.</sub>
 </p>
 
 <p align="center">
@@ -25,7 +25,7 @@ The average Claude Code session **wastes 30-50% of tokens** on files that are re
 - A README you glanced at once? **2,400 tokens burned.**
 - That `package.json` Claude reads "just in case"? **120 tokens, every time.**
 
-At $15/M tokens (Opus), a developer spending $100/month is lighting **$30-50 on fire** on irrelevant context.
+At $5/M input tokens (Opus 4.8), a developer spending $100/month is lighting **$30-50 on fire** on irrelevant context.
 
 ## The Solution
 
@@ -34,6 +34,74 @@ At $15/M tokens (Opus), a developer spending $100/month is lighting **$30-50 on 
 <p align="center">
   <img src="assets/how-it-works.svg" alt="How it works" width="700"/>
 </p>
+
+---
+
+## What's new in v4.0 — Opus 4.8
+
+v4.0 makes the plugin **Opus 4.8-aware**, adds a flagship **Context Control Center**,
+and corrects the model facts.
+
+### NEW: Context Control Center — everything in one screen (`/cco`)
+
+`/cco` is now a single, live dashboard instead of just a heatmap:
+
+```
+  CONTEXT CONTROL CENTER          opus-4.8 · 1M
+  ────────────────────────────────────────────────────────────
+  Budget   ▓▓▓▓▓▓▓░░░  142K / 200K  (71%)  $0.84
+  Saved    +58K tokens by cache  →  1.41x effective  (12 reads blocked)
+  Waste    ▓▓░░░░░░░░  18%  (3 cold files)
+  Prompt   last grade: B  (add a file path to be specific)
+  ────────────────────────────────────────────────────────────
+  ▶ Task   #4 refactor login flow  ·  ~31K · $0.155
+  ✓ #3 add OAuth provider  ·  ~22K
+  ────────────────────────────────────────────────────────────
+  ⚡ Free ~22K:  drop legacy/old_api.ts, vendor/build.js  → /compact
+  📦 Pack minimal context:  /cco-pack "refactor login flow"
+```
+
+One screen ties together **budget %, $ spent, tokens saved (effectiveness
+multiplier), waste, last prompt grade, the active task's cost, and ready-to-run
+actions** — all from data the optimizer already tracks. Nothing to configure.
+
+### NEW: Organize work by task (`/cco-task`)
+
+Track tokens and cost **per task**, not just per session:
+
+```bash
+$ /cco-task add "refactor login flow"   # start a task
+$ /cco-pack "refactor login flow"        # load only the files it needs
+  …work…
+$ /cco-task done                         # freezes the task's token/$ total
+```
+
+While a task is active, session tokens are attributed to it, so `/cco` shows
+exactly what each task costs. One active task per project; starting a new one
+finalizes the previous one automatically.
+
+### NEW: Auto-Optimizer session report
+
+At session end the optimizer prints what it saved you:
+
+```
+  CCO saved you 71K tokens this session (~$0.36).
+  Your 200K budget worked like 271K (1.36x).
+```
+
+### Model & correctness updates
+
+- **Opus 4.8 is now the default model** (`opus-4.8`). Opus 4.7 is still fully supported.
+- **Pricing corrected:** Opus 4.7/4.8 are **$5/M input, $25/M output** — and deliver the
+  **full 1M context window at that standard price**. There is **no 1M "premium tier" and no
+  surcharge**. The old `opus-4.7-1m` $22.50/$112.50 claim was wrong and has been removed;
+  `opus-4.7-1m` / `opus-4.8-1m` / `opus-extended` remain only as back-compat aliases that now
+  map to the standard $5/$25 1M Opus.
+- **Sonnet 4.6 is now 1M context** ($3/M input, $15/M output) — previously mislabelled 200K.
+  Haiku 4.5 stays 200K ($1/$5).
+- **CI/test fix:** hook modules used to read stdin on import, which hung the test suite
+  (v3.6.0 CI runs timed out at 6h). The stdin-reading `main()` is now guarded with
+  `isMainModule()`, so importing a hook for unit testing no longer blocks.
 
 ---
 
@@ -83,18 +151,19 @@ $ /cco-pack "refactor login flow to support OAuth"
 ```
 
 Mentioned files + git diff + historical patterns + keyword match → ranked, token-budget aware.
-Stops at 25% of your effective context. With Opus 4.7 1M that's 250K of "safe to load now".
+Stops at 25% of your effective context. With Opus 4.8's 1M window that's 250K of "safe to load now".
 
-### NEW: 1M context tier support — `opus-4.7-1m`
+### NEW: 1M context support — standard on Opus
 
 ```bash
-/cco-budget model opus-4.7-1m
+/cco-budget model opus-4.8
 ```
 
-Switching models retunes the entire plugin:
+Opus 4.7/4.8 deliver the full 1M window at the standard $5/$25 price — no premium tier, no
+surcharge. Switching models still retunes the entire plugin:
 - **Read Cache staleness thresholds scale** — 100K/40-files/10min instead of 20K/8-files/10min,
   so you don't get false re-reads in massive contexts.
-- **Cost calculation uses 1M-tier prices** — $22.50/M input, $112.50/M output.
+- **Cost calculation uses each model's real prices** — Opus $5/$25, Sonnet 4.6 $3/$15, Haiku 4.5 $1/$5.
 - **Budget warnings stop firing at 5%** of a 1M window — they fire at the percentages of *your*
   effective budget.
 
@@ -111,10 +180,10 @@ in token reports alongside Read/Edit/Write.
 ### NEW: `/cco-doctor` — health check
 
 ```
-✔ versions in sync (plugin.json vs package.json) — v3.6.0
+✔ versions in sync (plugin.json vs package.json) — v4.0.0
 ✔ hooks.json is valid JSON                       — 6 event types wired
 ✔ data directory writable                        — ~/.claude-context-optimizer
-✔ user config                                    — model=opus-4.7, budget=200.0K, window=200.0K
+✔ user config                                    — model=opus-4.8, budget=200.0K, window=1.0M
 ```
 
 Catches the "installed but nothing happens" class of issues in under a second.
@@ -317,7 +386,8 @@ When installed as a plugin, commands are namespaced: `/claude-context-optimizer:
 
 | Command | Description |
 |---------|-------------|
-| `/cco` | Session heatmap — visual file-by-file token breakdown |
+| `/cco` | **Context Control Center** — one screen: budget, $ spent, tokens saved, waste, prompt grade, active task, actions |
+| `/cco-task [add\|list\|done]` | **NEW** — organize work by task; tracks tokens + $ per task |
 | `/cco-report` | Full ROI report — stats, trends, waste analysis, recommendations |
 | `/cco-digest [days]` | Efficiency digest — score, grade, cost analysis (default: 7 days) |
 | `/cco-budget [status\|set\|model\|auto]` | Token budget — configure limits, cost model, auto-compact |
@@ -466,7 +536,9 @@ Tokens are estimated using extension-specific ratios (e.g., 3.8 chars/token for 
 ├── templates/          # User-defined context templates
 ├── exports/            # Exported reports (MD/HTML)
 ├── read-cache/         # Per-session read cache state
+├── prompts/            # Per-session prompt grades (Prompt Coach)
 ├── config.json         # Budget and preference settings
+├── tasks.json          # Per-task register (tokens/$ per task)
 ├── patterns.json       # Cross-session file usage patterns
 └── global-stats.json   # Aggregate statistics
 ```
@@ -481,6 +553,8 @@ claude-context-optimizer/
 │   └── plugin.json          # Plugin manifest
 ├── src/
 │   ├── utils.js             # Shared: constants, classification, model costs, atomic JSON I/O
+│   ├── dashboard.js         # NEW — Context Control Center (one-screen board + session summary)
+│   ├── tasks.js             # NEW — per-task register (tokens/$ per task)
 │   ├── read-cache.js        # Smart Read Cache (adaptive 1M-aware staleness)
 │   ├── contextignore.js     # .contextignore: pattern-based file blocking
 │   ├── replay.js            # Session Replay: recent session summaries
@@ -497,7 +571,8 @@ claude-context-optimizer/
 │   ├── smart-pack.js        # NEW — Optimal file pack builder (git + history + keywords)
 │   └── doctor.js            # NEW — Health check CLI
 ├── skills/
-│   ├── cco/SKILL.md               # /cco — session heatmap
+│   ├── cco/SKILL.md               # /cco — Context Control Center (one-screen board)
+│   ├── cco-task/SKILL.md          # NEW — /cco-task — per-task tokens/$ tracking
 │   ├── cco-report/SKILL.md        # /cco-report — full ROI report
 │   ├── cco-digest/SKILL.md        # /cco-digest — efficiency digest
 │   ├── cco-budget/SKILL.md        # /cco-budget — budget manager
@@ -545,9 +620,11 @@ A: No. Hook scripts run asynchronously and typically complete in <10ms.
 **Q: How accurate are the token estimates?**
 A: They use a ~4 tokens/line heuristic. Not exact, but consistent across sessions for reliable trends.
 
-**Q: Can I use this with Claude Sonnet / Haiku / Opus 4.7 1M?**
-A: Yes. `/cco-budget model haiku-4.5` / `sonnet-4.6` / `opus-4.7` / `opus-4.7-1m` — each retunes
-context window, prices, and Read Cache staleness thresholds.
+**Q: Can I use this with Claude Sonnet / Haiku / Opus 4.7 / Opus 4.8?**
+A: Yes. `/cco-budget model haiku-4.5` / `sonnet-4.6` / `opus-4.7` / `opus-4.8` — each retunes
+context window, prices, and Read Cache staleness thresholds. Opus 4.7/4.8 and Sonnet 4.6 are all
+1M context; Haiku 4.5 is 200K. (`opus-4.7-1m` / `opus-4.8-1m` still work as back-compat aliases —
+1M is standard now, so there's no surcharge.)
 
 **Q: Does Prompt Coach call any LLM?**
 A: No. It uses deterministic local heuristics (regex + scoring). Zero API calls,

@@ -10,7 +10,7 @@
 import { execSync } from 'child_process';
 import { existsSync } from 'fs';
 import { join, dirname, extname, basename } from 'path';
-import { PATTERNS_FILE, loadJSON } from './utils.js';
+import { PATTERNS_FILE, loadJSON, isMainModule } from './utils.js';
 
 function run(cmd, cwd) {
   try {
@@ -214,4 +214,4 @@ async function main() {
   console.log(JSON.stringify(result, null, 2));
 }
 
-main().catch(() => process.exit(0));
+if (isMainModule(import.meta.url)) main().catch(() => process.exit(0));

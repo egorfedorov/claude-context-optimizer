@@ -38,7 +38,7 @@ node ${CLAUDE_PLUGIN_ROOT}/src/doctor.js --tests
 Translate the doctor output into plain language. If anything is `fail`, walk the user through the fix:
 - versions out of sync → `npm run sync-version`
 - patterns.json too big → `/cco-clean`
-- budget > model window → `/cco-budget set <smaller>` or pick a 1M-context model
+- budget > model window → `/cco-budget set <smaller>` or pick a 1M-context model (e.g. `opus-4.8`)
 - node too old → upgrade Node
 
 If everything is `pass`, confirm "плагин в порядке, текущая версия Х.Y.Z" and stop.

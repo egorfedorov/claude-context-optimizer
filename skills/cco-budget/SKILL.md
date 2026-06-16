@@ -1,15 +1,16 @@
 ---
 name: cco-budget
-description: Configure token budget limits, auto-compact settings, and view current budget status (model-aware — supports Opus 4.7 1M context tier)
+description: Configure token budget limits, auto-compact settings, and view current budget status (model-aware — Opus 4.8 default, full 1M context at standard price)
 license: MIT
-argument-hint: "[status | set <tokens> | model <haiku|haiku-4.5|sonnet|sonnet-4.6|opus|opus-4.7|opus-4.7-1m> | auto <on|off>]"
+argument-hint: "[status | set <tokens> | model <haiku|haiku-4.5|sonnet|sonnet-4.6|opus|opus-4.7|opus-4.8> | auto <on|off>]"
 allowed-tools: [Bash, Read, Write]
 ---
 
 # Context Budget Manager
 
 Manage the token budget for Claude Code sessions. Now model-aware — picks the
-right effective context window for Opus 4.7 (200K) vs Opus 4.7 1M (1M).
+right effective context window per model. Opus 4.7/4.8 and Sonnet 4.6 are all 1M;
+Haiku 4.5 is 200K.
 
 Parse $ARGUMENTS:
 
@@ -20,7 +21,7 @@ cat ~/.claude-context-optimizer/config.json 2>/dev/null
 echo "---"
 cat ~/.claude-context-optimizer/budget-config.json 2>/dev/null
 ```
-If no config exists, show defaults (200K tokens for Opus 4.7, warn at 50/70/85/95%).
+If no config exists, show defaults (200K working budget on Opus 4.8's 1M window, warn at 50/70/85/95%).
 
 ## `set <tokens>`
 Update the budget limit. Parse the token count (`200K`, `1M`, `500000` all OK).
@@ -30,7 +31,7 @@ Update `~/.claude-context-optimizer/config.json`:
   "budgetTokens": <parsed_number>,
   "warnAt": [50, 70, 85, 95],
   "autoCompactAt": 90,
-  "model": "opus-4.7"
+  "model": "opus-4.8"
 }
 ```
 If `budgetTokens` exceeds the chosen model's context window, warn the user.
@@ -38,11 +39,14 @@ If `budgetTokens` exceeds the chosen model's context window, warn the user.
 ## `model <name>`
 Set the model for cost estimation. Supported keys:
 - `haiku-4.5` (alias `haiku`) — $1/$5 per M, 200K
-- `sonnet-4.6` (alias `sonnet`) — $3/$15 per M, 200K
-- `opus-4.7` (alias `opus`) — $15/$75 per M, 200K
-- `opus-4.7-1m` — $22.50/$112.50 per M, **1M** context window
+- `sonnet-4.6` (alias `sonnet`) — $3/$15 per M, **1M**
+- `opus-4.7` — $5/$25 per M, **1M**
+- `opus-4.8` (alias `opus`, **default**) — $5/$25 per M, **1M**
 
-Update the `model` field in config.json. If switching to `opus-4.7-1m` and the
+`opus-4.8-1m` / `opus-4.7-1m` / `opus-extended` are back-compat aliases only — there is
+no 1M surcharge; the 1M window is standard at $5/$25.
+
+Update the `model` field in config.json. When switching to a 1M-context model and the
 current `budgetTokens` is below 500K, ask if the user wants to bump it to 1M.
 
 ## `auto <on|off>`

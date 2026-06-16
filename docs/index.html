@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Context Optimizer — 63% Fewer Tokens + Better Prompts for Claude Opus 4.7</title>
-<meta name="description" content="Tuned for Claude Opus 4.7 (200K & 1M context). Prompt Coach grades and improves your prompts. Smart Context Pack picks optimal files. Read Cache blocks redundant reads. 63% token savings, benchmarked.">
-<meta property="og:title" content="Context Optimizer — Opus 4.7 ready, 63% fewer tokens, better prompts">
+<title>Context Optimizer — 63% Fewer Tokens + Better Prompts for Claude Opus 4.8</title>
+<meta name="description" content="Tuned for Claude Opus 4.8 (full 1M context at standard price). Prompt Coach grades and improves your prompts. Smart Context Pack picks optimal files. Read Cache blocks redundant reads. 63% token savings, benchmarked.">
+<meta property="og:title" content="Context Optimizer — Opus 4.8 ready, 63% fewer tokens, better prompts">
 <meta property="og:description" content="Prompt Coach + Smart Pack + Read Cache. 1M context aware. Benchmarked at 63% savings. Zero telemetry, MIT.">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>">
@@ -836,10 +836,10 @@
   <div class="container">
     <div class="badge">
       <div class="badge-dot"></div>
-      v3.6.0 &middot; Opus 4.7 ready &middot; 1M context aware &middot; Benchmarked
+      v4.0.0 &middot; Opus 4.8 ready &middot; 1M context aware &middot; Benchmarked
     </div>
     <div class="hero-stat">63%</div>
-    <h1>fewer tokens. <span class="highlight">Sharper prompts.</span><br>Tuned for Opus 4.7.</h1>
+    <h1>fewer tokens. <span class="highlight">Sharper prompts.</span><br>Tuned for Opus 4.8.</h1>
     <p class="hero-sub">
       Read Cache blocks redundant reads. <strong>Prompt Coach</strong> grades and rewrites weak prompts before they cost you context.
       <strong>Smart Pack</strong> picks the optimal file set for your task. Adaptive to 200K and 1M context windows.
@@ -989,17 +989,17 @@
           <td class="money-big">$151</td>
         </tr>
         <tr>
-          <td class="model-name">Opus 4.6</td>
-          <td>$15.00</td>
-          <td class="money">$0.42</td>
-          <td class="money">$2.10</td>
-          <td class="money-big">$63</td>
-          <td class="money-big">$756</td>
+          <td class="model-name">Opus 4.8</td>
+          <td>$5.00</td>
+          <td class="money">$0.14</td>
+          <td class="money">$0.70</td>
+          <td class="money-big">$21</td>
+          <td class="money-big">$252</td>
         </tr>
       </tbody>
     </table>
 
-    <p class="roi-note">* Individual developer. For a team of 10 on Opus: <strong style="color:var(--green)">$7,560/year</strong> saved.</p>
+    <p class="roi-note">* Individual developer. For a team of 10 on Opus: <strong style="color:var(--green)">$2,520/year</strong> saved. Opus 4.8 delivers the full 1M context window at $5/$25 per M — no premium tier.</p>
 
     <!-- Context multiplier -->
     <div class="multiplier-grid" style="margin-top:48px;">
@@ -1029,7 +1029,7 @@
     <h2>Your tokens are leaking. Every session.</h2>
     <p style="color: var(--text-dim); max-width: 600px; font-size: 1.05rem;">
       Every <code style="background:var(--bg-code);padding:2px 6px;border-radius:4px;color:var(--green)">Read</code> call consumes context &mdash; whether the file was relevant or not.
-      At $15/M tokens on Opus, this adds up fast.
+      At $5/M input tokens on Opus 4.8, this adds up fast.
     </p>
 
     <!-- Token accumulation visualization -->
@@ -1178,14 +1178,16 @@
   </div>
 </section>
 
-<!-- New in 3.6 — Prompt Quality + 1M -->
-<section class="features" id="new-3-6" style="padding-top: 60px;">
+<!-- New in 4.0 — Opus 4.8 + Prompt Quality + 1M -->
+<section class="features" id="new-4-0" style="padding-top: 60px;">
   <div class="container">
-    <div class="section-label">New in v3.6 — Opus 4.7 update</div>
+    <div class="section-label">New in v4.0 — Opus 4.8</div>
     <h2>Save tokens <em>and</em> generate better answers</h2>
     <p style="color: var(--text-dim); max-width: 700px; font-size: 1.05rem;">
-      Optimization isn't just about blocking reads. The most expensive thing in any session is a vague prompt
-      that sends Claude reading 20 files to guess your intent. v3.6 adds two new ways to make every prompt count.
+      Opus 4.8-aware, with corrected model facts: Opus 4.7/4.8 deliver the full 1M window at the
+      standard $5/$25 price — no premium tier. Optimization isn't just about blocking reads, though:
+      the most expensive thing in any session is a vague prompt that sends Claude reading 20 files to
+      guess your intent. The Prompt Coach and Smart Pack make every prompt count.
     </p>
     <div class="feature-grid">
       <div class="feature">
@@ -1211,11 +1213,11 @@
       </div>
       <div class="feature">
         <div class="feature-icon yellow">&#x1F4A1;</div>
-        <h3>1M Context Tier</h3>
+        <h3>1M Context — Standard</h3>
         <p>
-          Set <code>/cco-budget model opus-4.7-1m</code> and the entire plugin retunes:
+          Set <code>/cco-budget model opus-4.8</code> and the entire plugin retunes:
           adaptive Read Cache staleness thresholds, correct cost calculations
-          ($22.50/$112.50 per M), and budget warnings that don't fire at 5% of a 1M window.
+          ($5/$25 per M — full 1M, no surcharge), and budget warnings that don't fire at 5% of a 1M window.
         </p>
       </div>
       <div class="feature">
@@ -1223,7 +1225,7 @@
         <h3>Real Cost Tracking</h3>
         <p>
           Budget monitor now estimates input <strong>and output</strong> tokens separately
-          and uses each model's real prices (Opus 4.7: $15/$75, Haiku 4.5: $1/$5).
+          and uses each model's real prices (Opus 4.8: $5/$25, Sonnet 4.6: $3/$15, Haiku 4.5: $1/$5).
           You see actual cost — not just half of it.
         </p>
       </div>

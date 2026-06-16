@@ -9,9 +9,13 @@ import {
   loadBudgetConfig, saveBudgetConfig, clearBudgetConfigCache,
   BUDGET_CONFIG_FILE, loadJSON,
   MODEL_COSTS, getModelCost, getModelContextWindow,
-  getEffectiveBudget, categorizeFile, shouldSkipFile, shouldIgnoreForTracking
+  getEffectiveBudget, categorizeFile, shouldSkipFile, shouldIgnoreForTracking,
+  isMainModule
 } from '../src/utils.js';
 import { analyzePrompt, buildImprovedPrompt } from '../src/prompt-coach.js';
+import {
+  emptyState, addTask, completeActiveTask, getActiveTask, taskSpend, tasksForProject
+} from '../src/tasks.js';
 import { estimateToolTokens, computeCost } from '../src/budget.js';
 import {
   isContextIgnored, _globToRegex, _parseIgnoreFile, clearContextIgnoreCache
@@ -949,50 +953,146 @@ describe('staleness detection', () => {
 // ── Model cost tests (Opus 4.7-aware) ───────────────────────────────────────
 
 describe('model costs', () => {
-  it('opus-4.7 has correct prices', () => {
-    const c = getModelCost('opus-4.7');
-    assert.equal(c.input, 15);
-    assert.equal(c.output, 75);
-    assert.equal(c.contextWindow, 200_000);
-  });
-
-  it('opus-4.7-1m has 1M context and surcharge', () => {
-    const c = getModelCost('opus-4.7-1m');
+  it('opus-4.8 has correct prices and 1M window', () => {
+    const c = getModelCost('opus-4.8');
+    assert.equal(c.input, 5);
+    assert.equal(c.output, 25);
     assert.equal(c.contextWindow, 1_000_000);
-    assert.ok(c.input > 15, 'input price should be higher for 1M tier');
-    assert.ok(c.output > 75, 'output price should be higher for 1M tier');
   });
 
-  it('haiku-4.5 has correct prices', () => {
+  it('opus-4.7 matches opus-4.8 pricing and 1M window', () => {
+    const c = getModelCost('opus-4.7');
+    assert.equal(c.input, 5);
+    assert.equal(c.output, 25);
+    assert.equal(c.contextWindow, 1_000_000);
+  });
+
+  it('1m aliases carry no surcharge (standard Opus price)', () => {
+    const c = getModelCost('opus-4.8-1m');
+    assert.equal(c.contextWindow, 1_000_000);
+    assert.equal(c.input, 5, '1M window is standard-priced — no premium');
+    assert.equal(c.output, 25);
+  });
+
+  it('sonnet-4.6 has correct prices and 1M window', () => {
+    const c = getModelCost('sonnet-4.6');
+    assert.equal(c.input, 3);
+    assert.equal(c.output, 15);
+    assert.equal(c.contextWindow, 1_000_000);
+  });
+
+  it('haiku-4.5 has correct prices and 200K window', () => {
     const c = getModelCost('haiku-4.5');
     assert.equal(c.input, 1);
     assert.equal(c.output, 5);
+    assert.equal(c.contextWindow, 200_000);
   });
 
   it('falls back to opus when model unknown', () => {
     const c = getModelCost('unknown-model-xyz');
-    assert.equal(c.input, 15);
+    assert.equal(c.input, 5);
   });
 
   it('getModelContextWindow returns correct window', () => {
-    assert.equal(getModelContextWindow('opus-4.7-1m'), 1_000_000);
+    assert.equal(getModelContextWindow('opus-4.8'), 1_000_000);
     assert.equal(getModelContextWindow('haiku-4.5'), 200_000);
   });
 });
 
+// ── Import safety (regression: v3.6.0 hooks hung CI by reading stdin on import) ─
+
+// ── Task register (per-task context attribution) ────────────────────────────
+
+describe('tasks', () => {
+  const P = '/proj/a';
+
+  it('emptyState has no tasks', () => {
+    const s = emptyState();
+    assert.equal(s.tasks.length, 0);
+    assert.equal(getActiveTask(s, { project: P }), null);
+  });
+
+  it('addTask creates one active task with a token baseline', () => {
+    const { state, task } = addTask(emptyState(), { name: 'fix bug', project: P, tokensNow: 5000 });
+    assert.equal(task.status, 'active');
+    assert.equal(task.tokensAtStart, 5000);
+    assert.equal(getActiveTask(state, { project: P }).id, task.id);
+  });
+
+  it('starting a new task completes the previous active one (one active at a time)', () => {
+    let { state } = addTask(emptyState(), { name: 'first', project: P, tokensNow: 1000 });
+    const r = addTask(state, { name: 'second', project: P, tokensNow: 4000 });
+    state = r.state;
+    const active = getActiveTask(state, { project: P });
+    assert.equal(active.name, 'second');
+    // first task is closed and its end snapshot is the second task's start
+    const first = state.tasks.find(t => t.name === 'first');
+    assert.equal(first.status, 'done');
+    assert.equal(first.tokensAtEnd, 4000);
+  });
+
+  it('taskSpend is the token delta over the task window, floored at 0', () => {
+    const { task } = addTask(emptyState(), { name: 't', project: P, tokensNow: 2000 });
+    assert.equal(taskSpend(task, 9000), 7000);
+    assert.equal(taskSpend(task, 1000), 0); // never negative
+  });
+
+  it('completeActiveTask freezes the spend', () => {
+    const { state } = addTask(emptyState(), { name: 't', project: P, tokensNow: 2000 });
+    const r = completeActiveTask(state, { project: P, tokensNow: 12000 });
+    assert.equal(r.task.status, 'done');
+    assert.equal(taskSpend(r.task, 999999), 10000); // frozen at completion delta
+    assert.equal(getActiveTask(r.state, { project: P }), null);
+  });
+
+  it('tasks are scoped by project', () => {
+    let { state } = addTask(emptyState(), { name: 'a-task', project: '/proj/a', tokensNow: 0 });
+    state = addTask(state, { name: 'b-task', project: '/proj/b', tokensNow: 0 }).state;
+    assert.equal(getActiveTask(state, { project: '/proj/a' }).name, 'a-task');
+    assert.equal(getActiveTask(state, { project: '/proj/b' }).name, 'b-task');
+    assert.equal(tasksForProject(state, '/proj/a').length, 1);
+  });
+
+  it('tasksForProject returns newest first', () => {
+    let s = emptyState();
+    s = addTask(s, { name: 'one', project: P, tokensNow: 0 }).state;
+    s = addTask(s, { name: 'two', project: P, tokensNow: 0 }).state;
+    const list = tasksForProject(s, P);
+    assert.equal(list[0].name, 'two');
+  });
+});
+
+describe('import safety (isMainModule guard)', () => {
+  it('isMainModule is true for the entry module (this test file, run directly)', () => {
+    // node --test tests/test.js makes this file the process entry point.
+    assert.equal(isMainModule(import.meta.url), true);
+  });
+
+  it('isMainModule is false for any module that is not the entry point', () => {
+    // An imported hook module (budget.js, prompt-coach.js, …) has a url that is
+    // NOT process.argv[1], so its guarded main() never fires on import. If it
+    // did, main() would block on process.stdin — exactly what hung v3.6.0 CI 6h.
+    assert.equal(isMainModule('file:///some/other/module.js'), false);
+  });
+
+  // The real regression guard is that this test file finishes and the process
+  // exits at all: it imports budget.js and prompt-coach.js, whose guarded
+  // main() must NOT read stdin on import.
+});
+
 describe('getEffectiveBudget', () => {
-  it('caps budget at model context window', () => {
-    const budget = getEffectiveBudget({ budgetTokens: 2_000_000, model: 'opus-4.7' });
+  it('caps budget at model context window (haiku = 200K)', () => {
+    const budget = getEffectiveBudget({ budgetTokens: 2_000_000, model: 'haiku-4.5' });
     assert.equal(budget, 200_000);
   });
 
   it('honours user budget below model window', () => {
-    const budget = getEffectiveBudget({ budgetTokens: 50_000, model: 'opus-4.7' });
+    const budget = getEffectiveBudget({ budgetTokens: 50_000, model: 'opus-4.8' });
     assert.equal(budget, 50_000);
   });
 
-  it('allows up to 1M for opus-4.7-1m', () => {
-    const budget = getEffectiveBudget({ budgetTokens: 1_000_000, model: 'opus-4.7-1m' });
+  it('allows up to 1M for opus-4.8 (1M is standard)', () => {
+    const budget = getEffectiveBudget({ budgetTokens: 1_000_000, model: 'opus-4.8' });
     assert.equal(budget, 1_000_000);
   });
 });
@@ -1153,16 +1253,16 @@ describe('budget', () => {
   describe('computeCost', () => {
     it('charges input + output at model rates', () => {
       const state = { inputTokensEstimated: 1_000_000, outputTokensEstimated: 1_000_000 };
-      const cost = computeCost(state, 'opus-4.7');
-      // 1M * $15 input + 1M * $75 output = $90
-      assert.equal(cost, 90);
+      const cost = computeCost(state, 'opus-4.8');
+      // 1M * $5 input + 1M * $25 output = $30
+      assert.equal(cost, 30);
     });
 
-    it('opus-4.7-1m costs more than opus-4.7', () => {
-      const state = { inputTokensEstimated: 1_000_000, outputTokensEstimated: 0 };
-      const c1 = computeCost(state, 'opus-4.7');
-      const c2 = computeCost(state, 'opus-4.7-1m');
-      assert.ok(c2 > c1);
+    it('opus costs more than sonnet for the same usage', () => {
+      const state = { inputTokensEstimated: 1_000_000, outputTokensEstimated: 1_000_000 };
+      const opus = computeCost(state, 'opus-4.8');
+      const sonnet = computeCost(state, 'sonnet-4.6');
+      assert.ok(opus > sonnet);
     });
   });
 });
