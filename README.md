@@ -326,12 +326,15 @@ Run `/cco-export html` to generate a static HTML dashboard you can open in any b
 - Project breakdown doughnut
 - Edits-per-session timeline
 
-### Context Heatmap — see where your tokens go
+### Context Control Center — everything in one screen
 
-Run `/cco` to get a visual breakdown of every file in your session. Green = useful. Red = waste.
+Run `/cco` for the live board: budget %, $ spent, tokens saved by the cache (effectiveness
+multiplier), waste/cold files, last prompt grade, the active task's cost, and ready-to-run
+actions (what to drop → `/compact`, what to `/cco-pack`). Drill into the per-file heatmap —
+green = useful, red = waste — for detail.
 
 <p align="center">
-  <img src="assets/heatmap-demo.svg" alt="Context Heatmap" width="700"/>
+  <img src="assets/heatmap-demo.svg" alt="Context Control Center" width="700"/>
 </p>
 
 ### Token ROI Report — full analytics across sessions
