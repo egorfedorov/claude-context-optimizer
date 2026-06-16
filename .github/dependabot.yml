@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # Keep GitHub Actions (checkout, setup-node, codeql-action) patched — this is
+  # the most relevant ecosystem here since the plugin has no runtime npm deps.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+
+  # npm devDependencies (test tooling). No runtime deps today, but this catches
+  # anything added later.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps"
