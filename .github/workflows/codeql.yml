@@ -30,6 +30,8 @@ jobs:
           # security-only — keep the Security tab focused on real vulnerabilities,
           # not code-quality nits (e.g. unused variables).
           queries: security-extended
+          # Scan only src/ (the shipped code) — see codeql-config.yml.
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4

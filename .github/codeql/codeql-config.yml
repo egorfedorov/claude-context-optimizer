@@ -1,0 +1,8 @@
+name: "CCO CodeQL config"
+
+# Scan only the shipped plugin code. The landing page (docs/), benchmark
+# fixtures, and test files aren't part of the runtime surface — excluding them
+# keeps scanning focused and avoids extractor "could not process" warnings on
+# embedded HTML/fixture JS.
+paths:
+  - src
