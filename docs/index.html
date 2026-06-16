@@ -1191,6 +1191,27 @@
     </p>
     <div class="feature-grid">
       <div class="feature">
+        <div class="feature-icon blue">&#x1F4CA;</div>
+        <h3>Context Control Center</h3>
+        <p>
+          <code>/cco</code> is now <strong>one screen</strong>: budget %, $ spent this session,
+          tokens saved by the cache (your <strong>effectiveness multiplier</strong>), waste,
+          last prompt grade, the <strong>active task's cost</strong>, and ready-to-run actions
+          (what to drop &rarr; <code>/compact</code>, what to <code>/cco-pack</code>). Everything the
+          optimizer tracks, unified — nothing to configure.
+        </p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon green">&#x2705;</div>
+        <h3>Organize work by task</h3>
+        <p>
+          <code>/cco-task add "fix login flow"</code> starts a task; tokens spent are
+          <strong>attributed to it</strong>, so you see cost <em>per task</em>, not just per session.
+          Pair with <code>/cco-pack</code> to load only what each task needs, then
+          <code>/cco-task done</code> freezes its total. A session-end report shows what CCO saved you.
+        </p>
+      </div>
+      <div class="feature">
         <div class="feature-icon purple">&#x1F3AF;</div>
         <h3>Prompt Coach</h3>
         <p>
@@ -1257,14 +1278,14 @@
     <div class="section-label">Commands</div>
     <h2>When you want to dig deeper</h2>
     <p style="color: var(--text-dim); max-width: 550px; font-size: 1.05rem;">
-      The plugin works automatically, but 17 commands are available for detailed insights.
+      The plugin works automatically, but 18 commands are available for detailed insights.
     </p>
 
     <div class="feature-grid">
       <div class="feature">
         <div class="feature-icon purple">&#x1F4CA;</div>
-        <h3>Context Heatmap</h3>
-        <p>Run <code>/cco</code> to see a visual breakdown of every file in your session. Green = useful. Red = waste. With actionable recommendations.</p>
+        <h3>Control Center &amp; Heatmap</h3>
+        <p>Run <code>/cco</code> for the one-screen Control Center, or drill into the per-file heatmap — green = useful, red = waste — with actionable recommendations.</p>
       </div>
       <div class="feature">
         <div class="feature-icon green">&#x1F4B0;</div>
