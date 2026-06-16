@@ -39,6 +39,7 @@ export const TEMPLATES_DIR = join(DATA_DIR, 'templates');
 export const EXPORTS_DIR = join(DATA_DIR, 'exports');
 export const SUMMARIES_DIR = join(DATA_DIR, 'summaries');
 export const PROMPTS_DIR = join(DATA_DIR, 'prompts');
+export const NOTICES_DIR = join(DATA_DIR, 'notices');
 export const TASKS_FILE = join(DATA_DIR, 'tasks.json');
 
 // ── Model costs ($/M tokens — input/output) — platform.claude.com/docs pricing ─
@@ -181,7 +182,9 @@ const DEFAULT_CONFIG = {
   budgetTokens: 200000,        // 200K — sane working default even on 1M-window models
   warnAt: [50, 70, 85, 95],
   autoCompactAt: 90,
-  model: 'opus-4.8'
+  model: 'opus-4.8',
+  bigFileDigest: true,         // on first full read of a very large file, show its
+  bigFileThreshold: 1500,      // map once (≈14K+ tokens) so Claude reads targeted
 };
 
 export function loadConfig() {
@@ -447,6 +450,7 @@ export function ensureDataDirs() {
   mkdirSync(EXPORTS_DIR, { recursive: true });
   mkdirSync(SUMMARIES_DIR, { recursive: true });
   mkdirSync(PROMPTS_DIR, { recursive: true });
+  mkdirSync(NOTICES_DIR, { recursive: true });
 }
 
 // ── Plugin version (single source of truth) ─────────────────────────────────

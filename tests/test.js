@@ -16,6 +16,10 @@ import { analyzePrompt, buildImprovedPrompt } from '../src/prompt-coach.js';
 import {
   emptyState, addTask, completeActiveTask, getActiveTask, taskSpend, tasksForProject
 } from '../src/tasks.js';
+import {
+  emptyLedger, shouldEmit, recordEmit, DEFAULT_NOTICE_CAP
+} from '../src/notices.js';
+import { shouldNudgeBigFile } from '../src/read-cache.js';
 import { estimateToolTokens, computeCost } from '../src/budget.js';
 import {
   isContextIgnored, _globToRegex, _parseIgnoreFile, clearContextIgnoreCache
@@ -1059,6 +1063,77 @@ describe('tasks', () => {
     s = addTask(s, { name: 'two', project: P, tokensNow: 0 }).state;
     const list = tasksForProject(s, P);
     assert.equal(list[0].name, 'two');
+  });
+});
+
+// ── Notice ledger (keeps the optimizer from polluting Claude's context) ──────
+
+describe('notices (noise budget)', () => {
+  it('emptyLedger starts at zero', () => {
+    const l = emptyLedger();
+    assert.equal(l.count, 0);
+    assert.equal(l.tokensInjected, 0);
+    assert.deepEqual(l.kinds, {});
+  });
+
+  it('allows a normal notice when under cap and kind unseen', () => {
+    assert.equal(shouldEmit(emptyLedger(), { kind: 'budget:50' }), true);
+  });
+
+  it('suppresses a repeated kind (no double nag)', () => {
+    let l = emptyLedger();
+    l = recordEmit(l, { kind: 'track:foo.js', text: 'read 3x' });
+    assert.equal(shouldEmit(l, { kind: 'track:foo.js' }), false);
+  });
+
+  it('suppresses normal notices once the session cap is hit', () => {
+    let l = emptyLedger();
+    for (let i = 0; i < DEFAULT_NOTICE_CAP; i++) {
+      l = recordEmit(l, { kind: `k${i}`, text: 'x' });
+    }
+    assert.equal(shouldEmit(l, { kind: 'one-more' }), false);
+  });
+
+  it('always allows critical notices, even past the cap', () => {
+    let l = emptyLedger();
+    for (let i = 0; i < DEFAULT_NOTICE_CAP + 5; i++) {
+      l = recordEmit(l, { kind: `k${i}`, text: 'x' });
+    }
+    assert.equal(shouldEmit(l, { kind: 'budget:critical', priority: 'critical' }), true);
+  });
+
+  it('recordEmit accrues injected tokens (the overhead the dashboard nets out)', () => {
+    const l = recordEmit(emptyLedger(), { kind: 'k', text: 'a'.repeat(370) });
+    assert.ok(l.tokensInjected > 0, 'injected tokens should be counted');
+    assert.equal(l.count, 1);
+  });
+});
+
+// ── Big-file first-read nudge ────────────────────────────────────────────────
+
+describe('shouldNudgeBigFile', () => {
+  const base = { entry: null, hasOffset: false, hasLimit: false, lines: 2000, threshold: 1500, enabled: true };
+
+  it('nudges on first full read of a very large file', () => {
+    assert.equal(shouldNudgeBigFile(base), true);
+  });
+
+  it('does not nudge when disabled', () => {
+    assert.equal(shouldNudgeBigFile({ ...base, enabled: false }), false);
+  });
+
+  it('does not nudge a file already seen (entry present)', () => {
+    assert.equal(shouldNudgeBigFile({ ...base, entry: { mtime: 1 } }), false);
+  });
+
+  it('respects a targeted read (offset/limit present)', () => {
+    assert.equal(shouldNudgeBigFile({ ...base, hasOffset: true }), false);
+    assert.equal(shouldNudgeBigFile({ ...base, hasLimit: true }), false);
+  });
+
+  it('does not nudge files under the threshold', () => {
+    assert.equal(shouldNudgeBigFile({ ...base, lines: 800 }), false);
+    assert.equal(shouldNudgeBigFile({ ...base, lines: 0 }), false);
   });
 });
 

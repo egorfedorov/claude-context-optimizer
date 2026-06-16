@@ -17,6 +17,7 @@ import {
   getDonationMessage, loadJSON, saveJSON, ensureDataDirs,
   shouldIgnoreForTracking, getFileLines, getProjectRoot, isMainModule
 } from './utils.js';
+import { emitNotice } from './notices.js';
 
 ensureDataDirs();
 
@@ -201,8 +202,12 @@ function trackRead(session, filePath, lineCount, readOptions = {}) {
     }
   }
 
-  for (const w of warnings) {
-    console.error(w);
+  // Gate advisory output through the per-session noise budget so the optimizer
+  // doesn't spend Claude's context narrating. At most one line per read, keyed
+  // per file (no repeat nags), and a few per session total (cap shared with
+  // budget notices). The data is still tracked — it just stops shouting.
+  if (warnings.length && session.id) {
+    emitNotice(session.id, { kind: `track:${basename(filePath)}`, text: warnings[0] });
   }
 
   return { ignored: false, warnings };

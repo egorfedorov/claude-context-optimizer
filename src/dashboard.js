@@ -26,6 +26,7 @@ import {
   getLatestSessionId, isMainModule,
 } from './utils.js';
 import { loadTasks, getActiveTask, taskSpend, tasksForProject } from './tasks.js';
+import { loadLedger } from './notices.js';
 
 // ── Data gathering ──────────────────────────────────────────────────────────
 
@@ -55,8 +56,13 @@ export function gather(sessionId) {
   const outTok = (budget && budget.outputTokensEstimated) || 0;
   const dollars = (inTok / 1e6) * cost.input + (outTok / 1e6) * cost.output;
 
-  const saved = (cache && cache.totalTokensSaved) || 0;
+  const savedGross = (cache && cache.totalTokensSaved) || 0;
   const blocked = (cache && cache.blockedReads) || 0;
+  // NET savings — subtract the tokens the optimizer's own messages injected into
+  // context this session. This is the honest number: what CCO saved you minus
+  // what CCO cost you. If it's ever negative, the optimizer is net-negative.
+  const overhead = sessionId ? (loadLedger(sessionId).tokensInjected || 0) : 0;
+  const saved = Math.max(0, savedGross - overhead);
   const multiplier = used > 0 ? (used + saved) / used : 1;
 
   // Cold / droppable context: files read but never edited (mirrors the budget
@@ -85,7 +91,7 @@ export function gather(sessionId) {
   return {
     model, cost, effectiveBudget,
     used, inTok, outTok, dollars,
-    saved, blocked, multiplier,
+    saved, savedGross, overhead, blocked, multiplier,
     cold, useful, reclaimable, wastePct,
     prompt, project, active, recentTasks,
     hasData: !!(session || budget || cache),
@@ -125,8 +131,11 @@ export function renderBoard(d) {
   L.push(`  Budget   ${bar(pct)}  ${formatTokens(d.used)} / ${formatTokens(d.effectiveBudget)}  (${pct}%)  $${d.dollars.toFixed(3)}`);
 
   if (d.saved > 0) {
-    L.push(`  Saved    +${formatTokens(d.saved)} tokens by cache  →  ${d.multiplier.toFixed(2)}x effective` +
-      (d.blocked ? `  (${d.blocked} reads blocked)` : ''));
+    const ov = d.overhead > 0 ? `  (gross ${formatTokens(d.savedGross)} − CCO ${formatTokens(d.overhead)})` : '';
+    L.push(`  Saved    +${formatTokens(d.saved)} net  →  ${d.multiplier.toFixed(2)}x effective` +
+      (d.blocked ? `  ·  ${d.blocked} reads blocked` : '') + ov);
+  } else if (d.savedGross > 0) {
+    L.push(`  Saved    net ~0  (cache saved ${formatTokens(d.savedGross)}, CCO messages cost ${formatTokens(d.overhead)})`);
   } else {
     L.push('  Saved    (cache warming up — savings appear after repeat reads)');
   }
@@ -192,7 +201,8 @@ export function renderSummary(d) {
   L.push('  ── CCO session summary ───────────────────────────────────────');
   if (d.saved > 0) {
     const savedDollars = (d.saved / 1e6) * d.cost.input;
-    L.push(`  CCO saved you ${formatTokens(d.saved)} tokens this session (~$${savedDollars.toFixed(2)}).`);
+    const ov = d.overhead > 0 ? ` (net of ${formatTokens(d.overhead)} CCO overhead)` : '';
+    L.push(`  CCO saved you ${formatTokens(d.saved)} tokens net this session${ov} (~$${savedDollars.toFixed(2)}).`);
     L.push(`  Your ${formatTokens(d.effectiveBudget)} budget worked like ${formatTokens(Math.round(d.used + d.saved))} (${d.multiplier.toFixed(2)}x).`);
   } else {
     L.push(`  Tracked ${formatTokens(d.used)} tokens this session ($${d.dollars.toFixed(2)}).`);

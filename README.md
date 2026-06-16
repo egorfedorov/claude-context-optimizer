@@ -37,6 +37,28 @@ At $5/M input tokens (Opus 4.8), a developer spending $100/month is lighting **$
 
 ---
 
+## What's new in v4.1 — honest & quiet
+
+v4.1 answers one question: *does it really save tokens, or just say it does?* It
+makes the optimizer **honest** and stops it from spending the context it's meant
+to protect.
+
+- **Silent-by-default hooks.** A context optimizer that narrates on every tool
+  call spends the tokens it claims to save. The per-tool-call hooks now stay
+  **quiet unless a message is actionable** (e.g. "90% budget → /compact"), capped
+  at a few advisory lines per session. The self-congratulatory "CCO makes your
+  budget 1.4x effective" line is gone.
+- **Honest NET savings.** `/cco` now reports **net** = tokens saved by the cache
+  **minus the tokens CCO's own messages injected**. Savings are counted by each
+  file's real size (a re-read of a 30-line file no longer credits "18K saved").
+  If the optimizer is ever net-negative, the dashboard says so.
+- **Big-file map-then-load.** On the first *full* read of a very large file
+  (>1500 lines ≈ 14K+ tokens), the cache returns the file's **structural map**
+  once — so Claude reads the section it needs instead of slurping the whole file.
+  Read it again to load it fully. One-shot, configurable (`bigFileDigest`).
+
+---
+
 ## What's new in v4.0 — Opus 4.8
 
 v4.0 makes the plugin **Opus 4.8-aware**, adds a flagship **Context Control Center**,

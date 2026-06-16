@@ -21,6 +21,7 @@ import {
   displayPath, loadJSON, saveJSON, ensureDataDirs, loadBudgetConfig,
   estimateTokensFromString, isMainModule
 } from './utils.js';
+import { emitNotice } from './notices.js';
 
 ensureDataDirs();
 
@@ -152,7 +153,10 @@ async function main() {
   const effectiveBudget = getEffectiveBudget(config);
   const usagePercent = Math.round((state.totalTokensEstimated / effectiveBudget) * 100);
 
-  // Standard threshold warnings
+  // ── Threshold warnings (gated by the session noise budget) ────────────────
+  // Only actionable signals reach Claude's context, and only a few per session.
+  // 85%+ is critical (always shown, carries a /compact recommendation); the
+  // early 50/70 nudges are 'normal' and may be suppressed once the cap is hit.
   for (const threshold of config.warnAt) {
     if (usagePercent >= threshold && !state.warningsSent.includes(threshold)) {
       state.warningsSent.push(threshold);
@@ -167,11 +171,17 @@ async function main() {
         else msg += ` | Consider /compact to free context`;
       }
 
-      console.error(msg);
+      emitNotice(sessionId, {
+        kind: `budget:${threshold}`,
+        text: msg,
+        priority: threshold >= 85 ? 'critical' : 'normal',
+      });
     }
   }
 
   // ── Auto-compact directives ──────────────────────────────────────────────
+  // These are the highest-value signals (they trigger an actual /compact that
+  // frees real tokens), so they're 'critical' — always allowed past the cap.
   if (budgetConfig.autoCompactEnabled) {
     const { autoCompactThreshold, criticalThreshold } = budgetConfig;
 
@@ -181,10 +191,13 @@ async function main() {
         state.criticalSentAt = state.totalTokensEstimated;
         const rec = buildCompactRecommendation(state);
         const reclaimMsg = rec ? ` Free ~${formatTokens(rec.reclaimableTokens)} tokens.` : '';
-        console.error(
-          `[context-budget] CRITICAL: ${usagePercent}% budget used (~${formatTokens(state.totalTokensEstimated)}/${formatTokens(effectiveBudget)}). ` +
-          `Run /compact immediately or the session will lose older context.${reclaimMsg}`
-        );
+        emitNotice(sessionId, {
+          kind: 'budget:critical',
+          priority: 'critical',
+          text:
+            `[context-budget] CRITICAL: ${usagePercent}% budget used (~${formatTokens(state.totalTokensEstimated)}/${formatTokens(effectiveBudget)}). ` +
+            `Run /compact immediately or the session will lose older context.${reclaimMsg}`,
+        });
       }
     } else if (usagePercent >= autoCompactThreshold) {
       const tokensSinceAutoCompact = state.totalTokensEstimated - (state.autoCompactSentAt || 0);
@@ -192,10 +205,13 @@ async function main() {
         state.autoCompactSentAt = state.totalTokensEstimated;
         const rec = buildCompactRecommendation(state);
         const reclaimMsg = rec ? ` Free ~${formatTokens(rec.reclaimableTokens)} tokens.` : '';
-        console.error(
-          `[context-budget] Auto-compact recommended — ${usagePercent}% budget used. ` +
-          `Run /compact now to free tokens and keep the session efficient.${reclaimMsg}`
-        );
+        emitNotice(sessionId, {
+          kind: 'budget:autocompact',
+          priority: 'critical',
+          text:
+            `[context-budget] Auto-compact recommended — ${usagePercent}% budget used. ` +
+            `Run /compact now to free tokens and keep the session efficient.${reclaimMsg}`,
+        });
       }
     }
   } else if (usagePercent >= config.autoCompactAt) {
@@ -204,30 +220,18 @@ async function main() {
       state.lastCompactSuggestAt = state.totalTokensEstimated;
       const rec = buildCompactRecommendation(state);
       if (rec && rec.reclaimableTokens > 5000) {
-        console.error(`[context-budget] Still at ${usagePercent}% — run /compact to reclaim ~${formatTokens(rec.reclaimableTokens)} tokens`);
+        emitNotice(sessionId, {
+          kind: 'budget:still',
+          priority: 'critical',
+          text: `[context-budget] Still at ${usagePercent}% — run /compact to reclaim ~${formatTokens(rec.reclaimableTokens)} tokens`,
+        });
       }
     }
   }
 
-  // ── Effective budget multiplier at key thresholds ──
-  if (usagePercent >= 50 && !state.multiplierShown) {
-    try {
-      const cacheFile = join(BUDGET_STATE_DIR, '..', 'read-cache', `${sessionId}.json`);
-      const cacheData = loadJSON(cacheFile);
-      if (cacheData && cacheData.totalTokensSaved > 0) {
-        const saved = cacheData.totalTokensSaved;
-        const total = state.totalTokensEstimated + saved;
-        const multiplier = total > 0 ? (total / state.totalTokensEstimated).toFixed(1) : '1.0';
-        if (parseFloat(multiplier) > 1.1) {
-          console.error(
-            `[context-budget] CCO makes your budget ${multiplier}x more effective ` +
-            `(${formatTokens(saved)} tokens saved this session)`
-          );
-          state.multiplierShown = true;
-        }
-      }
-    } catch { /* don't block */ }
-  }
+  // Note: the "CCO makes your budget Nx more effective" brag was removed — it
+  // was pure FYI that spent context to praise itself. The /cco dashboard now
+  // reports NET savings (saved − the optimizer's own injected tokens) instead.
 
   saveBudgetState(state);
   process.exit(0);
