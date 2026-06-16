@@ -37,7 +37,7 @@ For each file the pack also suggests `offset` / `limit` — pointing at the stru
 
 ## Token budget awareness
 
-Pack stops adding files once it would exceed 25% of the user's effective context budget. The budget itself respects the configured model (e.g. 1M for `opus-4.7-1m`).
+Pack stops adding files once it would exceed 25% of the user's effective context budget. The budget itself respects the configured model (e.g. the full 1M window for `opus-4.8` — 1M is standard on Opus, no premium tier).
 
 ## Presentation
 

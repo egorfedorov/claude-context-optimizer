@@ -84,6 +84,10 @@
           {
             "type": "command",
             "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\""
+          },
+          {
+            "type": "command",
+            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/dashboard.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/dashboard.js\" summary"
           }
         ]
       }

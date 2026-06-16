@@ -30,7 +30,7 @@ import { readFileSync, existsSync, writeFileSync, readdirSync } from 'fs';
 import { join, basename } from 'path';
 import {
   PROMPTS_DIR, ensureDataDirs, loadJSON, saveJSON,
-  estimateTokensFromString, isQuietMode
+  estimateTokensFromString, isQuietMode, isMainModule
 } from './utils.js';
 
 ensureDataDirs();
@@ -377,4 +377,4 @@ async function main() {
   await hookMode();
 }
 
-main().catch(() => process.exit(0));
+if (isMainModule(import.meta.url)) main().catch(() => process.exit(0));

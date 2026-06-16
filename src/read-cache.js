@@ -30,7 +30,7 @@ import { statSync } from 'fs';
 import {
   READ_CACHE_DIR,
   estimateTokens, formatTokens, loadJSON, saveJSON, ensureDataDirs,
-  loadConfig, getEffectiveBudget
+  loadConfig, getEffectiveBudget, isMainModule
 } from './utils.js';
 import { isContextIgnored } from './contextignore.js';
 import { parseFileStructure, formatDigest } from './file-digest.js';
@@ -39,7 +39,8 @@ ensureDataDirs();
 
 // ── Adaptive staleness configuration ──────────────────────────────────────────
 // Thresholds scale with the user's effective context budget so the cache
-// behaves correctly on both 200K (Sonnet) and 1M (Opus 4.7 1M) windows.
+// behaves correctly on both 200K (Haiku 4.5) and 1M (Opus 4.8 / Opus 4.7 /
+// Sonnet 4.6 — all 1M at standard price) windows.
 //
 // Default ratios (calibrated against 200K window where the previous fixed
 // values were 20K/8/10min) — the same fractions on 1M give ~100K/40/10min
@@ -334,4 +335,4 @@ async function main() {
   console.log(JSON.stringify({ decision: 'block', reason }));
 }
 
-main().catch(() => process.exit(0));
+if (isMainModule(import.meta.url)) main().catch(() => process.exit(0));

@@ -11,7 +11,7 @@
 import { basename, extname } from 'path';
 import {
   PATTERNS_FILE, SESSIONS_DIR,
-  estimateTokens, formatTokens, loadJSON, ensureDataDirs
+  estimateTokens, formatTokens, loadJSON, ensureDataDirs, isMainModule
 } from './utils.js';
 
 ensureDataDirs();
@@ -123,4 +123,4 @@ async function main() {
   process.exit(0);
 }
 
-main().catch(() => process.exit(0));
+if (isMainModule(import.meta.url)) main().catch(() => process.exit(0));

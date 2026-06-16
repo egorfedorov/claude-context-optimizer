@@ -5,9 +5,25 @@
  * usefulness scoring, JSON I/O, file classification, and config management.
  */
 
-import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, statSync } from 'fs';
+import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, statSync, realpathSync, readdirSync } from 'fs';
 import { join, basename, extname } from 'path';
 import { homedir } from 'os';
+import { fileURLToPath } from 'url';
+
+// ── Main-module guard ────────────────────────────────────────────────────────
+// True only when the given module is the process entry point (i.e. run as
+// `node src/foo.js`), false when it is imported by another module (e.g. tests).
+// Hook modules use this to guard their stdin-reading main() — importing them
+// for unit testing must NOT start the hook, or the test process hangs forever
+// waiting on stdin (this caused the v3.6.0 CI runs to time out at 6h).
+export function isMainModule(metaUrl) {
+  try {
+    if (!process.argv[1]) return false;
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(metaUrl));
+  } catch {
+    return false;
+  }
+}
 
 // ── Data directories ─────────────────────────────────────────────────────────
 
@@ -23,19 +39,27 @@ export const TEMPLATES_DIR = join(DATA_DIR, 'templates');
 export const EXPORTS_DIR = join(DATA_DIR, 'exports');
 export const SUMMARIES_DIR = join(DATA_DIR, 'summaries');
 export const PROMPTS_DIR = join(DATA_DIR, 'prompts');
+export const TASKS_FILE = join(DATA_DIR, 'tasks.json');
 
-// ── Model costs ($/M tokens — input/output) — anthropic.com/pricing ──────────
-// Updated for current model lineup. Output costs included for accurate ROI.
-
+// ── Model costs ($/M tokens — input/output) — platform.claude.com/docs pricing ─
+// Current lineup (Opus 4.8 era). Output costs included for accurate ROI.
+//   • Opus 4.7 / 4.8 — $5/$25, full 1M context window at standard price
+//     (there is NO long-context premium; the old "1M tier surcharge" is gone).
+//   • Sonnet 4.6 — $3/$15, 1M context window.
+//   • Haiku 4.5 — $1/$5, 200K context window.
 export const MODEL_COSTS = {
-  'haiku':         { input: 1,    output: 5,    contextWindow: 200_000  },
-  'haiku-4.5':     { input: 1,    output: 5,    contextWindow: 200_000  },
-  'sonnet':        { input: 3,    output: 15,   contextWindow: 200_000  },
-  'sonnet-4.6':    { input: 3,    output: 15,   contextWindow: 200_000  },
-  'opus':          { input: 15,   output: 75,   contextWindow: 200_000  },
-  'opus-4.7':      { input: 15,   output: 75,   contextWindow: 200_000  },
-  'opus-4.7-1m':   { input: 22.5, output: 112.5, contextWindow: 1_000_000 }, // 1M-context tier
-  'opus-extended': { input: 15,   output: 75,   contextWindow: 200_000  },
+  'haiku':         { input: 1,  output: 5,  contextWindow:   200_000 },
+  'haiku-4.5':     { input: 1,  output: 5,  contextWindow:   200_000 },
+  'sonnet':        { input: 3,  output: 15, contextWindow: 1_000_000 },
+  'sonnet-4.6':    { input: 3,  output: 15, contextWindow: 1_000_000 },
+  'opus':          { input: 5,  output: 25, contextWindow: 1_000_000 },
+  'opus-4.7':      { input: 5,  output: 25, contextWindow: 1_000_000 },
+  'opus-4.8':      { input: 5,  output: 25, contextWindow: 1_000_000 },
+  // Back-compat aliases — these used to carry a fictional 1M surcharge; the 1M
+  // window is now standard, so they map to the standard Opus price.
+  'opus-4.7-1m':   { input: 5,  output: 25, contextWindow: 1_000_000 },
+  'opus-4.8-1m':   { input: 5,  output: 25, contextWindow: 1_000_000 },
+  'opus-extended': { input: 5,  output: 25, contextWindow: 1_000_000 },
 };
 
 // Backwards-compatible numeric accessor (input price only — used by old callsites).
@@ -154,10 +178,10 @@ export function saveJSON(file, data) {
 // ── Config ───────────────────────────────────────────────────────────────────
 
 const DEFAULT_CONFIG = {
-  budgetTokens: 200000,        // 200K — sane default for Sonnet/Opus 4.7
+  budgetTokens: 200000,        // 200K — sane working default even on 1M-window models
   warnAt: [50, 70, 85, 95],
   autoCompactAt: 90,
-  model: 'opus-4.7'
+  model: 'opus-4.8'
 };
 
 export function loadConfig() {
@@ -180,6 +204,30 @@ export function getEffectiveBudget(config) {
   const cfg = config || loadConfig();
   const window = getModelContextWindow(cfg.model);
   return Math.min(cfg.budgetTokens || DEFAULT_CONFIG.budgetTokens, window);
+}
+
+// ── Session resolution (shared by skills that have no event stdin) ───────────
+// Slash-command skills run as plain processes without the hook's session_id,
+// so they resolve "the current session" as the most-recently-updated session
+// file — the same convention tracker/report/digest already use.
+
+export function getLatestSessionId() {
+  try {
+    const files = readdirSync(SESSIONS_DIR)
+      .filter(f => f.endsWith('.json'))
+      .map(f => ({ name: f, mtime: statSync(join(SESSIONS_DIR, f)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime);
+    return files.length ? files[0].name.replace(/\.json$/, '') : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Total estimated tokens spent in a session (from budget state), or 0. */
+export function getSessionTokenTotal(sessionId) {
+  if (!sessionId) return 0;
+  const state = loadJSON(join(BUDGET_STATE_DIR, `${sessionId}.json`));
+  return (state && state.totalTokensEstimated) || 0;
 }
 
 // ── Budget config (auto-compact settings) ────────────────────────────────────

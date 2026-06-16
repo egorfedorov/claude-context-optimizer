@@ -5,7 +5,7 @@
  *
  * Tracks token accumulation during a session (input + estimated output) and
  * warns when approaching a configurable budget limit. Model-aware: uses the
- * effective context window for the configured model (e.g. 1M for opus-4.7-1m).
+ * effective context window for the configured model (e.g. 1M for opus-4.8).
  *
  * v3.0:
  *   - Tracks output tokens too (Edit/Write content size).
@@ -19,7 +19,7 @@ import {
   BUDGET_STATE_DIR,
   formatTokens, loadConfig, getModelCost, getEffectiveBudget,
   displayPath, loadJSON, saveJSON, ensureDataDirs, loadBudgetConfig,
-  estimateTokensFromString
+  estimateTokensFromString, isMainModule
 } from './utils.js';
 
 ensureDataDirs();
@@ -233,7 +233,8 @@ async function main() {
   process.exit(0);
 }
 
-main().catch(() => process.exit(0));
+// Run the hook only when executed directly — importing for tests must not read stdin.
+if (isMainModule(import.meta.url)) main().catch(() => process.exit(0));
 
 // Exposed for tests
 export { estimateToolTokens, buildCompactRecommendation, computeCost };
