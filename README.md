@@ -432,7 +432,19 @@ When installed as a plugin, commands are namespaced: `/claude-context-optimizer:
 
 ## Installation
 
-### Option 1 — Plugin directory (recommended)
+### Option 1 — Marketplace (recommended)
+
+```bash
+claude plugin marketplace add egorfedorov/claude-context-optimizer
+claude plugin install claude-context-optimizer@cco
+```
+
+Then restart Claude Code. This installs the plugin from its self-contained
+marketplace manifest — persistent across sessions, with **full functionality**:
+skills, auto-tracking hooks, Read Cache, ContextShield, and budget alerts. No
+local paths to configure.
+
+### Option 2 — Plugin directory (local dev)
 
 ```bash
 git clone https://github.com/egorfedorov/claude-context-optimizer.git ~/claude-context-optimizer
@@ -449,9 +461,9 @@ To make it persistent, add to `~/.claude/settings.json`:
 }
 ```
 
-This gives you **full functionality**: skills, auto-tracking hooks, Read Cache, ContextShield, and budget alerts.
+Use this when you want to edit the plugin locally and see changes live.
 
-### Option 2 — Skills CLI
+### Option 3 — Skills CLI
 
 ```bash
 npx skills add https://github.com/egorfedorov/claude-context-optimizer
@@ -464,7 +476,7 @@ Installs skills globally to `~/.agents/skills/` and symlinks them to Claude Code
 ### Updating
 
 ```bash
-claude plugin update claude-context-optimizer@egorfedorov-plugins
+claude plugin update claude-context-optimizer@cco
 ```
 
 Then restart Claude Code to apply the update.
