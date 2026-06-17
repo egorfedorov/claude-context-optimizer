@@ -1,0 +1,12 @@
+{
+  "name": "cco",
+  "owner": { "name": "Egor Fedorov" },
+  "plugins": [
+    {
+      "name": "claude-context-optimizer",
+      "description": "Opus 4.8-aware context optimization: silent-by-default hooks, honest NET token savings, big-file map-then-load, Context Control Center, per-task tracking, prompt coach.",
+      "version": "4.1.0",
+      "source": "./"
+    }
+  ]
+}
