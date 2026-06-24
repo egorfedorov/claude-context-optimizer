@@ -10,7 +10,7 @@ import { existsSync, readdirSync } from 'fs';
 import { join, basename } from 'path';
 import {
   SESSIONS_DIR, GLOBAL_STATS_FILE,
-  formatTokens, loadJSON, loadConfig, MODEL_COSTS
+  formatTokens, loadJSON, loadConfig, MODEL_INPUT_COST
 } from './utils.js';
 
 function generateFullReport() {
@@ -43,10 +43,10 @@ function generateFullReport() {
   report += `  Overall waste ratio:        ${overallWaste}%\n`;
 
   const primaryModel = config.model || 'opus';
-  const primaryCost = (stats.estimatedTokensSaved / 1000000) * (MODEL_COSTS[primaryModel] || 15);
+  const primaryCost = (stats.estimatedTokensSaved / 1000000) * (MODEL_INPUT_COST[primaryModel] || MODEL_INPUT_COST.opus);
   if (stats.estimatedTokensSaved > 5000) {
     report += `  Est. $ saveable (${primaryModel}):   $${primaryCost.toFixed(2)}\n`;
-    for (const [model, rate] of Object.entries(MODEL_COSTS)) {
+    for (const [model, rate] of Object.entries(MODEL_INPUT_COST)) {
       if (model !== primaryModel) {
         const cost = (stats.estimatedTokensSaved / 1000000) * rate;
         report += `  Est. $ saveable (${model}):   $${cost.toFixed(2)}\n`;
@@ -119,7 +119,7 @@ function generateFullReport() {
     report += '      - Avoiding reading large config files fully\n';
     report += '      - Using /compact when switching tasks\n';
   } else {
-    report += '  You're a context pro — tokens well spent!\n';
+    report += '  You\'re a context pro — tokens well spent!\n';
   }
 
   if (stats.avgTokensPerSession > 80000) {
