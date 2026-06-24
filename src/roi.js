@@ -10,7 +10,7 @@
 import { readdirSync, existsSync } from 'fs';
 import {
   SESSIONS_DIR, DATA_DIR,
-  formatTokens, loadJSON, MODEL_COSTS, ensureDataDirs
+  formatTokens, loadJSON, MODEL_INPUT_COST, ensureDataDirs
 } from './utils.js';
 
 ensureDataDirs();
@@ -55,7 +55,7 @@ function buildROITable(avgWastePercent, avgTokensPerSession, sessionsPerDay) {
   const rows = [];
 
   for (const model of models) {
-    const cost = MODEL_COSTS[model];
+    const cost = MODEL_INPUT_COST[model];
     const savedPerSession = avgTokensPerSession * (avgWastePercent / 100);
     const costPerSession = (avgTokensPerSession / 1_000_000) * cost;
     const savingsPerSession = (savedPerSession / 1_000_000) * cost;
