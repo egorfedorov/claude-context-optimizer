@@ -37,6 +37,21 @@ At $5/M input tokens (Opus 4.8), a developer spending $100/month is lighting **$
 
 ---
 
+## What's new in v4.2 — ground truth
+
+- **Real token counts.** The budget hook now reads **exact API usage** from the
+  Claude Code session transcript instead of estimating by character count.
+  Budget % and the `/cco` board show real context usage whenever the transcript
+  is readable (real numbers drop the `~` prefix); estimation stays as fallback.
+- **Race-free state.** The tracker/budget hooks are serialized (they shared a
+  notice ledger and clobbered each other), and concurrent session finalization
+  is guarded by an atomic file lock — no more lost global stats.
+- **A dozen bug fixes** — `$NaN` in `/cco-digest`, 3×-overstated costs in
+  `/cco-export` and `/cco-claudemd`, a benchmark that measured an empty
+  structure, O(n²) state rewrites, and more. See [CHANGELOG.md](CHANGELOG.md).
+
+---
+
 ## What's new in v4.1 — honest & quiet
 
 v4.1 answers one question: *does it really save tokens, or just say it does?* It
@@ -202,7 +217,7 @@ in token reports alongside Read/Edit/Write.
 ### NEW: `/cco-doctor` — health check
 
 ```
-✔ versions in sync (plugin.json vs package.json) — v4.0.0
+✔ versions in sync (plugin.json vs package.json) — v4.2.0
 ✔ hooks.json is valid JSON                       — 6 event types wired
 ✔ data directory writable                        — ~/.claude-context-optimizer
 ✔ user config                                    — model=opus-4.8, budget=200.0K, window=1.0M
@@ -414,6 +429,7 @@ When installed as a plugin, commands are namespaced: `/claude-context-optimizer:
 | `/cco` | **Context Control Center** — one screen: budget, $ spent, tokens saved, waste, prompt grade, active task, actions |
 | `/cco-task [add\|list\|done]` | **NEW** — organize work by task; tracks tokens + $ per task |
 | `/cco-report` | Full ROI report — stats, trends, waste analysis, recommendations |
+| `/cco-roi` | ROI calculator — $/month savings per model, effective-context multiplier |
 | `/cco-digest [days]` | Efficiency digest — score, grade, cost analysis (default: 7 days) |
 | `/cco-budget [status\|set\|model\|auto]` | Token budget — configure limits, cost model, auto-compact |
 | `/cco-git` | Git-aware suggestions — smart file loading based on diff |
@@ -485,6 +501,7 @@ Then restart Claude Code to apply the update.
 
 - Node.js >= 18
 - Claude Code (with plugin/skills support)
+- A POSIX shell for hooks (macOS/Linux out of the box; Git Bash or WSL on Windows)
 
 ---
 
@@ -603,6 +620,10 @@ claude-context-optimizer/
 │   ├── digest.js            # Efficiency score & weekly digest
 │   ├── git-context.js       # Git-aware context suggestions
 │   ├── report.js            # ROI report generator
+│   ├── roi.js               # ROI calculator ($/month savings per model)
+│   ├── notices.js           # Notice ledger — caps the plugin's own context spend
+│   ├── file-digest.js       # Structural file map (map-then-load for big files)
+│   ├── simulate-savings.js  # Savings simulator over recorded sessions
 │   ├── export.js            # Chart.js HTML dashboard exporter
 │   ├── prompt-coach.js      # NEW — UserPromptSubmit hook + CLI: prompt quality scoring
 │   ├── smart-pack.js        # NEW — Optimal file pack builder (git + history + keywords)
@@ -611,6 +632,8 @@ claude-context-optimizer/
 │   ├── cco/SKILL.md               # /cco — Context Control Center (one-screen board)
 │   ├── cco-task/SKILL.md          # NEW — /cco-task — per-task tokens/$ tracking
 │   ├── cco-report/SKILL.md        # /cco-report — full ROI report
+│   ├── cco-roi/SKILL.md           # /cco-roi — ROI calculator
+│   ├── cco-replay/SKILL.md        # /cco-replay — session replay
 │   ├── cco-digest/SKILL.md        # /cco-digest — efficiency digest
 │   ├── cco-budget/SKILL.md        # /cco-budget — budget manager
 │   ├── cco-git/SKILL.md           # /cco-git — git suggestions

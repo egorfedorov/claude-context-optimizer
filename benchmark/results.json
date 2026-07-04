@@ -1,37 +1,37 @@
 {
-  "timestamp": "2026-05-09T03:27:43.716Z",
+  "timestamp": "2026-07-04T00:09:30.015Z",
   "version": "1.0.0",
   "totalSavingsPercent": 63,
   "totalTokensWithout": 95514,
-  "totalTokensWith": 35465,
+  "totalTokensWith": 35459,
   "scenarios": [
     {
       "name": "Read Cache Dedup",
       "description": "Second read of same file → file digest instead of full content",
       "withoutCCO": 9082,
-      "withCCO": 4579,
+      "withCCO": 4571,
       "savingsPercent": 50
     },
     {
       "name": "Read Cache (5x reads)",
       "description": "File read 5 times in a session",
       "withoutCCO": 22705,
-      "withCCO": 4693,
+      "withCCO": 4661,
       "savingsPercent": 79
     },
     {
       "name": "File Digest vs Full Read",
       "description": "Navigational digest (~landmarks) vs full file content",
       "withoutCCO": 4541,
-      "withCCO": 38,
+      "withCCO": 30,
       "savingsPercent": 99
     },
     {
       "name": "Read Cache Dedup",
       "description": "Second read of same file → file digest instead of full content",
       "withoutCCO": 12076,
-      "withCCO": 6075,
-      "savingsPercent": 50
+      "withCCO": 6140,
+      "savingsPercent": 49
     },
     {
       "name": "Contextignore Block",
@@ -44,8 +44,8 @@
       "name": "File Digest vs Full Read",
       "description": "Navigational digest (~landmarks) vs full file content",
       "withoutCCO": 3117,
-      "withCCO": 36,
-      "savingsPercent": 99
+      "withCCO": 13,
+      "savingsPercent": 100
     },
     {
       "name": "Typical Session (10 files, 45 min)",

@@ -300,6 +300,13 @@ async function main() {
   const ext = extname(filePath);
   const cache = loadCache(sessionId);
   const entry = cache.files[filePath];
+  if (entry) {
+    // Legacy/placeholder entries may lack these fields — default them so the
+    // range/token accounting below can't throw (a throw silently kills caching).
+    entry.ranges ||= [];
+    entry.lines ||= 0;
+    entry.tokens ||= 0;
+  }
 
   // ── First read — map-then-load nudge for very large files ───────────
   if (!entry) {

@@ -14,14 +14,16 @@
  *     when the actual window is 1M).
  */
 
-import { join } from 'path';
+import { join, extname } from 'path';
+import { statSync } from 'fs';
 import {
   BUDGET_STATE_DIR,
   formatTokens, loadConfig, getModelCost, getEffectiveBudget,
   displayPath, loadJSON, saveJSON, ensureDataDirs, loadBudgetConfig,
-  estimateTokensFromString, isMainModule
+  estimateTokens, isMainModule
 } from './utils.js';
 import { emitNotice } from './notices.js';
+import { readRealUsage } from './transcript-usage.js';
 
 ensureDataDirs();
 
@@ -54,9 +56,16 @@ function saveBudgetState(state) {
 function estimateToolTokens(toolName, toolInput) {
   switch (toolName) {
     case 'Read': {
-      // Input = file contents echoed back into context.
-      const lines = toolInput?.limit || 2000;
-      return { input: Math.round((lines * 35) / 3.7), output: 0 };
+      // Input = file contents echoed back into context. Cap the assumed line
+      // count by the file's real size (a full read of a 40-line file is 40
+      // lines, not the 2000-line default) and use the extension-aware ratio.
+      let lines = toolInput?.limit || 2000;
+      const fp = toolInput?.file_path || '';
+      try {
+        const sizeLines = Math.ceil(statSync(fp).size / 36); // ~35 chars + newline
+        lines = Math.min(lines, Math.max(1, sizeLines));
+      } catch { /* deleted/unreadable — keep default */ }
+      return { input: estimateTokens(lines, extname(fp)), output: 0 };
     }
     case 'Edit': {
       const oldLen = (toolInput?.old_string || '').length;
@@ -143,6 +152,14 @@ async function main() {
   const filePath = toolInput?.file_path;
   if (filePath) {
     if (!state.filesLoaded[filePath]) {
+      // Cap the map: the whole state file is rewritten on every tool call, so
+      // unbounded growth makes long sessions O(n²). Evict the coldest file.
+      const keys = Object.keys(state.filesLoaded);
+      if (keys.length >= 500) {
+        const coldest = keys.reduce((min, k) =>
+          state.filesLoaded[k].tokens < state.filesLoaded[min].tokens ? k : min, keys[0]);
+        delete state.filesLoaded[coldest];
+      }
       state.filesLoaded[filePath] = { tokens: 0, reads: 0, edits: 0 };
     }
     state.filesLoaded[filePath].tokens += inAdded;
@@ -150,8 +167,16 @@ async function main() {
     if (toolName === 'Edit' || toolName === 'Write') state.filesLoaded[filePath].edits++;
   }
 
+  // Prefer GROUND TRUTH from the session transcript (exact API usage counts)
+  // over the chars-per-token estimate. Estimation stays as the fallback.
+  const real = readRealUsage(event.transcript_path);
+  if (real && real.contextTokens > 0) {
+    state.realContextTokens = real.contextTokens;
+  }
+
   const effectiveBudget = getEffectiveBudget(config);
-  const usagePercent = Math.round((state.totalTokensEstimated / effectiveBudget) * 100);
+  const contextNow = state.realContextTokens || state.totalTokensEstimated;
+  const usagePercent = Math.round((contextNow / effectiveBudget) * 100);
 
   // ── Threshold warnings (gated by the session noise budget) ────────────────
   // Only actionable signals reach Claude's context, and only a few per session.
@@ -162,7 +187,8 @@ async function main() {
       state.warningsSent.push(threshold);
 
       const cost = computeCost(state, config.model);
-      let msg = `[context-budget] ${usagePercent}% budget used (~${formatTokens(state.totalTokensEstimated)}/${formatTokens(effectiveBudget)})`;
+      const src = state.realContextTokens ? '' : '~';
+      let msg = `[context-budget] ${usagePercent}% budget used (${src}${formatTokens(contextNow)}/${formatTokens(effectiveBudget)})`;
       msg += ` | Cost: $${cost.toFixed(3)} (${config.model}: in ${formatTokens(state.inputTokensEstimated)} / out ${formatTokens(state.outputTokensEstimated)})`;
 
       if (threshold >= 85) {
@@ -195,7 +221,7 @@ async function main() {
           kind: 'budget:critical',
           priority: 'critical',
           text:
-            `[context-budget] CRITICAL: ${usagePercent}% budget used (~${formatTokens(state.totalTokensEstimated)}/${formatTokens(effectiveBudget)}). ` +
+            `[context-budget] CRITICAL: ${usagePercent}% budget used (${formatTokens(contextNow)}/${formatTokens(effectiveBudget)}). ` +
             `Run /compact immediately or the session will lose older context.${reclaimMsg}`,
         });
       }

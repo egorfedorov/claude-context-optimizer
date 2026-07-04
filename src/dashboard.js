@@ -51,7 +51,9 @@ export function gather(sessionId) {
   const budget = sessionId ? loadJSON(join(BUDGET_STATE_DIR, `${sessionId}.json`)) : null;
   const cache = sessionId ? loadJSON(join(READ_CACHE_DIR, `${sessionId}.json`)) : null;
 
-  const used = (budget && budget.totalTokensEstimated) || 0;
+  // realContextTokens = exact usage read from the session transcript by the
+  // budget hook; the chars-per-token estimate is the fallback.
+  const used = (budget && (budget.realContextTokens || budget.totalTokensEstimated)) || 0;
   const inTok = (budget && budget.inputTokensEstimated) || 0;
   const outTok = (budget && budget.outputTokensEstimated) || 0;
   const dollars = (inTok / 1e6) * cost.input + (outTok / 1e6) * cost.output;

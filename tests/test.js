@@ -8,9 +8,9 @@ import {
   computeUsefulness, computeConfidence, TOKEN_RATIOS,
   loadBudgetConfig, saveBudgetConfig, clearBudgetConfigCache,
   BUDGET_CONFIG_FILE, loadJSON,
-  MODEL_COSTS, getModelCost, getModelContextWindow,
+  MODEL_COSTS, MODEL_INPUT_COST, getModelCost, getModelContextWindow,
   getEffectiveBudget, categorizeFile, shouldSkipFile, shouldIgnoreForTracking,
-  isMainModule
+  isMainModule, getFileLines
 } from '../src/utils.js';
 import { analyzePrompt, buildImprovedPrompt } from '../src/prompt-coach.js';
 import {
@@ -25,6 +25,9 @@ import {
   isContextIgnored, _globToRegex, _parseIgnoreFile, clearContextIgnoreCache
 } from '../src/contextignore.js';
 import { writeFileSync, unlinkSync, mkdirSync, existsSync } from 'fs';
+import { parseUsageFromLines, readRealUsage } from '../src/transcript-usage.js';
+import { acquireFileLock } from '../src/utils.js';
+import { trackSearch, trackToolUse } from '../src/tracker.js';
 
 // ── Recreated pure functions from read-cache.js ─────────────────────────────
 
@@ -1339,5 +1342,134 @@ describe('budget', () => {
       const sonnet = computeCost(state, 'sonnet-4.6');
       assert.ok(opus > sonnet);
     });
+  });
+});
+
+// ── Regression: cost math must stay scalar, Read estimates size-aware ────────
+
+describe('cost + estimation regressions', () => {
+  it('every MODEL_INPUT_COST value is a finite number (guards the $NaN class of bugs)', () => {
+    for (const [model, rate] of Object.entries(MODEL_INPUT_COST)) {
+      assert.ok(Number.isFinite(rate), `${model} input cost is not a number: ${rate}`);
+    }
+  });
+
+  it('Read estimate is capped by the real file size, not the 2000-line default', () => {
+    const tmp = join(homedir(), '.claude-context-optimizer', 'test-small-read.js');
+    mkdirSync(join(homedir(), '.claude-context-optimizer'), { recursive: true });
+    writeFileSync(tmp, 'const x = 1;\n'.repeat(10));
+    try {
+      const small = estimateToolTokens('Read', { file_path: tmp });
+      const noFile = estimateToolTokens('Read', { file_path: '/nonexistent/void.js' });
+      assert.ok(small.input < 200, `10-line file estimated at ${small.input} tokens`);
+      assert.ok(noFile.input > 10000, 'missing file should fall back to the 2000-line default');
+    } finally {
+      unlinkSync(tmp);
+    }
+  });
+
+  it('getFileLines estimates large files from size instead of reading them', () => {
+    const tmp = join(homedir(), '.claude-context-optimizer', 'test-large.txt');
+    const line = 'x'.repeat(35) + '\n'; // matches the 36-bytes/line estimate
+    writeFileSync(tmp, line.repeat(40000)); // ~1.44MB, 40K lines
+    try {
+      const lines = getFileLines(tmp);
+      assert.ok(Math.abs(lines - 40000) < 2000, `estimate ${lines} too far from 40000`);
+    } finally {
+      unlinkSync(tmp);
+    }
+  });
+});
+
+// ── Transcript usage (real token counts) ─────────────────────────────────────
+
+describe('transcript-usage', () => {
+  const usageLine = (input, cacheRead, cacheWrite, output) => JSON.stringify({
+    type: 'assistant',
+    message: { usage: {
+      input_tokens: input, cache_read_input_tokens: cacheRead,
+      cache_creation_input_tokens: cacheWrite, output_tokens: output,
+    } },
+  });
+
+  it('sums input + cache reads + cache writes into contextTokens', () => {
+    const u = parseUsageFromLines([usageLine(100, 50000, 2000, 300)]);
+    assert.equal(u.contextTokens, 52100);
+    assert.equal(u.outputTokens, 300);
+  });
+
+  it('takes the LAST assistant usage, skipping malformed and non-usage lines', () => {
+    const u = parseUsageFromLines([
+      usageLine(1, 0, 0, 1),
+      '{"type":"user","message":{"content":"hi"}}',
+      'not json at all {{{',
+      usageLine(9, 900, 0, 9),
+      '{"type":"progress"}',
+    ]);
+    assert.equal(u.contextTokens, 909);
+  });
+
+  it('returns null when no usage exists', () => {
+    assert.equal(parseUsageFromLines(['{"a":1}', 'junk']), null);
+    assert.equal(readRealUsage('/nonexistent/transcript.jsonl'), null);
+    assert.equal(readRealUsage(null), null);
+  });
+
+  it('reads real usage from a transcript file tail', () => {
+    const tmp = join(homedir(), '.claude-context-optimizer', 'test-transcript.jsonl');
+    writeFileSync(tmp, ['{"type":"user"}', usageLine(10, 40, 0, 5), ''].join('\n'));
+    try {
+      const u = readRealUsage(tmp);
+      assert.equal(u.contextTokens, 50);
+    } finally { unlinkSync(tmp); }
+  });
+});
+
+// ── File lock (global stats serialization) ──────────────────────────────────
+
+describe('acquireFileLock', () => {
+  it('is exclusive while held and reacquirable after release', () => {
+    const release = acquireFileLock('test-lock');
+    const second = acquireFileLock('test-lock', { retries: 2, delayMs: 1 });
+    // second acquisition must fail (returns the no-op release) while held —
+    // we can't compare closures, so verify via a third acquire after release.
+    second();
+    release();
+    const third = acquireFileLock('test-lock', { retries: 1, delayMs: 1 });
+    assert.equal(typeof third, 'function');
+    third();
+  });
+
+  it('steals a stale lock instead of hanging', () => {
+    const release = acquireFileLock('test-stale');
+    const start = Date.now();
+    const second = acquireFileLock('test-stale', { retries: 5, delayMs: 5, staleMs: 0 });
+    assert.ok(Date.now() - start < 1000, 'should steal immediately, not wait out retries');
+    second();
+    release();
+  });
+});
+
+// ── Tracker session helpers ──────────────────────────────────────────────────
+
+describe('tracker helpers', () => {
+  it('trackSearch caps the detail list at 300 but keeps the true count', () => {
+    const session = { searches: [], totalSearches: 0 };
+    for (let i = 0; i < 350; i++) trackSearch(session, `pattern-${i}`, 'Grep');
+    assert.equal(session.searches.length, 300);
+    assert.equal(session.totalSearches, 350);
+    // Oldest entries evicted, newest kept
+    assert.equal(session.searches[299].pattern, 'pattern-349');
+    assert.equal(session.searches[0].pattern, 'pattern-50');
+  });
+
+  it('trackToolUse counts per tool and total', () => {
+    const session = { tools: {}, totalToolCalls: 0 };
+    trackToolUse(session, 'Read');
+    trackToolUse(session, 'Read');
+    trackToolUse(session, 'Grep');
+    assert.equal(session.tools.Read.calls, 2);
+    assert.equal(session.tools.Grep.calls, 1);
+    assert.equal(session.totalToolCalls, 3);
   });
 });

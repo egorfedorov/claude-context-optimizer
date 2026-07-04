@@ -5,7 +5,7 @@
  * usefulness scoring, JSON I/O, file classification, and config management.
  */
 
-import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, statSync, realpathSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, renameSync, mkdirSync, rmdirSync, existsSync, statSync, realpathSync, readdirSync } from 'fs';
 import { join, basename, extname } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
@@ -386,6 +386,11 @@ export function getFileLines(filePath, maxBytes = 10 * 1024 * 1024) {
   try {
     const stat = statSync(filePath);
     if (stat.size > maxBytes) return 0;
+    // Hot path (called from Pre/PostToolUse hooks): don't slurp multi-MB files
+    // just to count lines — estimate from size instead. Exact only when small.
+    if (stat.size > 1024 * 1024) {
+      return Math.round(stat.size / (AVG_CHARS_PER_LINE + 1));
+    }
     const content = readFileSync(filePath, 'utf-8');
     return content.split('\n').length;
   } catch {
@@ -438,6 +443,33 @@ export function getDonationMessage() {
     `  SOL: ${DONATION_ADDRESSES.sol}`,
     '  ─────────────────────────────────────────────────────────────',
   ].join('\n');
+}
+
+// ── Cross-process file lock ──────────────────────────────────────────────────
+// mkdir() is atomic: it either creates the directory or throws EEXIST. Used to
+// serialize read-modify-write of shared files (global stats / patterns) between
+// concurrently-finalizing sessions. Best-effort: if the lock can't be acquired
+// within ~600ms the caller proceeds unlocked (a rare lost update beats a hung
+// hook), and locks older than staleMs are stolen (crashed holder).
+
+export function acquireFileLock(name, { retries = 40, delayMs = 15, staleMs = 5000 } = {}) {
+  const lockDir = join(DATA_DIR, `.${name}.lock`);
+  mkdirSync(DATA_DIR, { recursive: true });
+  for (let i = 0; i < retries; i++) {
+    try {
+      mkdirSync(lockDir);
+      return () => { try { rmdirSync(lockDir); } catch { /* already gone */ } };
+    } catch {
+      try {
+        if (Date.now() - statSync(lockDir).mtimeMs > staleMs) {
+          rmdirSync(lockDir);
+          continue;
+        }
+      } catch { continue; } // lock vanished between mkdir and stat — retry now
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+    }
+  }
+  return () => {}; // could not acquire — proceed unlocked (best-effort)
 }
 
 // ── Data directory initialization ────────────────────────────────────────────
