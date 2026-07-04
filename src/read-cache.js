@@ -30,7 +30,7 @@ import { statSync } from 'fs';
 import {
   READ_CACHE_DIR,
   estimateTokens, formatTokens, loadJSON, saveJSON, ensureDataDirs,
-  loadConfig, getEffectiveBudget, isMainModule, getFileLines
+  loadConfig, getEffectiveBudget, isMainModule, getFileLines, shouldSkipFile
 } from './utils.js';
 import { isContextIgnored } from './contextignore.js';
 import { parseFileStructure, formatDigest } from './file-digest.js';
@@ -313,7 +313,10 @@ async function main() {
     const cfg = loadConfig();
     const enabled = cfg.bigFileDigest !== false;
     const threshold = cfg.bigFileThreshold || 1500;
-    const lines = (enabled && !toolInput.offset && !toolInput.limit) ? getFileLines(filePath) : 0;
+    // Never map binaries (images, archives, locks): "2411 lines" of PNG bytes
+    // has no structure to map, and the Read tool renders images natively.
+    const mappable = enabled && !toolInput.offset && !toolInput.limit && !shouldSkipFile(filePath);
+    const lines = mappable ? getFileLines(filePath) : 0;
 
     if (shouldNudgeBigFile({
       entry, hasOffset: !!toolInput.offset, hasLimit: !!toolInput.limit, lines, threshold, enabled,
