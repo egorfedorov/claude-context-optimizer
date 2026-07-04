@@ -23,10 +23,12 @@ import { existsSync, readFileSync } from 'fs';
 import {
   SESSIONS_DIR, BUDGET_STATE_DIR, READ_CACHE_DIR, PROMPTS_DIR,
   loadJSON, loadConfig, getEffectiveBudget, getModelCost, formatTokens, displayPath,
-  getLatestSessionId, isMainModule,
+  getLatestSessionId, isMainModule, computeCacheAwareCost, CACHE_WRITE_MULT, CACHE_READ_MULT,
+  updateCalibrationFromSession,
 } from './utils.js';
 import { loadTasks, getActiveTask, taskSpend, tasksForProject } from './tasks.js';
 import { loadLedger } from './notices.js';
+import { readTranscriptEconomics } from './transcript-usage.js';
 
 // ── Data gathering ──────────────────────────────────────────────────────────
 
@@ -56,7 +58,31 @@ export function gather(sessionId) {
   const used = (budget && (budget.realContextTokens || budget.totalTokensEstimated)) || 0;
   const inTok = (budget && budget.inputTokensEstimated) || 0;
   const outTok = (budget && budget.outputTokensEstimated) || 0;
-  const dollars = (inTok / 1e6) * cost.input + (outTok / 1e6) * cost.output;
+
+  // Cache economics — exact usage totals from the full transcript, priced at
+  // real cache rates (reads 10%, writes 125% of input). This is what the
+  // session actually bills; the estimate below stays as the fallback.
+  const econ = budget && budget.transcriptPath
+    ? readTranscriptEconomics(budget.transcriptPath) : null;
+  let dollars, cacheEcon = null;
+  if (econ) {
+    const costs = computeCacheAwareCost(econ.totals, model);
+    dollars = costs.real;
+    const inputSide = econ.totals.input + econ.totals.cacheRead + econ.totals.cacheCreation;
+    const breakTokens = econ.breaks.reduce((s, b) => s + b.lostTokens, 0);
+    cacheEcon = {
+      hitPct: inputSide > 0 ? Math.round((econ.totals.cacheRead / inputSide) * 100) : 0,
+      savings: costs.cacheSavings,
+      naive: costs.naive,
+      breaks: econ.breaks.length,
+      breakTokens,
+      // A break re-writes cached tokens at 1.25× instead of re-reading at 0.1×.
+      breakCost: (breakTokens / 1e6) * cost.input * (CACHE_WRITE_MULT - CACHE_READ_MULT),
+      turns: econ.turns,
+    };
+  } else {
+    dollars = (inTok / 1e6) * cost.input + (outTok / 1e6) * cost.output;
+  }
 
   const savedGross = (cache && cache.totalTokensSaved) || 0;
   const blocked = (cache && cache.blockedReads) || 0;
@@ -92,7 +118,7 @@ export function gather(sessionId) {
 
   return {
     model, cost, effectiveBudget,
-    used, inTok, outTok, dollars,
+    used, inTok, outTok, dollars, cacheEcon,
     saved, savedGross, overhead, blocked, multiplier,
     cold, useful, reclaimable, wastePct,
     prompt, project, active, recentTasks,
@@ -140,6 +166,13 @@ export function renderBoard(d) {
     L.push(`  Saved    net ~0  (cache saved ${formatTokens(d.savedGross)}, CCO messages cost ${formatTokens(d.overhead)})`);
   } else {
     L.push('  Saved    (cache warming up — savings appear after repeat reads)');
+  }
+
+  if (d.cacheEcon) {
+    const c = d.cacheEcon;
+    let line = `  Cache    ${bar(c.hitPct)}  ${c.hitPct}% hit  ·  saved $${c.savings.toFixed(2)} vs uncached`;
+    if (c.breaks > 0) line += `  ·  ${c.breaks} break${c.breaks === 1 ? '' : 's'} (−$${c.breakCost.toFixed(2)})`;
+    L.push(line);
   }
 
   L.push(`  Waste    ${bar(d.wastePct)}  ${d.wastePct}%  (${d.cold.length} cold file${d.cold.length === 1 ? '' : 's'})`);
@@ -209,6 +242,14 @@ export function renderSummary(d) {
   } else {
     L.push(`  Tracked ${formatTokens(d.used)} tokens this session ($${d.dollars.toFixed(2)}).`);
   }
+  if (d.cacheEcon) {
+    const c = d.cacheEcon;
+    L.push(`  Prompt cache: ${c.hitPct}% hit rate saved $${c.savings.toFixed(2)} vs uncached pricing.`);
+    if (c.breaks > 0) {
+      L.push(`  ⚠ Cache broke ${c.breaks}x (${formatTokens(c.breakTokens)} re-written, ~$${c.breakCost.toFixed(2)} extra).` +
+        ` Common causes: >5 min pauses, editing CLAUDE.md mid-session, switching models.`);
+    }
+  }
   if (d.reclaimable > 3000) {
     L.push(`  Tip: ~${formatTokens(d.reclaimable)} of cold context is still loaded — /compact before next task.`);
   }
@@ -224,6 +265,11 @@ function main() {
   if (mode === 'summary') {
     const s = renderSummary(d);
     if (s) console.log(s);
+    // Session is over — let ground truth teach the estimator its local drift.
+    const budget = sessionId ? loadJSON(join(BUDGET_STATE_DIR, `${sessionId}.json`)) : null;
+    if (budget && budget.realContextTokens && budget.totalTokensEstimated) {
+      updateCalibrationFromSession(budget.realContextTokens, budget.totalTokensEstimated);
+    }
   } else {
     console.log(renderBoard(d));
   }

@@ -1,6 +1,6 @@
 ---
 name: cco-shield
-description: Show ContextShield status and waste protection stats
+description: Show ContextShield status and waste protection stats; suggest or apply .contextignore rules from historical waste
 license: MIT
 allowed-tools: [Bash, Read]
 ---
@@ -8,6 +8,22 @@ allowed-tools: [Bash, Read]
 # ContextShield Status
 
 Show the user the current ContextShield protection status and historical waste prevention stats.
+
+## Subcommands
+
+If the user asked for suggestions (`/cco-shield suggest`) or to apply them
+(`/cco-shield apply`), run instead:
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/src/context-shield.js suggest   # preview .contextignore candidates
+node ${CLAUDE_PLUGIN_ROOT}/src/context-shield.js apply     # append them to ./.contextignore
+```
+
+`suggest` lists files wasted in 3+ sessions as ready-to-use `.contextignore`
+patterns with per-session token savings. `apply` appends them (deduped against
+existing rules) so those reads are blocked permanently. Show the output as-is.
+
+## Status report (default)
 
 Run the following command to get pattern data:
 

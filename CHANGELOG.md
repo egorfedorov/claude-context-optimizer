@@ -1,5 +1,57 @@
 # Changelog
 
+## 4.3.0 — 2026-07-04
+
+### Prompt Coach stops grading conversation (trust fix)
+- New classifier (`classifyPrompt`): prompts are `chat` / `question` / `task`.
+  Conversational replies ("спасибо, всё ок") are no longer graded F with
+  "name the file you want changed" advice injected into context — the coach
+  now coaches only actual work requests. Questions are graded for history but
+  never coached.
+- **Russian language support**: strong/vague verbs, unbounded phrases, success
+  hints, and interrogatives. Also fixes a latent bug: JS `\b` is ASCII-only,
+  so Cyrillic verb matching silently never worked.
+- Follow-up leniency: short mid-session prompts lean on loaded context and are
+  no longer coached unless truly unbounded.
+
+### Cache economics — the real billing lever (`/cco`)
+- Session cost is now priced at **real prompt-cache rates** (reads 10%, writes
+  125% of input) from exact transcript usage, instead of pricing every token
+  at the full input rate (which overstated cost up to ~10×).
+- New **Cache line** on the `/cco` board: hit rate, $ saved vs uncached, and
+  **cache breaks** — moments the warm cache went cold (>5 min pause, mid-session
+  CLAUDE.md edit, model switch) and the whole context was re-written at 1.25×.
+  The session summary calls out breaks with their extra cost.
+
+### NEW `/cco-overhead` — session baseline audit
+- Measures the fixed context every session starts with (system prompt, tools,
+  MCP, agents, CLAUDE.md, memory) from ground-truth transcript usage: latest,
+  average across recent sessions, % of budget, and $ per session.
+- Itemizes locally measurable sources (project/global CLAUDE.md, memory index,
+  agent definitions) and flags the unattributed remainder with concrete
+  recommendations. Baseline trims repay in EVERY session.
+
+### `/cco-shield suggest|apply` — close the waste loop
+- `suggest` turns files wasted in 3+ sessions into ready `.contextignore`
+  patterns (with per-session savings); `apply` appends them, deduped against
+  existing rules. Observation → permanent rule.
+
+### Self-calibrating estimates
+- At session end, the real/estimated token ratio is EMA'd into config
+  (clamped 0.5–2×) and the budget hook multiplies its input estimates by it.
+  The chars-per-token heuristic now learns each codebase's actual drift.
+
+### Delegation advisor
+- 12+ consecutive Read/Grep/Glob calls with no edits and 20K+ tokens pinned in
+  main context now triggers a one-per-session suggestion to delegate broad
+  exploration to a subagent (whose context is discarded — only the conclusion
+  returns). Resets on any edit or Agent call.
+
+### Tests
+- 150 → 170: prompt classification (ru/en), cache-break detection, cache-aware
+  cost math, baseline parsing, ignore suggestions, calibration EMA, streak
+  advisor.
+
 ## 4.2.0 — 2026-07-04
 
 ### Real token counts (ground truth)

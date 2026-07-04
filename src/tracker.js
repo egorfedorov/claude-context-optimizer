@@ -261,6 +261,36 @@ function trackToolUse(session, toolName) {
   session.totalToolCalls++;
 }
 
+// ── Delegation advisor ──────────────────────────────────────────────────────
+// A long run of Read/Grep/Glob with zero edits is exploration — and every one
+// of those results sits in the MAIN context forever. A subagent does the same
+// exploration in its own context, which is discarded; only the summary comes
+// back. Detect the pattern live and suggest delegating, once per session.
+
+const EXPLORE_STREAK_CALLS = 12;
+const EXPLORE_STREAK_TOKENS = 20_000;
+
+/** Update the read-only exploration streak. Returns true when it's time to
+ *  suggest delegation (fires at most once per session). Pure on `session`. */
+export function updateExploreStreak(session, toolName, tokensAdded = 0) {
+  if (!session.explore) session.explore = { streak: 0, streakTokens: 0, advised: false };
+  const e = session.explore;
+  if (toolName === 'Read' || toolName === 'Grep' || toolName === 'Glob') {
+    e.streak++;
+    e.streakTokens += tokensAdded;
+  } else if (toolName === 'Edit' || toolName === 'Write' || toolName === 'Agent') {
+    // An edit means the exploration paid off; an Agent call means the user's
+    // Claude is already delegating. Either way — reset.
+    e.streak = 0;
+    e.streakTokens = 0;
+  }
+  if (!e.advised && e.streak >= EXPLORE_STREAK_CALLS && e.streakTokens >= EXPLORE_STREAK_TOKENS) {
+    e.advised = true;
+    return true;
+  }
+  return false;
+}
+
 // ── Data pruning ────────────────────────────────────────────────────────────
 
 function prunePatterns(patterns) {
@@ -915,6 +945,25 @@ async function main() {
         trackToolUse(session, `Agent:${toolInput.subagent_type || 'general'}`);
       }
 
+      // ── Delegation advisor ──
+      {
+        let tokensAdded = 0;
+        if (toolName === 'Read') {
+          const fp = toolInput.file_path || '';
+          tokensAdded = (session.files[fp] && session.files[fp].estTokens) || 0;
+        } else if (toolName === 'Grep' || toolName === 'Glob') {
+          tokensAdded = 200; // result listings are small but not free
+        }
+        if (updateExploreStreak(session, toolName, tokensAdded)) {
+          const e = session.explore;
+          emitNotice(sessionId, {
+            kind: 'delegate',
+            text: `[cco] ${e.streak} read/search calls in a row, no edits (~${formatTokens(e.streakTokens)} tokens now pinned in main context). ` +
+              `Broad exploration is cheaper in a subagent (Explore/general-purpose): its context is discarded, only the conclusion returns.`,
+          });
+        }
+      }
+
       // ── Live session mini-stats (every 15 tool calls) ──
       if (session.totalToolCalls > 0 && session.totalToolCalls % 15 === 0) {
         try {
@@ -1037,3 +1086,4 @@ if (isMainModule(import.meta.url)) {
 
 // Exposed for tests
 export { trackSearch, trackToolUse };
+// (updateExploreStreak is exported at its definition)

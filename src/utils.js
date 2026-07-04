@@ -72,6 +72,33 @@ export function getModelCost(model) {
   return MODEL_COSTS[model] || MODEL_COSTS.opus;
 }
 
+// ── Prompt-cache pricing ─────────────────────────────────────────────────────
+// Cache reads bill at 10% of the input price; 5-minute cache writes at 125%.
+// Real Claude Code sessions are dominated by cache reads, so pricing every
+// input token at the full rate overstates cost by up to ~10×.
+export const CACHE_READ_MULT = 0.1;
+export const CACHE_WRITE_MULT = 1.25;
+
+/**
+ * Dollar cost of a session given exact usage totals from the transcript.
+ * `totals` = { input, cacheRead, cacheCreation, output } (tokens).
+ * Returns { real, naive, cacheSavings } — `naive` prices all input-side tokens
+ * at the full input rate (what the cost would be without prompt caching).
+ */
+export function computeCacheAwareCost(totals, model) {
+  const c = getModelCost(model);
+  const inRate = c.input / 1e6;
+  const real =
+    (totals.input || 0) * inRate +
+    (totals.cacheRead || 0) * inRate * CACHE_READ_MULT +
+    (totals.cacheCreation || 0) * inRate * CACHE_WRITE_MULT +
+    (totals.output || 0) * (c.output / 1e6);
+  const naive =
+    ((totals.input || 0) + (totals.cacheRead || 0) + (totals.cacheCreation || 0)) * inRate +
+    (totals.output || 0) * (c.output / 1e6);
+  return { real, naive, cacheSavings: Math.max(0, naive - real) };
+}
+
 export function getModelContextWindow(model) {
   return getModelCost(model).contextWindow;
 }
@@ -197,6 +224,44 @@ export function loadConfig() {
 
 export function saveConfig(config) {
   saveJSON(CONFIG_FILE, { ...DEFAULT_CONFIG, ...config });
+}
+
+// ── Estimate self-calibration ────────────────────────────────────────────────
+// The chars-per-token heuristic drifts per codebase (dense JSON vs airy MD).
+// Sessions where the transcript gave ground truth teach us the local drift:
+// at session end we EMA the real/estimated ratio into config, and the budget
+// hook multiplies its estimates by it. Estimates get more honest by themselves.
+
+/** One EMA step of the calibration factor. Pure — exported for tests. */
+export function emaCalibration(prevFactor, ratio, alpha = 0.3) {
+  const clamped = Math.min(2, Math.max(0.5, ratio));
+  const next = (prevFactor || 1) * (1 - alpha) + clamped * alpha;
+  return Math.round(Math.min(2, Math.max(0.5, next)) * 100) / 100;
+}
+
+let _calibrationFactor = null;
+export function getCalibrationFactor() {
+  if (_calibrationFactor !== null) return _calibrationFactor;
+  const cfg = loadJSON(CONFIG_FILE);
+  const f = cfg && cfg.calibration && cfg.calibration.factor;
+  _calibrationFactor = (typeof f === 'number' && f >= 0.5 && f <= 2) ? f : 1;
+  return _calibrationFactor;
+}
+
+/**
+ * Learn from one finished session. Only trusts sessions big enough for the
+ * ratio to be signal, not noise. Returns the new factor or null if skipped.
+ */
+export function updateCalibrationFromSession(realTokens, estimatedTokens) {
+  if (!(realTokens > 20_000) || !(estimatedTokens > 5_000)) return null;
+  const config = loadConfig();
+  const prev = (config.calibration && config.calibration.factor) || 1;
+  const samples = (config.calibration && config.calibration.samples) || 0;
+  const factor = emaCalibration(prev, realTokens / estimatedTokens);
+  config.calibration = { factor, samples: samples + 1, updatedAt: new Date().toISOString() };
+  saveConfig(config);
+  _calibrationFactor = factor;
+  return factor;
 }
 
 /**
