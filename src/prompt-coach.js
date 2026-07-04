@@ -26,7 +26,7 @@
  *     readable report to stdout.
  */
 
-import { readFileSync, existsSync, writeFileSync, readdirSync } from 'fs';
+import { readFileSync, existsSync, appendFileSync, readdirSync } from 'fs';
 import { join, basename } from 'path';
 import {
   PROMPTS_DIR, ensureDataDirs, loadJSON, saveJSON,
@@ -230,13 +230,9 @@ function logPrompt(sessionId, prompt, analysis) {
       suggestions: analysis.suggestions,
       preview: prompt.slice(0, 200),
     }) + '\n';
-    // jsonl append is safe — small, single-process per hook tick.
-    if (existsSync(file)) {
-      const prev = readFileSync(file, 'utf-8');
-      writeFileSync(file, prev + entry);
-    } else {
-      writeFileSync(file, entry);
-    }
+    // True append: O(1) per prompt and never rewrites (a crash mid-write
+    // can't truncate earlier entries, unlike read+concat+write).
+    appendFileSync(file, entry);
   } catch { /* best-effort */ }
 }
 

@@ -15,7 +15,8 @@ import {
   DATA_DIR, SESSIONS_DIR, PATTERNS_FILE, GLOBAL_STATS_FILE, TEMPLATES_DIR, SUMMARIES_DIR,
   estimateTokens, formatTokens, displayPath, computeUsefulness, computeConfidence,
   getDonationMessage, loadJSON, saveJSON, ensureDataDirs,
-  shouldIgnoreForTracking, getFileLines, getProjectRoot, isMainModule
+  shouldIgnoreForTracking, getFileLines, getProjectRoot, isMainModule,
+  acquireFileLock
 } from './utils.js';
 import { emitNotice } from './notices.js';
 
@@ -246,6 +247,9 @@ function trackSearch(session, pattern, type) {
     type,
     ts: new Date().toISOString()
   });
+  // The session file is rewritten on every tool call — keep the log bounded
+  // (totalSearches keeps the true count; only the detail list is trimmed).
+  if (session.searches.length > 300) session.searches.splice(0, session.searches.length - 300);
   session.totalSearches++;
 }
 
@@ -299,6 +303,11 @@ function finalizeSession(session) {
     saveSession(session);
     return { sessionTokensTotal: 0, sessionTokensWasted: 0 };
   }
+
+  // Serialize the global read-modify-write: two sessions finalizing at once
+  // would otherwise clobber each other's stats (last-writer-wins).
+  const releaseGlobals = acquireFileLock('globals');
+  try {
 
   const patterns = loadPatterns();
   const globalStats = loadGlobalStats();
@@ -363,6 +372,8 @@ function finalizeSession(session) {
   // Update global stats
   globalStats.totalSessions++;
   globalStats.totalTokensTracked += sessionTokensTotal;
+  // NOTE: legacy field name — it holds cumulative WASTE (all consumers label it
+  // "wasted"); kept as-is for state-file back-compat with existing installs.
   globalStats.estimatedTokensSaved += sessionTokensWasted;
   globalStats.totalFilesRead += session.totalReads;
   globalStats.totalFilesEdited += session.totalEdits;
@@ -423,6 +434,10 @@ function finalizeSession(session) {
   autoCreateTemplate(session.projectRoot, proj);
 
   return { sessionTokensTotal, sessionTokensWasted };
+
+  } finally {
+    releaseGlobals();
+  }
 }
 
 // ── Auto-template creation ──────────────────────────────────────────────────
@@ -621,8 +636,8 @@ function generateSessionSummary(session) {
   const end = session.updatedAt ? new Date(session.updatedAt) : new Date();
   const durationMin = Math.max(1, Math.round((end - start) / 60000));
 
-  // Format timestamp
-  const dateStr = start.toISOString().replace('T', ' ').slice(0, 16);
+  // Format timestamp in local wall-clock time (sv-SE = "YYYY-MM-DD HH:MM")
+  const dateStr = start.toLocaleString('sv-SE').slice(0, 16);
 
   const lines = [`Session ${dateStr} (${durationMin} min)`];
 
@@ -912,10 +927,13 @@ async function main() {
             const total = totalTracked + saved;
             const pct = total > 0 ? Math.round((saved / total) * 100) : 0;
             if (pct > 0) {
-              console.error(
-                `[cco] Session pulse: ${formatTokens(totalTracked)} used, ` +
-                `${formatTokens(saved)} saved by CCO (${pct}% efficiency)`
-              );
+              // Routed through the notice ledger so the pulse respects the
+              // session noise cap and its tokens count as overhead (NET math).
+              emitNotice(sessionId, {
+                kind: 'pulse',
+                text: `[cco] Session pulse: ${formatTokens(totalTracked)} used, ` +
+                  `${formatTokens(saved)} saved by CCO (${pct}% efficiency)`,
+              });
             }
           }
         } catch { /* don't block on stats failure */ }
@@ -1016,3 +1034,6 @@ if (isMainModule(import.meta.url)) {
     process.exit(0);
   });
 }
+
+// Exposed for tests
+export { trackSearch, trackToolUse };

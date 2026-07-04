@@ -101,9 +101,8 @@ function ensureFixtures() {
 function scenario_readCacheDedup(fixture, lineCount, ext) {
   const fullReadTokens = estimateTokens(lineCount, ext);
   // Second read: blocked by read-cache, returns digest instead
-  const content = readFileSync(fixture, 'utf-8');
-  const structure = parseFileStructure(content, fixture);
-  const digest = formatDigest(structure, fixture);
+  const structure = parseFileStructure(fixture);
+  const digest = formatDigest(structure, lineCount);
   const digestTokens = Math.round(digest.length / 3.7);
 
   return {
@@ -117,9 +116,8 @@ function scenario_readCacheDedup(fixture, lineCount, ext) {
 
 function scenario_readCacheMultiple(fixture, lineCount, ext, reads) {
   const fullReadTokens = estimateTokens(lineCount, ext);
-  const content = readFileSync(fixture, 'utf-8');
-  const structure = parseFileStructure(content, fixture);
-  const digest = formatDigest(structure, fixture);
+  const structure = parseFileStructure(fixture);
+  const digest = formatDigest(structure, lineCount);
   const digestTokens = Math.round(digest.length / 3.7);
 
   return {
@@ -146,8 +144,8 @@ function scenario_fileDigestVsFull(fixture, ext) {
   const content = readFileSync(fixture, 'utf-8');
   const lineCount = content.split('\n').length;
   const fullTokens = estimateTokens(lineCount, ext);
-  const structure = parseFileStructure(content, fixture);
-  const digest = formatDigest(structure, fixture);
+  const structure = parseFileStructure(fixture);
+  const digest = formatDigest(structure, lineCount);
   const digestTokens = Math.round(digest.length / 3.7);
 
   return {

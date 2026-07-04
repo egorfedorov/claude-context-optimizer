@@ -12,7 +12,7 @@ import { basename } from 'path';
 import {
   GLOBAL_STATS_FILE, EXPORTS_DIR,
   formatTokens, loadJSON, ensureDataDirs,
-  DONATION_ADDRESSES
+  MODEL_INPUT_COST, DONATION_ADDRESSES
 } from './utils.js';
 
 ensureDataDirs();
@@ -112,8 +112,8 @@ function exportHTML() {
     .sort((a, b) => b[1].tokens - a[1].tokens)
     .slice(0, 8);
 
-  const totalCostOpus = (stats.totalTokensTracked / 1000000) * 15;
-  const wastedCostOpus = (stats.estimatedTokensSaved / 1000000) * 15;
+  const totalCostOpus = (stats.totalTokensTracked / 1000000) * MODEL_INPUT_COST.opus;
+  const wastedCostOpus = (stats.estimatedTokensSaved / 1000000) * MODEL_INPUT_COST.opus;
 
   let html = `<!DOCTYPE html>
 <html lang="en">

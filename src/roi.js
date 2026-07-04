@@ -128,7 +128,7 @@ function formatROIReport(sessions, sessionsPerDay) {
   lines.push('');
 
   // Context budget multiplier
-  const multiplier = (1 / (1 - wastePercent / 100)).toFixed(1);
+  const multiplier = (1 / (1 - Math.min(99, wastePercent) / 100)).toFixed(1);
   lines.push('  ── Effective Context Multiplier ─────────────────────────────');
   lines.push(`  CCO makes your context budget ${multiplier}x more effective`);
   lines.push(`  200K context → effectively ${formatTokens(Math.round(200000 * parseFloat(multiplier)))} of useful context`);

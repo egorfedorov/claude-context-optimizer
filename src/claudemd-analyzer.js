@@ -9,7 +9,7 @@
 
 import { readFileSync, existsSync } from 'fs';
 import { join, basename } from 'path';
-import { estimateTokens, formatTokens } from './utils.js';
+import { estimateTokens, formatTokens, MODEL_INPUT_COST } from './utils.js';
 
 function findClaudeFiles(cwd) {
   const candidates = [
@@ -222,7 +222,7 @@ function formatReport(analysis) {
 
     output += `\n  ${'─'.repeat(62)}\n`;
     output += `  POTENTIAL SAVINGS: ~${formatTokens(analysis.totalSavings)} tokens\n`;
-    output += `  That's ~$${((analysis.totalSavings / 1000000) * 15).toFixed(4)}/session on Opus\n`;
+    output += `  That's ~$${((analysis.totalSavings / 1000000) * MODEL_INPUT_COST.opus).toFixed(4)}/session on Opus\n`;
   }
 
   output += '\n';
