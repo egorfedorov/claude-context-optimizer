@@ -6,6 +6,10 @@
  *   - .claude-plugin/marketplace.json (plugins[].version + description)
  *   - docs/index.html                 (footer "vX.Y.Z" badge)
  * Run before publish: npm run sync-version
+ *
+ * Also CHECKS (can't write — different repo) the external marketplace
+ * egorfedorov/claude-plugins, which pins its own copy of the version and sat
+ * two releases stale once. Warns on mismatch; best-effort on network failure.
  */
 
 import { readFileSync, writeFileSync } from 'fs';
@@ -56,3 +60,20 @@ if (synced !== html) {
 }
 
 if (!changed) console.log(`✓ versions already in sync: ${pkg.version}`);
+
+// External marketplace repo — read-only check, never fails the run.
+const EXT = 'egorfedorov/claude-plugins';
+try {
+  const res = await fetch(
+    `https://raw.githubusercontent.com/${EXT}/main/.claude-plugin/marketplace.json`,
+    { signal: AbortSignal.timeout(4000) }
+  );
+  const ext = (await res.json()).plugins?.find(p => p.name === pkg.name);
+  if (ext && ext.version !== pkg.version) {
+    console.log(`⚠ ${EXT} still lists v${ext.version} — bump its .claude-plugin/marketplace.json to v${pkg.version}`);
+  } else if (ext) {
+    console.log(`✓ ${EXT} marketplace in sync: v${ext.version}`);
+  }
+} catch {
+  console.log(`? could not check ${EXT} (offline?) — verify its marketplace.json manually`);
+}
