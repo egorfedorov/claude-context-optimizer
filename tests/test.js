@@ -12,7 +12,11 @@ import {
   getEffectiveBudget, categorizeFile, shouldSkipFile, shouldIgnoreForTracking,
   isMainModule, getFileLines
 } from '../src/utils.js';
-import { analyzePrompt, buildImprovedPrompt } from '../src/prompt-coach.js';
+import { analyzePrompt, buildImprovedPrompt, classifyPrompt } from '../src/prompt-coach.js';
+import { parseBaselineFromLines } from '../src/overhead.js';
+import { buildIgnoreSuggestions } from '../src/context-shield.js';
+import { updateExploreStreak } from '../src/tracker.js';
+import { computeCacheAwareCost, emaCalibration } from '../src/utils.js';
 import {
   emptyState, addTask, completeActiveTask, getActiveTask, taskSpend, tasksForProject
 } from '../src/tasks.js';
@@ -25,7 +29,7 @@ import {
   isContextIgnored, _globToRegex, _parseIgnoreFile, clearContextIgnoreCache
 } from '../src/contextignore.js';
 import { writeFileSync, unlinkSync, mkdirSync, existsSync } from 'fs';
-import { parseUsageFromLines, readRealUsage } from '../src/transcript-usage.js';
+import { parseUsageFromLines, readRealUsage, parseEconomicsFromLines } from '../src/transcript-usage.js';
 import { acquireFileLock } from '../src/utils.js';
 import { trackSearch, trackToolUse } from '../src/tracker.js';
 
@@ -1471,5 +1475,175 @@ describe('tracker helpers', () => {
     assert.equal(session.tools.Read.calls, 2);
     assert.equal(session.tools.Grep.calls, 1);
     assert.equal(session.totalToolCalls, 3);
+  });
+});
+
+// ── v4.3.0: prompt classification (chat / question / task) ──────────────────
+
+describe('classifyPrompt', () => {
+  it('classifies conversational replies as chat (en + ru)', () => {
+    assert.equal(classifyPrompt('а те все хорошо ))'), 'chat');
+    assert.equal(classifyPrompt('спасибо, отлично!'), 'chat');
+    assert.equal(classifyPrompt('ok great'), 'chat');
+    assert.equal(classifyPrompt('да'), 'chat');
+    assert.equal(classifyPrompt('понял, спасибо большое, очень круто получилось'), 'chat');
+    assert.equal(classifyPrompt(''), 'chat');
+  });
+
+  it('classifies questions as question, even short ones', () => {
+    assert.equal(classifyPrompt('а почему и откуда появился этот контрибьютор?'), 'question');
+    assert.equal(classifyPrompt('how does the read cache work?'), 'question');
+    assert.equal(classifyPrompt('как мы можем еще улучшить наш оптимизатор'), 'question');
+  });
+
+  it('classifies work requests as task (imperatives beat question shape)', () => {
+    assert.equal(classifyPrompt('давай все сделай и релизни тоже ))'), 'task');
+    assert.equal(classifyPrompt('добавь функцию в src/utils.js'), 'task');
+    assert.equal(classifyPrompt('fix the login bug in src/auth.ts'), 'task');
+    assert.equal(classifyPrompt('почини ошибку TypeError в трекере'), 'task');
+    assert.equal(classifyPrompt('что сделай чтобы починить'), 'task');
+  });
+
+  it('detects Russian strong verbs despite ASCII-only \\b', () => {
+    const a = analyzePrompt('исправь баг в src/tracker.js чтобы тесты проходили');
+    assert.equal(a.signals.hasStrongVerb, true);
+    assert.equal(a.signals.hasSuccess, true);
+  });
+});
+
+// ── v4.3.0: cache economics ──────────────────────────────────────────────────
+
+describe('cache economics', () => {
+  const econLine = (inp, cr, cc, out) => JSON.stringify({
+    message: { usage: {
+      input_tokens: inp, cache_read_input_tokens: cr,
+      cache_creation_input_tokens: cc, output_tokens: out,
+    } }
+  });
+
+  it('totals usage across all turns', () => {
+    const e = parseEconomicsFromLines([econLine(10, 0, 30000, 500), econLine(10, 30000, 5000, 400)]);
+    assert.equal(e.turns, 2);
+    assert.deepEqual(e.totals, { input: 20, cacheRead: 30000, cacheCreation: 35000, output: 900 });
+    assert.equal(e.breaks.length, 0);
+  });
+
+  it('detects a cache break when warm cache goes cold', () => {
+    const e = parseEconomicsFromLines([
+      econLine(10, 0, 30000, 500),
+      econLine(10, 30000, 5000, 400),
+      econLine(10, 2000, 33000, 300), // read 2K << 35K cached → break
+    ]);
+    assert.equal(e.breaks.length, 1);
+    assert.equal(e.breaks[0].turn, 3);
+    assert.equal(e.breaks[0].lostTokens, 33000);
+  });
+
+  it('does not flag small caches as breaks (noise threshold)', () => {
+    const e = parseEconomicsFromLines([econLine(10, 0, 15000, 100), econLine(10, 0, 15000, 100)]);
+    assert.equal(e.breaks.length, 0);
+  });
+
+  it('returns null with no usage records', () => {
+    assert.equal(parseEconomicsFromLines(['{"a":1}', 'junk']), null);
+  });
+
+  it('computeCacheAwareCost prices reads at 10% and writes at 125%', () => {
+    const c = computeCacheAwareCost(
+      { input: 1000, cacheRead: 1_000_000, cacheCreation: 100_000, output: 10_000 }, 'opus-4.8');
+    // 0.001*5 + 1*5*0.1 + 0.1*5*1.25 + 0.01*25 = 1.38
+    assert.ok(Math.abs(c.real - 1.38) < 1e-9);
+    assert.ok(Math.abs(c.naive - 5.755) < 1e-9);
+    assert.ok(Math.abs(c.cacheSavings - 4.375) < 1e-9);
+  });
+});
+
+// ── v4.3.0: session baseline overhead ───────────────────────────────────────
+
+describe('overhead baseline', () => {
+  it('takes the FIRST assistant usage (context before any work)', () => {
+    const line = (inp, cr, cc) => JSON.stringify({ message: { usage: {
+      input_tokens: inp, cache_read_input_tokens: cr, cache_creation_input_tokens: cc, output_tokens: 1 } } });
+    const baseline = parseBaselineFromLines([
+      '{"type":"user"}',
+      line(10, 0, 45000),   // first response: 45K baseline
+      line(10, 45000, 9000) // later turns must not win
+    ]);
+    assert.equal(baseline, 45010);
+  });
+
+  it('returns null when the transcript has no usage', () => {
+    assert.equal(parseBaselineFromLines(['{"x":1}']), null);
+  });
+});
+
+// ── v4.3.0: .contextignore suggestions ──────────────────────────────────────
+
+describe('buildIgnoreSuggestions', () => {
+  const patterns = { projects: {
+    '/proj': { wastedReads: {
+      '/proj/README.md': { sessions: 5, totalTokensWasted: 12000 },
+      '/proj/docs/big.md': { sessions: 3, totalTokensWasted: 8000 },
+      '/proj/rare.txt': { sessions: 1, totalTokensWasted: 100 },
+      '/other/x.md': { sessions: 9, totalTokensWasted: 999 },
+    } },
+  } };
+
+  it('suggests project-relative patterns for 3+ session waste, sorted by tokens', () => {
+    const s = buildIgnoreSuggestions(patterns, '/proj');
+    assert.deepEqual(s.map(x => x.pattern), ['README.md', 'docs/big.md']);
+  });
+
+  it('dedupes against existing .contextignore lines', () => {
+    const s = buildIgnoreSuggestions(patterns, '/proj', ['docs/big.md', '# comment']);
+    assert.deepEqual(s.map(x => x.pattern), ['README.md']);
+  });
+
+  it('never suggests files from other projects', () => {
+    const s = buildIgnoreSuggestions(patterns, '/proj');
+    assert.ok(!s.some(x => x.pattern.includes('..')));
+  });
+});
+
+// ── v4.3.0: estimate self-calibration ───────────────────────────────────────
+
+describe('emaCalibration', () => {
+  it('moves 30% toward the observed ratio', () => {
+    assert.equal(emaCalibration(1, 1.5), 1.15);
+  });
+
+  it('clamps wild ratios to [0.5, 2]', () => {
+    assert.equal(emaCalibration(1, 50), 1.3);   // ratio clamped to 2
+    assert.equal(emaCalibration(1, 0.01), 0.85); // ratio clamped to 0.5
+  });
+
+  it('keeps a neutral factor neutral', () => {
+    assert.equal(emaCalibration(1, 1), 1);
+  });
+});
+
+// ── v4.3.0: delegation advisor ──────────────────────────────────────────────
+
+describe('updateExploreStreak', () => {
+  it('advises once at 12 read-only calls and 20K tokens', () => {
+    const s = {};
+    for (let i = 0; i < 11; i++) assert.equal(updateExploreStreak(s, 'Read', 2000), false);
+    assert.equal(updateExploreStreak(s, 'Read', 2000), true);
+    assert.equal(updateExploreStreak(s, 'Read', 2000), false); // once per session
+  });
+
+  it('does not advise on many calls with few tokens', () => {
+    const s = {};
+    for (let i = 0; i < 30; i++) assert.equal(updateExploreStreak(s, 'Grep', 100), false);
+  });
+
+  it('resets on Edit/Write/Agent', () => {
+    for (const reset of ['Edit', 'Write', 'Agent']) {
+      const s = {};
+      for (let i = 0; i < 10; i++) updateExploreStreak(s, 'Read', 5000);
+      updateExploreStreak(s, reset);
+      assert.equal(s.explore.streak, 0);
+      assert.equal(s.explore.streakTokens, 0);
+    }
   });
 });

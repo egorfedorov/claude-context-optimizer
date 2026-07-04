@@ -1,7 +1,7 @@
 {
   "name": "claude-context-optimizer",
-  "version": "4.2.0",
-  "description": "Opus 4.8-aware context optimization: real token counts from transcripts, race-free hooks, honest NET savings, big-file map-then-load, Context Control Center, per-task tracking, prompt coach",
+  "version": "4.3.0",
+  "description": "Opus 4.8-aware context optimization: cache-aware real costs & cache-break detection, session baseline audit (/cco-overhead), auto .contextignore, self-calibrating estimates, delegation advisor, ru/en prompt coach",
   "author": {
     "name": "Egor Fedorov"
   },

@@ -37,6 +37,32 @@ At $5/M input tokens (Opus 4.8), a developer spending $100/month is lighting **$
 
 ---
 
+## What's new in v4.3 — cache economics & a politer coach
+
+- **Real cache-aware pricing.** Session cost is now computed at true prompt-cache
+  rates (cache reads bill at 10%, writes at 125% of input) from exact transcript
+  usage. The `/cco` board gains a **Cache line**: hit rate, $ saved vs uncached,
+  and **cache breaks** — moments a >5-min pause or a mid-session CLAUDE.md edit
+  went and re-wrote your whole context at the 1.25× rate, with the extra $ shown.
+- **NEW `/cco-overhead`.** Every session starts with a fixed payload — system
+  prompt, tool schemas, MCP servers, agents, CLAUDE.md — paid before you type a
+  word. This audit measures it from ground truth (first-turn API usage), itemizes
+  what's measurable locally, and tells you what to trim. Baseline cuts repay in
+  *every* session.
+- **Prompt Coach stops grading conversation.** "спасибо, всё ок" is no longer an
+  F-grade prompt with injected advice to "name the file you want changed". The
+  coach classifies chat / question / task, coaches only tasks, goes easier on
+  short follow-ups — and now understands **Russian**.
+- **`/cco-shield apply`.** Files wasted in 3+ sessions become `.contextignore`
+  rules with one command — observation closes into a permanent rule.
+- **Self-calibrating estimates.** Real transcript totals teach the token
+  estimator each codebase's drift (EMA, clamped) — estimates get honest on
+  their own.
+- **Delegation advisor.** A long read-only exploration streak in the main
+  context triggers a one-time hint to fan it out to a subagent instead.
+
+---
+
 ## What's new in v4.2 — ground truth
 
 - **Real token counts.** The budget hook now reads **exact API usage** from the
@@ -436,7 +462,8 @@ When installed as a plugin, commands are namespaced: `/claude-context-optimizer:
 | `/cco-templates [list\|create\|apply\|delete]` | Context templates — reusable file sets for task types |
 | `/cco-export [md\|html]` | Export reports — Markdown or static HTML dashboard |
 | `/cco-clean` | Cleanup — remove old tracking data |
-| `/cco-shield` | ContextShield status — waste protection stats |
+| `/cco-shield [suggest\|apply]` | ContextShield status; **NEW** — turn waste history into `.contextignore` rules |
+| `/cco-overhead` | **NEW** — audit the fixed baseline every session starts with (system prompt, MCP, agents, CLAUDE.md) |
 | `/cco-claudemd` | CLAUDE.md analyzer — find and fix token bloat |
 | `/cco-anatomy` | Project anatomy — compact codebase map with file sizes and token estimates |
 | `/cco-replay [N]` | Session replay — recent session summaries for quick context recovery |
@@ -625,9 +652,10 @@ claude-context-optimizer/
 │   ├── file-digest.js       # Structural file map (map-then-load for big files)
 │   ├── simulate-savings.js  # Savings simulator over recorded sessions
 │   ├── export.js            # Chart.js HTML dashboard exporter
-│   ├── prompt-coach.js      # NEW — UserPromptSubmit hook + CLI: prompt quality scoring
-│   ├── smart-pack.js        # NEW — Optimal file pack builder (git + history + keywords)
-│   └── doctor.js            # NEW — Health check CLI
+│   ├── prompt-coach.js      # UserPromptSubmit hook + CLI: prompt classification & quality scoring
+│   ├── smart-pack.js        # Optimal file pack builder (git + history + keywords)
+│   ├── overhead.js          # NEW — session baseline overhead audit (/cco-overhead)
+│   └── doctor.js            # Health check CLI
 ├── skills/
 │   ├── cco/SKILL.md               # /cco — Context Control Center (one-screen board)
 │   ├── cco-task/SKILL.md          # NEW — /cco-task — per-task tokens/$ tracking
@@ -645,7 +673,8 @@ claude-context-optimizer/
 │   ├── cco-anatomy/SKILL.md       # /cco-anatomy — project anatomy
 │   ├── cco-coach/SKILL.md         # NEW — /cco-coach prompt quality grader
 │   ├── cco-pack/SKILL.md          # NEW — /cco-pack smart context pack
-│   ├── cco-doctor/SKILL.md        # NEW — /cco-doctor health check
+│   ├── cco-doctor/SKILL.md        # /cco-doctor health check
+│   ├── cco-overhead/SKILL.md      # NEW — /cco-overhead session baseline audit
 │   └── smart-loader/SKILL.md      # Auto-suggestion skill (model-invoked)
 ├── agents/
 │   └── context-analyzer.md  # Deep analysis agent

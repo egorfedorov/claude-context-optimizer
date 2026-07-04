@@ -20,7 +20,7 @@ import {
   BUDGET_STATE_DIR,
   formatTokens, loadConfig, getModelCost, getEffectiveBudget,
   displayPath, loadJSON, saveJSON, ensureDataDirs, loadBudgetConfig,
-  estimateTokens, isMainModule
+  estimateTokens, isMainModule, getCalibrationFactor
 } from './utils.js';
 import { emitNotice } from './notices.js';
 import { readRealUsage } from './transcript-usage.js';
@@ -144,7 +144,12 @@ async function main() {
   const budgetConfig = loadBudgetConfig();
   const state = loadBudgetState(sessionId);
 
-  const { input: inAdded, output: outAdded } = estimateToolTokens(toolName, toolInput);
+  const est = estimateToolTokens(toolName, toolInput);
+  // Self-calibration: sessions with transcript ground truth teach the local
+  // real/estimated drift (see utils.updateCalibrationFromSession). Input-side
+  // only — output estimates already come from exact string lengths.
+  const inAdded = Math.round(est.input * getCalibrationFactor());
+  const outAdded = est.output;
   state.inputTokensEstimated += inAdded;
   state.outputTokensEstimated += outAdded;
   state.totalTokensEstimated = state.inputTokensEstimated + state.outputTokensEstimated;
@@ -173,6 +178,9 @@ async function main() {
   if (real && real.contextTokens > 0) {
     state.realContextTokens = real.contextTokens;
   }
+  // Remember where the transcript lives so the dashboard (a plain CLI with no
+  // hook event) can compute full-session cache economics on demand.
+  if (event.transcript_path) state.transcriptPath = event.transcript_path;
 
   const effectiveBudget = getEffectiveBudget(config);
   const contextNow = state.realContextTokens || state.totalTokensEstimated;

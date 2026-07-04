@@ -39,12 +39,20 @@ ensureDataDirs();
 
 const VAGUE_VERBS = [
   'improve', 'optimize', 'optimise', 'clean up', 'refactor', 'better',
-  'make it nice', 'fix issues', 'fix problems', 'tidy', 'polish'
+  'make it nice', 'fix issues', 'fix problems', 'tidy', 'polish',
+  // Russian
+  'улучши', 'улучшить', 'оптимизируй', 'оптимизировать', 'почисти',
+  'сделай лучше', 'сделай красиво', 'наведи порядок', 'отрефактори',
 ];
 
 const STRONG_VERBS = [
   'add', 'remove', 'rename', 'replace', 'extract', 'inline',
-  'implement', 'create', 'delete', 'fix', 'debug', 'test', 'document'
+  'implement', 'create', 'delete', 'fix', 'debug', 'test', 'document',
+  // Russian imperatives
+  'добавь', 'удали', 'убери', 'исправь', 'почини', 'поправь', 'сделай',
+  'создай', 'замени', 'переименуй', 'вынеси', 'реализуй', 'напиши',
+  'допиши', 'перепиши', 'настрой', 'обнови', 'проверь', 'протестируй',
+  'запусти', 'разбей', 'найди', 'задеплой', 'релизни', 'закоммить',
 ];
 
 const UNBOUNDED_PHRASES = [
@@ -53,6 +61,8 @@ const UNBOUNDED_PHRASES = [
   /\bredesign\s+(everything|the\s+app|the\s+system)/i,
   /\bmake\s+it\s+(nice|better|good|cool|awesome|amazing|perfect)\b/i,
   /\b(improve|optimi[sz]e|fix|refactor|clean\s*up)\s+(everything|all|the\s+(codebase|whole|entire))/i,
+  /все\s+(баги|ошибки|файлы|тесты|проблемы)/i,
+  /(перепиши|переделай)\s+(вс[её]|весь|всю)/i,
 ];
 
 const SUCCESS_HINTS = [
@@ -62,7 +72,89 @@ const SUCCESS_HINTS = [
   /\backceptance criteri/i,
   /\bdone when\b/i,
   /\buntil\b/i,
+  /\bчтобы\b/i,
+  /тест(ы)?\s.*проход/i,
+  /должн[оаы]\s/i,
+  /ошибк[аи]\s+(исчез|пропа)/i,
 ];
+
+// ── Language-aware word matching ────────────────────────────────────────────
+// JS \b is ASCII-only: it never fires between a space and a Cyrillic letter,
+// so `\bдобавь\b` silently matches nothing. Cyrillic words use a plain
+// case-insensitive substring check instead (safe for these imperatives).
+
+const CYRILLIC = /[а-яё]/i;
+function hasWord(text, word) {
+  if (CYRILLIC.test(word)) return text.toLowerCase().includes(word);
+  return new RegExp(`\\b${word}\\b`, 'i').test(text);
+}
+
+// ── Conversation classifier ─────────────────────────────────────────────────
+// Not every prompt is a task. Grading "спасибо, всё отлично ))" as F and
+// injecting "name the file you want changed" spends the very tokens the
+// optimizer protects — and erodes trust. Classify first, coach only tasks.
+
+const ACK_WORDS = [
+  // English
+  'ok', 'okay', 'yes', 'no', 'thanks', 'thank', 'cool', 'nice', 'great',
+  'good', 'perfect', 'awesome', 'lgtm', 'sure', 'fine', 'hi', 'hello', 'hey',
+  'continue', 'proceed', 'go', 'stop', 'wait', 'bye',
+  // Russian
+  'да', 'нет', 'ок', 'окей', 'спасибо', 'спс', 'отлично', 'круто', 'супер',
+  'хорошо', 'понял', 'поняла', 'ясно', 'ага', 'угу', 'привет', 'давай',
+  'поехали', 'продолжай', 'дальше', 'стоп', 'подожди', 'норм', 'пока',
+];
+
+const INTERROGATIVES = [
+  // English
+  'why', 'how', 'what', 'who', 'when', 'where', 'which', 'can', 'could',
+  'should', 'is', 'are', 'does', 'do',
+  // Russian
+  'почему', 'зачем', 'откуда', 'как', 'что', 'кто', 'где', 'когда',
+  'какой', 'какая', 'какие', 'можно', 'есть',
+];
+
+/**
+ * Classify a prompt as 'chat' (conversational — don't grade),
+ * 'question' (legit question — grade leniently, never inject),
+ * or 'task' (a work request — full coaching applies).
+ */
+export function classifyPrompt(prompt) {
+  const trimmed = (prompt || '').trim();
+  if (!trimmed) return 'chat';
+
+  // Strip emoji, emoticons ("))", ":)"), and punctuation for word analysis.
+  const cleaned = trimmed
+    .replace(/[)(:;=~^]+/g, ' ')
+    .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, ' ')
+    .trim();
+  const words = cleaned.split(/\s+/).filter(Boolean);
+
+  const hasTaskVerb = STRONG_VERBS.some(v => hasWord(cleaned, v));
+  const hasFilePath = FILE_PATH_REGEX.test(cleaned);
+  FILE_PATH_REGEX.lastIndex = 0; // global regex — reset between uses
+  const hasErrorText = /error|exception|traceback|TypeError|ошибк/i.test(cleaned);
+
+  // Question shape: ends with "?" or opens with an interrogative (optionally
+  // after a filler particle like "а" / "so"). Checked before the chat rule so
+  // short questions ("how does X work?") aren't dismissed as chit-chat.
+  const first = (words[0] || '').toLowerCase().replace(/[.,!?…]+$/, '');
+  const second = (words[1] || '').toLowerCase().replace(/[.,!?…]+$/, '');
+  const isQuestionShape = /\?\s*$/.test(trimmed) ||
+    INTERROGATIVES.includes(first) ||
+    (first.length <= 2 && INTERROGATIVES.includes(second));
+
+  if (!hasTaskVerb && isQuestionShape) return 'question';
+
+  // Chat: short, no task verb, no file, no error — acknowledgments, reactions.
+  if (!hasTaskVerb && !hasFilePath && !hasErrorText) {
+    if (words.length <= 6) return 'chat';
+    const lower = words.map(w => w.toLowerCase().replace(/[.,!?…]+$/, ''));
+    if (words.length <= 10 && lower.some(w => ACK_WORDS.includes(w))) return 'chat';
+  }
+
+  return 'task';
+}
 
 const TECH_HINTS = [
   /\berror[:\s]/i,
@@ -100,7 +192,7 @@ export function analyzePrompt(prompt) {
   const hasSuccess = SUCCESS_HINTS.some(re => re.test(trimmed));
   const hasTechContext = TECH_HINTS.some(re => re.test(trimmed));
   const hasVagueVerb = VAGUE_VERBS.some(v => trimmed.toLowerCase().includes(v));
-  const hasStrongVerb = STRONG_VERBS.some(v => new RegExp(`\\b${v}\\b`, 'i').test(trimmed));
+  const hasStrongVerb = STRONG_VERBS.some(v => hasWord(trimmed, v));
   const hasUnbounded = UNBOUNDED_PHRASES.some(re => re.test(trimmed));
   const hasCodeBlock = /```/.test(trimmed);
   const hasQuestionMark = /\?/.test(trimmed);
@@ -218,11 +310,12 @@ async function readStdin() {
   return input;
 }
 
-function logPrompt(sessionId, prompt, analysis) {
+function logPrompt(sessionId, prompt, analysis, kind = 'task') {
   try {
     const file = join(PROMPTS_DIR, `${sessionId}.jsonl`);
     const entry = JSON.stringify({
       ts: new Date().toISOString(),
+      kind,
       score: analysis.score,
       grade: analysis.grade,
       wordCount: analysis.wordCount,
@@ -234,6 +327,15 @@ function logPrompt(sessionId, prompt, analysis) {
     // can't truncate earlier entries, unlike read+concat+write).
     appendFileSync(file, entry);
   } catch { /* best-effort */ }
+}
+
+/** Count previously logged prompts this session (0 = this is the opener). */
+function priorPromptCount(sessionId) {
+  try {
+    const file = join(PROMPTS_DIR, `${sessionId}.jsonl`);
+    if (!existsSync(file)) return 0;
+    return readFileSync(file, 'utf-8').split('\n').filter(Boolean).length;
+  } catch { return 0; }
 }
 
 async function hookMode() {
@@ -248,11 +350,31 @@ async function hookMode() {
   const prompt = event.prompt || '';
   const sessionId = event.session_id || 'unknown';
 
+  // Classify BEFORE grading. Conversational replies and questions are not
+  // weak task prompts — coaching them injects noise (and tokens) for nothing.
+  const kind = classifyPrompt(prompt);
+
+  if (kind === 'chat') {
+    logPrompt(sessionId, prompt, { score: null, grade: '-', wordCount: 0, signals: {}, suggestions: [] }, kind);
+    process.exit(0);
+  }
+
+  const priors = priorPromptCount(sessionId); // before logging this one
   const analysis = analyzePrompt(prompt);
-  logPrompt(sessionId, prompt, analysis);
+  logPrompt(sessionId, prompt, analysis, kind);
+
+  // Questions get graded for history but never coached — "name the file you
+  // want changed" is meaningless advice for "why did X happen?".
+  if (kind === 'question') process.exit(0);
 
   // Strong prompt or quiet mode — stay silent.
   if (analysis.score >= 80 || isQuietMode()) {
+    process.exit(0);
+  }
+
+  // Follow-up leniency: mid-conversation, short prompts lean on context that
+  // is already loaded. Only coach follow-ups that are truly unbounded.
+  if (priors > 0 && analysis.wordCount < 12 && !analysis.signals.hasUnbounded) {
     process.exit(0);
   }
 

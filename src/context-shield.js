@@ -8,7 +8,8 @@
  * Suggests alternatives: Grep instead of Read, offset/limit for large files.
  */
 
-import { basename, extname } from 'path';
+import { basename, extname, join, relative } from 'path';
+import { existsSync, readFileSync, appendFileSync } from 'fs';
 import {
   PATTERNS_FILE, SESSIONS_DIR,
   estimateTokens, formatTokens, loadJSON, ensureDataDirs, isMainModule
@@ -35,7 +36,74 @@ function findProjectForPath(patterns, filePath) {
   return null;
 }
 
+// ── .contextignore suggestions (close the loop: observation → rule) ─────────
+// The shield WARNS about files wasted in 3+ sessions; this turns those
+// observations into permanent .contextignore rules so the waste stops for good.
+
+/**
+ * Build suggestion list from historical waste patterns. Pure — for tests.
+ * Returns [{ pattern, sessions, tokens }] sorted by tokens wasted, deduped
+ * against lines already present in existingIgnore (array of pattern strings).
+ */
+export function buildIgnoreSuggestions(patterns, projectRoot, existingIgnore = [], minSessions = 3) {
+  const existing = new Set(existingIgnore.map(l => l.trim()).filter(Boolean));
+  const out = [];
+  for (const [projKey, proj] of Object.entries(patterns.projects || {})) {
+    if (projKey !== '_global' && projKey !== projectRoot) continue;
+    for (const [filePath, d] of Object.entries(proj.wastedReads || {})) {
+      if ((d.sessions || 0) < minSessions) continue;
+      if (!filePath.startsWith(projectRoot + '/')) continue;
+      const pattern = relative(projectRoot, filePath);
+      if (!pattern || pattern.startsWith('..') || existing.has(pattern)) continue;
+      out.push({ pattern, sessions: d.sessions, tokens: d.totalTokensWasted || 0 });
+    }
+  }
+  return out.sort((a, b) => b.tokens - a.tokens).slice(0, 20);
+}
+
+function readIgnoreLines(cwd) {
+  const file = join(cwd, '.contextignore');
+  if (!existsSync(file)) return [];
+  try { return readFileSync(file, 'utf-8').split('\n'); } catch { return []; }
+}
+
+function suggestOrApply(mode) {
+  const cwd = process.cwd();
+  const patterns = loadPatterns();
+  const suggestions = buildIgnoreSuggestions(patterns, cwd, readIgnoreLines(cwd));
+
+  if (!suggestions.length) {
+    console.log('\n  No .contextignore candidates yet — nothing was wasted in 3+ sessions');
+    console.log('  (or the waste files are already ignored). Keep working; patterns accrue.\n');
+    return;
+  }
+
+  const total = suggestions.reduce((s, x) => s + x.tokens, 0);
+  console.log(`\n  .CONTEXTIGNORE ${mode === 'apply' ? 'APPLIED' : 'SUGGESTIONS'} — ${suggestions.length} file(s), ~${formatTokens(total)} tokens/session saveable`);
+  console.log('  ' + '─'.repeat(60));
+  for (const s of suggestions) {
+    console.log(`  ${s.pattern.padEnd(44)} wasted in ${s.sessions} sessions (~${formatTokens(s.tokens)})`);
+  }
+
+  if (mode === 'apply') {
+    const file = join(cwd, '.contextignore');
+    const block = `\n# Added by /cco-shield apply — files unused in 3+ sessions (${new Date().toISOString().slice(0, 10)})\n` +
+      suggestions.map(s => s.pattern).join('\n') + '\n';
+    appendFileSync(file, block);
+    console.log(`\n  ✓ Appended ${suggestions.length} pattern(s) to ${file}`);
+    console.log('  Reads of these files are now blocked (Grep still works). Edit the file to undo.\n');
+  } else {
+    console.log('\n  Run `/cco-shield apply` to append these to .contextignore.\n');
+  }
+}
+
 async function main() {
+  const action = process.argv[2];
+  if (action === 'suggest' || action === 'apply') {
+    suggestOrApply(action);
+    return;
+  }
+
   let input = '';
   for await (const chunk of process.stdin) {
     input += chunk;
