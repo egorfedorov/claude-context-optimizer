@@ -836,14 +836,15 @@
   <div class="container">
     <div class="badge">
       <div class="badge-dot"></div>
-      v4.3.0 &middot; Opus 4.8 ready &middot; 1M context aware &middot; Benchmarked
+      v4.5.0 &middot; Claude 5 ready &middot; model auto-detect &middot; Benchmarked
     </div>
     <div class="hero-stat">63%</div>
-    <h1>fewer tokens. <span class="highlight">Sharper prompts.</span><br>Tuned for Opus 4.8.</h1>
+    <h1>fewer tokens. <span class="highlight">Sharper prompts.</span><br>Works with every Claude.</h1>
     <p class="hero-sub">
       Read Cache blocks redundant reads. <strong>Prompt Coach</strong> grades and rewrites weak prompts before they cost you context.
-      <strong>Smart Pack</strong> picks the optimal file set for your task. Adaptive to 200K and 1M context windows.
-      Measured at 63% token savings across 7 reproducible scenarios — and now with prompt-quality scoring.
+      <strong>Smart Pack</strong> picks the optimal file set for your task. The session's real model — Fable&nbsp;5, Opus, Sonnet, Haiku —
+      is detected from the transcript, so windows and pricing are always right.
+      Measured at 63% token savings across 7 reproducible scenarios.
     </p>
     <div class="hero-actions">
       <a href="#install" class="btn btn-primary">Install in 10 seconds</a>
@@ -1173,6 +1174,75 @@
         <div class="auto-what">
           <p><strong>Weekly savings streak</strong> &mdash; shows waste trend. Warns about files that are always wasted in this project.</p>
         </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- New in 4.5 — model auto-detection & the dollar leaks -->
+<section class="features" id="new-4-5" style="padding-top: 60px;">
+  <div class="container">
+    <div class="section-label">New in v4.5 — Model auto-detect &amp; the dollar leaks</div>
+    <h2>The session's <em>real</em> model drives everything</h2>
+    <p style="color: var(--text-dim); max-width: 700px; font-size: 1.05rem;">
+      The budget hook reads the exact model id from your session transcript — window size, pricing,
+      the board, and cache staleness all follow the model you're actually on. And the three biggest
+      avoidable dollar leaks are now caught live, with their real cost named.
+    </p>
+    <div class="feature-grid">
+      <div class="feature">
+        <div class="feature-icon blue">&#x1F9ED;</div>
+        <h3>Model auto-detection</h3>
+        <p>
+          Fable&nbsp;5, Opus, Sonnet, Haiku — detected per session from the transcript,
+          <strong>zero config</strong>. Switch <code>/model</code> mid-day and nothing miscalibrates;
+          <code>config.model</code> is only the fallback. Claude&nbsp;5 family in the pricing table.
+        </p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon yellow">&#x1F4B8;</div>
+        <h3>Cache-break guard</h3>
+        <p>
+          The prompt cache lives 5 minutes. Resume after a longer pause and the hook names what the
+          break just cost — <em>"re-warming 150K of context &asymp; $0.86 extra"</em>. A broken cache
+          re-bills your whole context at <strong>12.5&times;</strong> the cached rate. Batch pauses.
+        </p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon green">&#x1F4CF;</div>
+        <h3>Bash output finally counted</h3>
+        <p>
+          Shell output was the biggest untracked context consumer. Every tool's <strong>actual
+          response size</strong> is measured now — and a single &ge;10K-token result gets a one-line
+          fix: <em>pipe through tail/grep</em>, <em>read with offset/limit</em>.
+        </p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon purple">&#x1F9E0;</div>
+        <h3>Context-rot warning</h3>
+        <p>
+          On 1M-window models quality degrades in the ~300&ndash;400K "dumb zone" — long before the
+          window fills, and long before any budget-% warning. A one-shot signal at ~350K suggests a
+          focused <code>/compact</code> or a fresh session while the model is still smart.
+        </p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon blue">&#x1F6E1;</div>
+        <h3>Observation &rarr; rule</h3>
+        <p>
+          Files read-but-unused in <strong>3+ sessions</strong> now surface automatically (when the
+          recurring waste is &ge;30K tokens) with the exact fix: <code>/cco-shield apply</code> turns
+          them into permanent <code>.contextignore</code> rules.
+        </p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon green">&#x2B50;</div>
+        <h3>The headline</h3>
+        <p>
+          The session-end summary leads with the number people remember:
+          <em>&#x2605; CCO saved $654.36 this session — 86% of what it would have cost.</em>
+          Read-cache savings + prompt-cache economics, measured — not marketing.
+        </p>
       </div>
     </div>
   </div>

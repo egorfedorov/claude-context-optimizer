@@ -1647,3 +1647,52 @@ describe('updateExploreStreak', () => {
     }
   });
 });
+
+// ── v4.5.0: model auto-detection + savings headline ─────────────────────────
+
+describe('normalizeModelId', () => {
+  it('maps raw session ids to pricing keys', async () => {
+    const { normalizeModelId } = await import('../src/utils.js');
+    assert.equal(normalizeModelId('claude-fable-5'), 'fable');
+    assert.equal(normalizeModelId('claude-fable-5[1m]'), 'fable');
+    assert.equal(normalizeModelId('claude-mythos-5'), 'fable');
+    assert.equal(normalizeModelId('claude-opus-4-8'), 'opus-4.8');
+    assert.equal(normalizeModelId('claude-sonnet-5'), 'sonnet-5');
+    assert.equal(normalizeModelId('claude-haiku-4-5-20251001'), 'haiku');
+    assert.equal(normalizeModelId('gpt-5'), null);
+    assert.equal(normalizeModelId(null), null);
+  });
+
+  it('detected model drives the effective budget window', async () => {
+    const { getEffectiveBudget } = await import('../src/utils.js');
+    const cfg = { budgetTokens: 1_000_000, model: 'opus-4.8' };
+    assert.equal(getEffectiveBudget(cfg, 'claude-haiku-4-5-20251001'), 200_000);
+    assert.equal(getEffectiveBudget(cfg, 'claude-fable-5'), 1_000_000);
+  });
+});
+
+describe('transcript model detection', () => {
+  it('parseUsageFromLines returns the session model', () => {
+    const lines = [JSON.stringify({
+      message: { model: 'claude-fable-5', usage: { input_tokens: 10, cache_read_input_tokens: 90, output_tokens: 5 } }
+    })];
+    const u = parseUsageFromLines(lines);
+    assert.equal(u.model, 'claude-fable-5');
+    assert.equal(u.contextTokens, 100);
+  });
+});
+
+describe('renderSummary savings headline', () => {
+  it('leads with total $ saved and % of would-have-cost', async () => {
+    const { renderSummary } = await import('../src/dashboard.js');
+    const d = {
+      hasData: true, saved: 1_000_000, used: 50_000, overhead: 0,
+      cost: { input: 5, output: 25 }, dollars: 10, multiplier: 2,
+      effectiveBudget: 1_000_000, reclaimable: 0,
+      cacheEcon: { hitPct: 90, savings: 5, breaks: 0, breakTokens: 0, breakCost: 0, naive: 20 },
+    };
+    const out = renderSummary(d);
+    // read-cache 1M tokens × $5/M = $5, plus $5 cache savings = $10 of a $20 would-have-cost
+    assert.match(out, /★ CCO saved \$10\.00 this session — 50% of what it would have cost\./);
+  });
+});

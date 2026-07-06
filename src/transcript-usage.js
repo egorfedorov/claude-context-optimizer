@@ -32,6 +32,10 @@ export function parseUsageFromLines(lines) {
           (u.cache_read_input_tokens || 0) +
           (u.cache_creation_input_tokens || 0),
         outputTokens: u.output_tokens || 0,
+        // The session's REAL model id (e.g. "claude-fable-5") — lets budget /
+        // dashboard / read-cache adapt window+pricing per session instead of
+        // trusting the static config.model.
+        model: (obj.message.model || null),
       };
     }
   }

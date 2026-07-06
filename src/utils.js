@@ -61,7 +61,32 @@ export const MODEL_COSTS = {
   'opus-4.7-1m':   { input: 5,  output: 25, contextWindow: 1_000_000 },
   'opus-4.8-1m':   { input: 5,  output: 25, contextWindow: 1_000_000 },
   'opus-extended': { input: 5,  output: 25, contextWindow: 1_000_000 },
+  // Claude 5 family (Fable/Mythos tier above Opus). Pricing not yet published —
+  // priced at the Opus tier until Anthropic announces; window matches Opus 1M.
+  'fable':         { input: 5,  output: 25, contextWindow: 1_000_000 },
+  'fable-5':       { input: 5,  output: 25, contextWindow: 1_000_000 },
+  'sonnet-5':      { input: 3,  output: 15, contextWindow: 1_000_000 },
 };
+
+/**
+ * Map a raw session model id from the transcript (e.g. "claude-fable-5",
+ * "claude-opus-4-8", "claude-haiku-4-5-20251001", possibly with a "[1m]"
+ * suffix) to a MODEL_COSTS key. Null when unrecognized — callers fall back
+ * to config.model.
+ */
+export function normalizeModelId(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const id = raw.toLowerCase().replace(/\[1m\]$/, '');
+  if (id.includes('fable') || id.includes('mythos')) return 'fable';
+  if (id.includes('haiku')) return 'haiku';
+  if (id.includes('sonnet')) return id.includes('sonnet-5') ? 'sonnet-5' : 'sonnet';
+  if (id.includes('opus')) {
+    if (id.includes('4-8') || id.includes('4.8')) return 'opus-4.8';
+    if (id.includes('4-7') || id.includes('4.7')) return 'opus-4.7';
+    return 'opus';
+  }
+  return null;
+}
 
 // Backwards-compatible numeric accessor (input price only — used by old callsites).
 export const MODEL_INPUT_COST = Object.fromEntries(
@@ -268,10 +293,17 @@ export function updateCalibrationFromSession(realTokens, estimatedTokens) {
  * Effective budget — model-aware. Honours explicit budgetTokens but caps to
  * the model's context window if user hasn't customised it.
  */
-export function getEffectiveBudget(config) {
+export function getEffectiveBudget(config, sessionModel) {
   const cfg = config || loadConfig();
-  const window = getModelContextWindow(cfg.model);
+  const window = getModelContextWindow(normalizeModelId(sessionModel) || cfg.model);
   return Math.min(cfg.budgetTokens || DEFAULT_CONFIG.budgetTokens, window);
+}
+
+/** Raw model id detected for a session (written by the budget hook), or null. */
+export function getSessionModel(sessionId) {
+  if (!sessionId) return null;
+  const state = loadJSON(join(BUDGET_STATE_DIR, `${sessionId}.json`));
+  return (state && state.model) || null;
 }
 
 // ── Session resolution (shared by skills that have no event stdin) ───────────

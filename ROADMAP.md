@@ -8,9 +8,10 @@ must make a number more true, a waste more visible, or a fix more automatic.
 - [ ] **`/cco-overhead` auto-fix**: generate the exact `claude mcp disable` /
       settings edits for MCP servers unused in the last N sessions, and offer
       to apply them (like `/cco-shield apply` closed the loop for waste files)
-- [ ] **Real-time cache-break warning**: the budget hook already reads the
-      transcript tail — warn the moment a break happens ("that CLAUDE.md edit
-      just cost $0.40 of cache"), not only in the post-session report
+- [x] **Real-time cache-break warning** — shipped in v4.5.0: the budget hook
+      timestamps events and names the cost of a >=5-min-pause break the moment
+      work resumes (plus model auto-detection, Bash accounting, context-rot
+      warning, auto-.contextignore, CLAUDE.md nudge, savings headline)
 - [ ] **Prompt-coach outcome learning**: correlate prompt grades with what the
       session actually did (files read to find intent, re-prompts) and tune
       the weights from evidence, not vibes

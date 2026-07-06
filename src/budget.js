@@ -20,7 +20,8 @@ import {
   BUDGET_STATE_DIR,
   formatTokens, loadConfig, getModelCost, getEffectiveBudget,
   displayPath, loadJSON, saveJSON, ensureDataDirs, loadBudgetConfig,
-  estimateTokens, isMainModule, getCalibrationFactor
+  estimateTokens, isMainModule, getCalibrationFactor, normalizeModelId,
+  CACHE_WRITE_MULT, CACHE_READ_MULT
 } from './utils.js';
 import { emitNotice } from './notices.js';
 import { readRealUsage } from './transcript-usage.js';
@@ -85,6 +86,9 @@ function estimateToolTokens(toolName, toolInput) {
       return { input: 200, output: 50 };
     case 'Glob':
       return { input: 100, output: 30 };
+    case 'Bash':
+      // Command echo + typical output; real size comes from tool_response below.
+      return { input: 300, output: 20 };
     case 'Agent':
       // Subagents emit a summary back; estimate moderate output.
       return { input: 500, output: 1000 };
@@ -145,11 +149,37 @@ async function main() {
   const state = loadBudgetState(sessionId);
 
   const est = estimateToolTokens(toolName, toolInput);
+  // GROUND TRUTH per tool call: PostToolUse carries the actual tool_response
+  // that just entered the context — its real size beats any stat-based guess
+  // (and covers Bash/MCP output, which estimation can't see at all).
+  let respTokens = 0;
+  if (event.tool_response !== undefined) {
+    try {
+      const respText = typeof event.tool_response === 'string'
+        ? event.tool_response : JSON.stringify(event.tool_response);
+      respTokens = Math.round((respText || '').length / 4);
+    } catch { /* keep estimate */ }
+  }
   // Self-calibration: sessions with transcript ground truth teach the local
   // real/estimated drift (see utils.updateCalibrationFromSession). Input-side
   // only — output estimates already come from exact string lengths.
-  const inAdded = Math.round(est.input * getCalibrationFactor());
+  const inAdded = respTokens > 0 ? respTokens : Math.round(est.input * getCalibrationFactor());
   const outAdded = est.output;
+
+  // A single huge tool result is the #1 avoidable context burn. Nudge once per
+  // occurrence with the concrete fix for that tool.
+  if (respTokens >= 10_000) {
+    const fix = toolName === 'Read'
+      ? 'read with offset/limit or Grep the file instead'
+      : toolName === 'Bash'
+        ? 'pipe through tail/head/grep next time'
+        : 'narrow the query';
+    emitNotice(sessionId, {
+      kind: 'budget:bigresult',
+      text: `[context-budget] ${toolName} result was ~${formatTokens(respTokens)} tokens — ${fix}.`,
+      priority: 'normal',
+    });
+  }
   state.inputTokensEstimated += inAdded;
   state.outputTokensEstimated += outAdded;
   state.totalTokensEstimated = state.inputTokensEstimated + state.outputTokensEstimated;
@@ -178,13 +208,60 @@ async function main() {
   if (real && real.contextTokens > 0) {
     state.realContextTokens = real.contextTokens;
   }
+  // The session's REAL model (from the transcript) — window and pricing follow
+  // it automatically, whatever /model the user picked (fable, opus, haiku…).
+  if (real && real.model) state.model = real.model;
   // Remember where the transcript lives so the dashboard (a plain CLI with no
   // hook event) can compute full-session cache economics on demand.
   if (event.transcript_path) state.transcriptPath = event.transcript_path;
 
-  const effectiveBudget = getEffectiveBudget(config);
+  const sessionModel = normalizeModelId(state.model) || config.model;
+  const effectiveBudget = getEffectiveBudget(config, state.model);
+
+  // ── Cache-break guard ──────────────────────────────────────────────────────
+  // The prompt cache lives 5 minutes. A longer pause with a warm context means
+  // the whole cached prefix was just re-billed at the 1.25× write rate instead
+  // of 0.1× reads — the single biggest avoidable dollar leak. We can't stop a
+  // break that already happened, but naming its real cost teaches the habit:
+  // batch pauses, /compact (or finish) before stepping away.
+  const nowMs = Date.now();
+  if (state.lastEventAt && (state.realContextTokens || 0) >= 20_000) {
+    const gapMin = (nowMs - state.lastEventAt) / 60_000;
+    if (gapMin >= 5) {
+      const rate = getModelCost(sessionModel).input / 1e6;
+      const lost = state.realContextTokens * rate * (CACHE_WRITE_MULT - CACHE_READ_MULT);
+      state.cacheBreaks = (state.cacheBreaks || 0) + 1;
+      emitNotice(sessionId, {
+        kind: `budget:cachebreak:${state.cacheBreaks}`,
+        text:
+          `[context-budget] ~${Math.round(gapMin)} min pause — the prompt cache (5-min TTL) went cold; ` +
+          `re-warming ${formatTokens(state.realContextTokens)} of context costs ~$${lost.toFixed(2)} extra. ` +
+          `Batch pauses: finish the task first, or /compact before a long break.`,
+      });
+    }
+  }
+  state.lastEventAt = nowMs;
   const contextNow = state.realContextTokens || state.totalTokensEstimated;
   const usagePercent = Math.round((contextNow / effectiveBudget) * 100);
+
+  // ── Context-rot zone (quality, not capacity) ──────────────────────────────
+  // On 1M-window models intelligence degrades well before the window fills —
+  // community consensus puts the "dumb zone" at ~300–400K tokens. Budget-%
+  // warnings (50/70/85) never fire that early on 1M, so this is a separate,
+  // one-shot quality signal.
+  const window = getModelCost(sessionModel).contextWindow;
+  if (window >= 1_000_000 && contextNow >= 350_000 && !state.rotWarned) {
+    state.rotWarned = true;
+    const rec = buildCompactRecommendation(state);
+    emitNotice(sessionId, {
+      kind: 'budget:rot',
+      priority: 'critical',
+      text:
+        `[context-budget] ${formatTokens(contextNow)} in context — entering the degradation zone (~300-400K on 1M models: ` +
+        `quality drops long before the window fills). Prefer /compact focused on the current task, or finish and start fresh.` +
+        (rec ? ` Free ~${formatTokens(rec.reclaimableTokens)} now: /compact.` : ''),
+    });
+  }
 
   // ── Threshold warnings (gated by the session noise budget) ────────────────
   // Only actionable signals reach Claude's context, and only a few per session.
@@ -194,10 +271,10 @@ async function main() {
     if (usagePercent >= threshold && !state.warningsSent.includes(threshold)) {
       state.warningsSent.push(threshold);
 
-      const cost = computeCost(state, config.model);
+      const cost = computeCost(state, sessionModel);
       const src = state.realContextTokens ? '' : '~';
       let msg = `[context-budget] ${usagePercent}% budget used (${src}${formatTokens(contextNow)}/${formatTokens(effectiveBudget)})`;
-      msg += ` | Cost: $${cost.toFixed(3)} (${config.model}: in ${formatTokens(state.inputTokensEstimated)} / out ${formatTokens(state.outputTokensEstimated)})`;
+      msg += ` | Cost: $${cost.toFixed(3)} (${sessionModel}: in ${formatTokens(state.inputTokensEstimated)} / out ${formatTokens(state.outputTokensEstimated)})`;
 
       if (threshold >= 85) {
         const rec = buildCompactRecommendation(state);

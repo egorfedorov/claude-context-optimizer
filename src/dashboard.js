@@ -24,7 +24,7 @@ import {
   SESSIONS_DIR, BUDGET_STATE_DIR, READ_CACHE_DIR, PROMPTS_DIR,
   loadJSON, loadConfig, getEffectiveBudget, getModelCost, formatTokens, displayPath,
   getLatestSessionId, isMainModule, computeCacheAwareCost, CACHE_WRITE_MULT, CACHE_READ_MULT,
-  updateCalibrationFromSession,
+  updateCalibrationFromSession, getSessionModel, normalizeModelId,
 } from './utils.js';
 import { loadTasks, getActiveTask, taskSpend, tasksForProject } from './tasks.js';
 import { loadLedger } from './notices.js';
@@ -45,9 +45,12 @@ function lastPromptGrade(sessionId) {
 
 export function gather(sessionId) {
   const config = loadConfig();
-  const model = config.model || 'opus-4.8';
+  // Prefer the model the SESSION actually runs on (detected by the budget hook
+  // from the transcript) over the static config value.
+  const rawSessionModel = getSessionModel(sessionId);
+  const model = normalizeModelId(rawSessionModel) || config.model || 'opus-4.8';
   const cost = getModelCost(model);
-  const effectiveBudget = getEffectiveBudget(config);
+  const effectiveBudget = getEffectiveBudget(config, rawSessionModel);
 
   const session = sessionId ? loadJSON(join(SESSIONS_DIR, `${sessionId}.json`)) : null;
   const budget = sessionId ? loadJSON(join(BUDGET_STATE_DIR, `${sessionId}.json`)) : null;
@@ -234,6 +237,18 @@ export function renderSummary(d) {
   if (!d.hasData || (d.saved === 0 && d.used === 0)) return '';
   const L = [];
   L.push('  ── CCO session summary ───────────────────────────────────────');
+  // Headline: everything CCO + prompt caching saved, as % of what the session
+  // WOULD have cost without them. The one number people remember.
+  {
+    const readCacheDollars = (d.saved / 1e6) * d.cost.input;
+    const cacheDollars = d.cacheEcon ? d.cacheEcon.savings : 0;
+    const totalSaved = readCacheDollars + cacheDollars;
+    const wouldHaveCost = d.dollars + totalSaved;
+    if (totalSaved >= 0.01 && wouldHaveCost > 0) {
+      const pct = Math.round((totalSaved / wouldHaveCost) * 100);
+      L.push(`  ★ CCO saved $${totalSaved.toFixed(2)} this session — ${pct}% of what it would have cost.`);
+    }
+  }
   if (d.saved > 0) {
     const savedDollars = (d.saved / 1e6) * d.cost.input;
     const ov = d.overhead > 0 ? ` (net of ${formatTokens(d.overhead)} CCO overhead)` : '';

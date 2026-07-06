@@ -30,7 +30,8 @@ import { statSync } from 'fs';
 import {
   READ_CACHE_DIR,
   estimateTokens, formatTokens, loadJSON, saveJSON, ensureDataDirs,
-  loadConfig, getEffectiveBudget, isMainModule, getFileLines, shouldSkipFile
+  loadConfig, getEffectiveBudget, isMainModule, getFileLines, shouldSkipFile,
+  getSessionModel
 } from './utils.js';
 import { isContextIgnored } from './contextignore.js';
 import { parseFileStructure, formatDigest } from './file-digest.js';
@@ -51,10 +52,16 @@ const STALE_FILES_FRACTION_BASE = 8;  // base value for 200K
 const STALE_TIME_MS_DEFAULT = 10 * 60 * 1000;
 
 let _thresholdCache = null;
+let _sessionModel = null;
+/** Adapt thresholds to the model the SESSION really runs on (from budget state). */
+export function setSessionModel(rawModel) {
+  _sessionModel = rawModel || null;
+  _thresholdCache = null;
+}
 function getStaleThresholds() {
   if (_thresholdCache) return _thresholdCache;
   const config = loadConfig();
-  const budget = getEffectiveBudget(config);
+  const budget = getEffectiveBudget(config, _sessionModel);
   // Tokens: 10% of effective budget, clamped to [10K, 200K]
   const tokens = Math.max(10_000, Math.min(200_000, Math.round(budget * STALE_TOKEN_RATIO)));
   // Files: scale gently with budget (8 @ 200K, 32 @ 1M)
@@ -298,6 +305,7 @@ async function main() {
   const limit = toolInput.limit || 2000;
   const end = offset + limit;
   const ext = extname(filePath);
+  setSessionModel(getSessionModel(sessionId));
   const cache = loadCache(sessionId);
   const entry = cache.files[filePath];
   if (entry) {

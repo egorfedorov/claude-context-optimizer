@@ -130,6 +130,26 @@ async function main() {
   const projectRoot = findProjectForPath(patterns, filePath);
   const proj = getProjectPatterns(patterns, projectRoot);
 
+  // ── Observation → rule: suggest .contextignore once per session ────────────
+  // The shield already KNOWS which files were read-but-unused in 3+ sessions;
+  // turning them into .contextignore rules stops that waste permanently.
+  // Only interrupts when the recurring waste is real money (≥30K tokens/session).
+  try {
+    const cwd = event.cwd || process.cwd();
+    const ignoreSuggestions = buildIgnoreSuggestions(patterns, cwd, readIgnoreLines(cwd));
+    const totalWaste = ignoreSuggestions.reduce((s, x) => s + x.tokens, 0);
+    if (ignoreSuggestions.length && totalWaste >= 30_000) {
+      const top = ignoreSuggestions.slice(0, 3).map(s => s.pattern).join(', ');
+      emitNotice(sessionId, {
+        kind: 'shield:ignore-suggest',
+        text:
+          `[context-shield] ${ignoreSuggestions.length} file(s) in this project were read but never used in 3+ sessions ` +
+          `(~${formatTokens(totalWaste)} tokens/session recurring). Top: ${top}. ` +
+          `Run /cco-shield apply to add them to .contextignore for good.`,
+      });
+    }
+  } catch { /* suggestion is best-effort — never block the Read */ }
+
   const warnings = [];
   let shouldBlock = false;
 

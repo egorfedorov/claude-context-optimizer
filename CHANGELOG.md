@@ -1,5 +1,58 @@
 # Changelog
 
+## 4.5.0 — 2026-07-06
+
+### Model auto-detection — works with fable / opus / sonnet / haiku, no config
+- The budget hook now reads the session's REAL model id from the transcript
+  (`message.model`) and stores it in budget state. Window size, pricing, the
+  dashboard header, and Read-Cache staleness thresholds all follow the model
+  the session actually runs on — switching `/model` mid-day no longer
+  miscalibrates anything. `config.model` is only the fallback.
+- New `normalizeModelId()` maps raw API ids (`claude-fable-5`,
+  `claude-opus-4-8[1m]`, dated haiku ids…) to the pricing table; added Claude 5
+  family entries (fable/mythos at the Opus tier until pricing is published).
+
+### Ground-truth tool accounting (Bash/MCP no longer invisible)
+- `Bash` added to the tracker/budget hook matcher — shell output was the
+  biggest untracked context consumer.
+- PostToolUse now measures the ACTUAL `tool_response` size instead of
+  stat-based guessing, for every tool. Waste attribution and /compact
+  recommendations get real numbers.
+- Big-result nudge: any single tool result ≥10K tokens emits a one-line fix
+  ("pipe through tail/grep", "read with offset/limit") — the #1 avoidable burn.
+
+### Context-rot warning (quality, not capacity)
+- On 1M-window models, a one-shot critical notice fires at ~350K context:
+  intelligence degrades in the ~300-400K "dumb zone" long before budget-%
+  warnings would trigger. Suggests a focused /compact or a fresh session.
+
+### Cache-break guard (the biggest remaining dollar leak)
+- The budget hook timestamps every event; when work resumes after a ≥5-min
+  pause with ≥20K warm context, it names the real cost of the break that just
+  happened (context × input rate × (1.25 write − 0.1 read)) and teaches the
+  habit: batch pauses, /compact before stepping away.
+
+### Observation → rule: .contextignore suggestions in the hook path
+- The shield's historical waste knowledge (files read-but-unused in 3+
+  sessions) now surfaces automatically once per session when the recurring
+  waste is ≥30K tokens, with the exact `/cco-shield apply` fix. Previously
+  this intelligence was only visible if you manually ran the CLI.
+
+### CLAUDE.md size nudge at SessionStart
+- Memory files load into every prompt — the most expensive place for bloat.
+  If project + user CLAUDE.md together exceed 200 lines, a one-shot notice
+  points at `/cco-claudemd`.
+
+### Savings headline on the session-end summary
+- `dashboard.js summary` now leads with the one number people remember:
+  `★ CCO saved $X this session — Y% of what it would have cost.`
+  (read-cache savings + prompt-cache economics vs the uncached price).
+
+### Fixes
+- Removed duplicated hook registrations guidance: plugin hooks.json is the
+  single source; running CCO hooks from both settings.json and the plugin
+  double-counted every stat and spawned 3 extra node processes per tool call.
+
 ## 4.3.0 — 2026-07-04
 
 ### Prompt Coach stops grading conversation (trust fix)

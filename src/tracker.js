@@ -11,6 +11,7 @@
 
 import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { join, basename, extname, dirname } from 'path';
+import { homedir } from 'os';
 import {
   DATA_DIR, SESSIONS_DIR, PATTERNS_FILE, GLOBAL_STATS_FILE, TEMPLATES_DIR, SUMMARIES_DIR,
   estimateTokens, formatTokens, displayPath, computeUsefulness, computeConfidence,
@@ -992,6 +993,28 @@ async function main() {
     }
 
     case 'SessionStart': {
+      // ── CLAUDE.md size nudge ──
+      // Memory files load into EVERY prompt of every session — the most
+      // expensive place for bloat. Community guidance: keep under 200 lines.
+      try {
+        const memoryFiles = [
+          join(event.cwd || process.cwd(), 'CLAUDE.md'),
+          join(homedir(), '.claude', 'CLAUDE.md'),
+        ];
+        let memLines = 0;
+        for (const f of memoryFiles) {
+          if (existsSync(f)) memLines += readFileSync(f, 'utf-8').split('\n').length;
+        }
+        if (memLines > 200) {
+          emitNotice(sessionId, {
+            kind: 'claudemd-size',
+            text:
+              `[cco] CLAUDE.md memory totals ${memLines} lines — it loads into every prompt ` +
+              `(≤200 recommended). Run /cco-claudemd to find what to trim or split into .claude/rules/.`,
+          });
+        }
+      } catch { /* never block session start */ }
+
       try {
         const globalStats = loadGlobalStats();
         if (globalStats.totalSessions >= 3) {

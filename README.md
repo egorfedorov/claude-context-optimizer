@@ -4,7 +4,7 @@
 
 <p align="center">
   <strong>Stop burning tokens on weak prompts and redundant reads.</strong><br/>
-  <sub>Tuned for Claude Opus 4.8 — full 1M context at standard price.</sub>
+  <sub>Model-aware for the whole Claude lineup — Fable 5, Opus, Sonnet, Haiku — detected per session, zero config.</sub>
 </p>
 
 <p align="center">
@@ -34,6 +34,39 @@ At $5/M input tokens (Opus 4.8), a developer spending $100/month is lighting **$
 <p align="center">
   <img src="assets/how-it-works.svg" alt="How it works" width="700"/>
 </p>
+
+---
+
+## What's new in v4.5 — model auto-detection & the dollar leaks
+
+The session's REAL model now drives everything, and the three biggest
+avoidable dollar leaks get caught live:
+
+- **Model auto-detection.** The budget hook reads the exact model id from the
+  session transcript — window size, pricing, the `/cco` board, and Read-Cache
+  staleness thresholds all follow the model the session *actually runs on*
+  (Fable 5, Opus, Sonnet, Haiku). Switch `/model` mid-day; nothing miscalibrates.
+  `config.model` is only the fallback. Claude 5 family added to the pricing table.
+- **Bash & MCP output finally counted.** Shell output was the biggest untracked
+  context consumer. PostToolUse now measures the **actual `tool_response` size**
+  for every tool instead of stat-based guessing — and any single result ≥10K
+  tokens gets a one-line fix ("pipe through tail/grep", "read with offset/limit").
+- **Cache-break guard.** Resume after a ≥5-min pause with a warm context and the
+  hook names what that break just cost (`re-warming 150K of context ≈ $0.86 extra`)
+  — the prompt cache TTL is 5 minutes, and a broken cache re-bills your whole
+  context at 12.5× the cached rate. Batch pauses; `/compact` before stepping away.
+- **Context-rot warning.** On 1M-window models a one-shot notice fires at ~350K
+  context: quality degrades in the ~300-400K "dumb zone" long before the window
+  fills. Budget-% warnings can't catch this; a quality signal can.
+- **Observation → rule, automatically.** Files read-but-unused in 3+ sessions now
+  surface *in the hook path* once per session (when the recurring waste is ≥30K
+  tokens) with the exact `/cco-shield apply` fix — previously you had to run the
+  CLI to see them.
+- **CLAUDE.md size nudge.** Project + user memory over 200 lines → a one-shot
+  pointer to `/cco-claudemd`. Memory loads into *every* prompt; it's the most
+  expensive place for bloat.
+- **The headline.** Session-end summary now leads with the number that matters:
+  `★ CCO saved $654.36 this session — 86% of what it would have cost.`
 
 ---
 
