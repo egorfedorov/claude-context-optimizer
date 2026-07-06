@@ -1696,3 +1696,19 @@ describe('renderSummary savings headline', () => {
     assert.match(out, /★ CCO saved \$10\.00 this session — 50% of what it would have cost\./);
   });
 });
+
+describe('MCP usage audit', () => {
+  it('splits configured servers by observed calls', async () => {
+    const { splitMcpByUsage } = await import('../src/overhead.js');
+    const configured = [
+      { name: 'chrome', scope: 'user' },
+      { name: 'ghost', scope: 'project' },
+      { name: 'spine', scope: 'user' },
+    ];
+    const { used, unused } = splitMcpByUsage(configured, { chrome: 90, spine: 3 });
+    assert.deepEqual(used.map(s => s.name), ['chrome', 'spine']); // sorted by calls
+    assert.equal(used[0].calls, 90);
+    assert.deepEqual(unused.map(s => s.name), ['ghost']);
+    assert.equal(unused[0].calls, 0);
+  });
+});

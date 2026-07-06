@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-07-06T01:52:56.136Z",
+  "timestamp": "2026-07-06T01:59:15.576Z",
   "version": "1.0.0",
   "totalSavingsPercent": 63,
   "totalTokensWithout": 95514,
@@ -53,6 +53,20 @@
       "withoutCCO": 35166,
       "withCCO": 20044,
       "savingsPercent": 43
+    }
+  ],
+  "cacheBreakEconomics": [
+    {
+      "name": "Cache break avoided (150K ctx)",
+      "description": "A >5-min pause re-bills 150K cached tokens at 1.25× instead of 0.1×",
+      "perBreakDollars": 0.86,
+      "perDayDollars": 2.59
+    },
+    {
+      "name": "Cache break avoided (400K ctx)",
+      "description": "A >5-min pause re-bills 400K cached tokens at 1.25× instead of 0.1×",
+      "perBreakDollars": 2.3,
+      "perDayDollars": 6.9
     }
   ]
 }

@@ -29,6 +29,18 @@ The report shows:
 4. **Recommendations** — what to trim and how (e.g. `/cco-claudemd`, disabling
    unused MCP servers, pruning agent descriptions).
 
+Then run the MCP usage audit — it turns 30 days of tracked tool calls into
+per-server verdicts and the EXACT removal command for servers that were never
+called:
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/src/overhead.js mcp
+```
+
+If it lists unused servers with `claude mcp remove ...` commands, OFFER to run
+them for the user (each removal repays in every future session; `claude mcp
+add` restores any time). Only run them after the user agrees.
+
 Present the output to the user as-is (it is already formatted). If the report
 says no transcripts were found, explain that the audit needs at least one
 completed exchange in a session for this project.

@@ -199,6 +199,26 @@ function scenario_typicalSession() {
   };
 }
 
+// ── Dollar-leak scenarios (v4.5 guards) ──────────────────────────────────────
+// These are priced, not token-counted: a cache break doesn't add tokens to the
+// context, it re-bills the SAME tokens at the 1.25× write rate instead of the
+// 0.1× cached-read rate. The guard's value = breaks it teaches you to avoid.
+
+const INPUT_PRICE_PER_M = 5; // Opus/Fable tier
+
+function scenario_cacheBreak(contextTokens, breaksPerDay) {
+  const cachedCost = (contextTokens * 0.1 * INPUT_PRICE_PER_M) / 1e6;
+  const rewriteCost = (contextTokens * 1.25 * INPUT_PRICE_PER_M) / 1e6;
+  const perBreak = rewriteCost - cachedCost;
+  return {
+    name: `Cache break avoided (${Math.round(contextTokens / 1000)}K ctx)`,
+    description: `A >5-min pause re-bills ${Math.round(contextTokens / 1000)}K cached tokens at 1.25× instead of 0.1×`,
+    perBreakDollars: perBreak,
+    perDayDollars: perBreak * breaksPerDay,
+    breaksPerDay,
+  };
+}
+
 // ── Runner ────────────────────────────────────────────────────────────────────
 
 function runBenchmarks() {
@@ -259,6 +279,21 @@ function runBenchmarks() {
   console.log(`  That's ${totalSavings.toLocaleString()} tokens saved across all scenarios`);
   console.log('');
 
+  // ── Dollar leaks (v4.5 cache-break guard) ──
+  const breakScenarios = [
+    scenario_cacheBreak(150_000, 3),
+    scenario_cacheBreak(400_000, 3),
+  ];
+  console.log('  Dollar leaks the v4.5 cache-break guard names live ($5/M input):');
+  for (const b of breakScenarios) {
+    console.log(
+      `    ${b.name.padEnd(34)} $${b.perBreakDollars.toFixed(2)}/break` +
+      `  →  $${b.perDayDollars.toFixed(2)}/day at ${b.breaksPerDay} breaks` +
+      `  ≈ $${(b.perDayDollars * 22).toFixed(0)}/month`
+    );
+  }
+  console.log('');
+
   // JSON output for CI/landing page
   const results = {
     timestamp: new Date().toISOString(),
@@ -272,7 +307,13 @@ function runBenchmarks() {
       withoutCCO: s.withoutCCO,
       withCCO: s.withCCO,
       savingsPercent: s.withoutCCO > 0 ? Math.round(((s.withoutCCO - s.withCCO) / s.withoutCCO) * 100) : 0
-    }))
+    })),
+    cacheBreakEconomics: breakScenarios.map(b => ({
+      name: b.name,
+      description: b.description,
+      perBreakDollars: +b.perBreakDollars.toFixed(2),
+      perDayDollars: +b.perDayDollars.toFixed(2),
+    })),
   };
 
   const resultsFile = join(__dirname, 'results.json');

@@ -5,9 +5,10 @@ must make a number more true, a waste more visible, or a fix more automatic.
 
 ## v4.4 — Act, don't just report
 
-- [ ] **`/cco-overhead` auto-fix**: generate the exact `claude mcp disable` /
-      settings edits for MCP servers unused in the last N sessions, and offer
-      to apply them (like `/cco-shield apply` closed the loop for waste files)
+- [x] **`/cco-overhead` auto-fix** — shipped in v4.6.0: `overhead.js mcp`
+      audits 30 days of tracked mcp__* calls per configured server and prints
+      the exact `claude mcp remove` for servers never called; the skill offers
+      to run them
 - [x] **Real-time cache-break warning** — shipped in v4.5.0: the budget hook
       timestamps events and names the cost of a >=5-min-pause break the moment
       work resumes (plus model auto-detection, Bash accounting, context-rot

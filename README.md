@@ -39,6 +39,11 @@ At $5/M input tokens (Opus 4.8), a developer spending $100/month is lighting **$
 
 ## What's new in v4.5 — model auto-detection & the dollar leaks
 
+<p align="center">
+  <img src="assets/summary-demo.svg" alt="CCO session summary — real numbers from a real session" width="700"/>
+  <br/><sub>A real session's end-of-day summary. Measured, not marketing.</sub>
+</p>
+
 The session's REAL model now drives everything, and the three biggest
 avoidable dollar leaks get caught live:
 

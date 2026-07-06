@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 260" fill="none">
+  <defs>
+    <linearGradient id="sbg" x1="0" y1="0" x2="700" y2="260">
+      <stop offset="0%" stop-color="#0d1117"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+  </defs>
+  <rect width="700" height="260" rx="10" fill="url(#sbg)"/>
+  <rect x="1" y="1" width="698" height="258" rx="9" fill="none" stroke="#30363d" stroke-width="1"/>
+
+  <!-- Terminal header -->
+  <rect x="0" y="0" width="700" height="32" rx="10" fill="#1c2128"/>
+  <rect x="0" y="20" width="700" height="12" fill="#1c2128"/>
+  <circle cx="20" cy="16" r="6" fill="#f85149"/>
+  <circle cx="38" cy="16" r="6" fill="#d29922"/>
+  <circle cx="56" cy="16" r="6" fill="#3fb950"/>
+  <text x="350" y="20" font-family="SF Mono, monospace" font-size="12" fill="#8b949e" text-anchor="middle">session end — CCO summary</text>
+
+  <!-- Summary lines -->
+  <text x="30" y="62" font-family="SF Mono, monospace" font-size="13" fill="#8b949e">── CCO session summary ───────────────────────────────────────</text>
+
+  <!-- The headline -->
+  <rect x="22" y="76" width="656" height="34" rx="6" fill="#12261a" stroke="#238636" stroke-width="1"/>
+  <text x="32" y="98" font-family="SF Mono, monospace" font-size="14" font-weight="700" fill="#3fb950">★ CCO saved $654.36 this session — 86% of what it would have cost.</text>
+
+  <text x="30" y="136" font-family="SF Mono, monospace" font-size="13" fill="#c9d1d9">Tracked 478.9K tokens this session ($102.99).</text>
+  <text x="30" y="160" font-family="SF Mono, monospace" font-size="13" fill="#c9d1d9">Prompt cache: <tspan fill="#3fb950">99% hit rate</tspan> saved <tspan fill="#3fb950">$654.36</tspan> vs uncached pricing.</text>
+  <text x="30" y="184" font-family="SF Mono, monospace" font-size="13" fill="#d29922">⚠ Cache broke 9x (692.2K re-written, ~$3.98 extra). Common causes: &gt;5 min</text>
+  <text x="46" y="202" font-family="SF Mono, monospace" font-size="13" fill="#d29922">pauses, editing CLAUDE.md mid-session, switching models.</text>
+  <text x="30" y="230" font-family="SF Mono, monospace" font-size="13" fill="#8b949e">Tip: ~11.4K of cold context is still loaded — /compact before next task.</text>
+</svg>

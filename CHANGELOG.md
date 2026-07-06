@@ -1,5 +1,25 @@
 # Changelog
 
+## 4.6.0 — 2026-07-06
+
+### /cco-overhead mcp — observation → the exact removal command
+- New `overhead.js mcp` subcommand: audits 30 days of tracked `mcp__*` calls
+  against every configured MCP server (user / local / project scope) and
+  prints per-server verdicts. Servers never called get the exact
+  `claude mcp remove "<name>" -s <scope>` fix; the skill offers to run it.
+  Verdicts hold off until 5+ tracked sessions of evidence.
+
+### Benchmark: dollar-leak economics
+- `benchmark/run.js` now prices the cache-break guard's value: one avoided
+  break on 150K context = $0.86; at 3 breaks/day that is ~$57/month (150K ctx)
+  to ~$152/month (400K ctx). Written to `results.json` as
+  `cacheBreakEconomics`.
+
+### README/landing
+- Session-summary screenshot asset (`assets/summary-demo.svg`) with the
+  "★ CCO saved $654.36 — 86%" headline, embedded in the README v4.5 section.
+
+
 ## 4.5.0 — 2026-07-06
 
 ### Model auto-detection — works with fable / opus / sonnet / haiku, no config
