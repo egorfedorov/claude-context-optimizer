@@ -37,6 +37,30 @@ At $5/M input tokens (Opus 4.8), a developer spending $100/month is lighting **$
 
 ---
 
+## What's new in v4.8 — the metric gets honest, the knobs come out
+
+- **Token estimates are per-language now.** The headline "tokens saved" number
+  was computed from one constant — 35 chars per line, for every file type. So I
+  measured **6,344 real source files** instead of guessing. `.svg` averages
+  **100.5** chars/line (nearly 3x under-counted before), `.css` **25.3** and
+  `.txt` **27.8** (over-counted), `.ts` **44**. Notably the measurement
+  contradicted my own priors: `.json` is 38.8, not the ~20 I expected.
+  ([#35](https://github.com/egorfedorov/claude-context-optimizer/issues/35))
+- **`/cco-config` — 11 hardcoded knobs, now tunable.** Re-read warning points,
+  Read-Cache staleness, prompt-coach length bands, `/cco-pack` budget cap. Every
+  value range-validated: a typo is ignored in favour of the default and flagged,
+  never silently applied.
+  ([#39](https://github.com/egorfedorov/claude-context-optimizer/issues/39))
+- **The decision logic is under test.** The formatters had coverage; the code
+  that decides what actually reaches your context didn't. Budget gating,
+  cache-break detection, Read-Cache staleness and session waste classification
+  are now pure, exported, and covered — **238 tests**, up from 183.
+  ([#36](https://github.com/egorfedorov/claude-context-optimizer/issues/36))
+- **Version drift can't ship again.** `marketplace.json` quietly sat two
+  releases behind; CI now fails on any mismatch.
+
+---
+
 ## What's new in v4.7 — Windows works
 
 CCO quietly assumed POSIX paths. On Windows that broke four things at once, and
@@ -534,6 +558,38 @@ When installed as a plugin, commands are namespaced: `/claude-context-optimizer:
 | `/cco-coach [prompt]` | **NEW** — Prompt quality score (S/A/B/C/D/F) + concrete suggestions to improve |
 | `/cco-pack [task]` | **NEW** — Build optimal context pack for a task: ranked files with offset/limit |
 | `/cco-doctor` | **NEW** — Plugin health check (versions, hooks, data dir, model config) |
+| `/cco-config [show\|get\|set\|reset]` | **NEW** — tune the behavior thresholds below without editing source |
+
+### Tunable thresholds (`/cco-config`)
+
+Stored under `thresholds` in `~/.claude-context-optimizer/config.json`. Every
+value is range-validated; an out-of-range or misspelled entry is ignored in
+favour of the default and flagged with `!` in `/cco-config show`, so a typo
+can never make a hook behave wildly.
+
+| Key | Default | What it changes |
+|---|---|---|
+| `rereadWarnAt` | 3 | reads of an unedited file before the first re-read warning |
+| `rereadEscalateAt` | 5 | reads before the "put it in CLAUDE.md" escalation |
+| `bigFileLines` | 500 | full-read line count that triggers the offset/limit warning |
+| `mediumFileLines` | 200 | full-read line count that triggers the soft hint |
+| `staleTokenRatio` | 0.10 | share of budget loaded after a file before Read Cache re-allows it |
+| `staleFiles` | 8 | other files loaded after a file before it counts as evicted (at 200K) |
+| `staleTimeMs` | 600000 | ms since last read before a cached file counts as stale |
+| `promptMinWords` | 8 | word count below which the coach calls a prompt too vague |
+| `promptIdealMaxWords` | 200 | upper bound of the coach's "ideal length" band |
+| `promptTooLongWords` | 500 | word count above which the ask is considered buried |
+| `packBudgetPercent` | 25 | max share of the budget `/cco-pack` may consume |
+
+```bash
+/cco-config                          # table of all values, * = set by you
+/cco-config set rereadWarnAt 5       # fewer re-read warnings
+/cco-config set staleTimeMs 300000   # Read Cache re-allows after 5 min, not 10
+/cco-config reset staleTimeMs        # back to the default
+```
+
+`CCO_STALE_TIME_MS` in the environment still overrides `staleTimeMs`, for a
+one-off experiment without changing config.
 
 ---
 

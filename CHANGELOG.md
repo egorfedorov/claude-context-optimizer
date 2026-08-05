@@ -1,5 +1,63 @@
 # Changelog
 
+## 4.8.0 — 2026-08-05
+
+### Per-language token estimation (#35)
+The headline "tokens saved" figure was built on a single constant:
+`AVG_CHARS_PER_LINE = 35`, applied to every file type. Chars-per-line is what
+turns an observed line count into a token estimate, so a flat value biased the
+central metric per file.
+
+- New `CHARS_PER_LINE` map, **measured over 6,344 real source files** rather
+  than guessed. The measurement contradicted the issue's own estimates: `.json`
+  is 38.8 chars/line (not 18–22) and `.md` is 35.8 (not 45–60).
+- The corrections that matter: `.svg` averages **100.5** chars/line — nearly 3x
+  the old assumption, so generated SVG was massively under-counted. `.css` is
+  **25.3** and `.txt` **27.8** (over-counted); `.ts` is **44** and `.sql` **46**
+  (under-counted).
+- Applies to the big-file size shortcut in `getFileLines` too, so a 5MB SVG is
+  no longer counted as if its lines were 35 chars long.
+- Overridable per extension via `config.charsPerLine`.
+- This is complementary to the existing self-calibration, not redundant: the
+  EMA factor corrects *aggregate session* drift and cannot fix *per-file* bias.
+
+### Tunable thresholds + `/cco-config` (#39)
+Eleven behavior knobs were hardcoded across four modules. They are now
+`thresholds` in `config.json`, with a new `/cco-config show|get|set|reset`.
+
+- Every value is range-validated. An out-of-range or misspelled entry is
+  ignored in favour of the default and flagged with `!` in the table — a typo
+  can never make a hook behave wildly.
+- Covers re-read warning points, Read-Cache staleness (tokens/files/time),
+  prompt-coach length bands, and the `/cco-pack` budget cap.
+- `CCO_STALE_TIME_MS` still overrides `staleTimeMs` for one-off experiments.
+
+### Decision logic under test (#36)
+The formatters had coverage; the logic that decides what reaches Claude's
+context did not. Extracted the pure decision cores out of `main()` bodies that
+read stdin and call `process.exit`, then covered them:
+
+- `budget.js` — `selectWarnings` (each threshold fires exactly once, ascending
+  on a jump, boundary-inclusive), `shouldWarnCacheBreak`, `shouldWarnContextRot`,
+  `buildCompactRecommendation`.
+- `read-cache.js` — `checkStaleness` is now exported with injectable clock and
+  thresholds; table-driven tests over token/file/time displacement.
+- `tracker.js` — `aggregateSessionFiles` and `buildCoOccurrence` extracted;
+  `finalizeSession` now calls them instead of duplicating the logic inline.
+
+Writing these caught that a *deliberate re-read scores as useful*, not waste —
+worth pinning, since it directly shapes the reported waste percentage.
+
+### CI: version drift can't ship again
+`.claude-plugin/marketplace.json` silently sat at 4.3.0 through the 4.5.0 and
+4.6.0 releases. `sync-version.js --check` writes nothing and exits non-zero on
+any drift between `package.json`, `plugin.json`, `marketplace.json` and the
+docs badge; CI runs it on every push and PR.
+
+### Tests
+183 → 238.
+
+
 ## 4.7.0 — 2026-08-05
 
 ### Windows: the path handling was wrong everywhere it mattered

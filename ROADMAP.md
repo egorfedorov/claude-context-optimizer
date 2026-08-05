@@ -21,8 +21,10 @@ must make a number more true, a waste more visible, or a fix more automatic.
 
 ## v4.5 — Precision
 
+- [x] **Per-language token estimation** — shipped in v4.8.0: chars/line
+      measured over 6.3K real files, per extension, config-overridable (#35)
 - [ ] **Exact token counting** for estimates via a local BPE approximation
-      (self-calibration already narrows the gap; kill it entirely)
+      (self-calibration + per-language chars/line narrow the gap; kill it entirely)
 - [ ] **Per-model cache TTL awareness** (1h beta cache pricing) in economics
 - [ ] **Subagent economics**: split main-loop vs agent token spend in `/cco`
       and credit delegation savings to the advisor that suggested it

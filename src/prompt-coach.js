@@ -30,7 +30,7 @@ import { readFileSync, existsSync, appendFileSync, readdirSync } from 'fs';
 import { join, basename } from 'path';
 import {
   PROMPTS_DIR, ensureDataDirs, loadJSON, saveJSON,
-  estimateTokensFromString, isQuietMode, isMainModule
+  estimateTokensFromString, isQuietMode, isMainModule, getThresholds
 } from './utils.js';
 
 ensureDataDirs();
@@ -182,6 +182,7 @@ export function analyzePrompt(prompt) {
   const trimmed = prompt.trim();
   const words = trimmed.split(/\s+/).filter(Boolean);
   const wordCount = words.length;
+  const PC = getThresholds();   // prompt* keys are user-tunable (#39)
 
   // ── Detect signals ──
   const filePathMatches = (trimmed.match(FILE_PATH_REGEX) || []).filter(s =>
@@ -209,7 +210,7 @@ export function analyzePrompt(prompt) {
     (hasUnbounded ? 0 : 50) +
     (hasStrongVerb ? 30 : 0) +
     (hasVagueVerb ? -20 : 0) +
-    (wordCount >= 8 && wordCount <= 200 ? 20 : 0)
+    (wordCount >= PC.promptMinWords && wordCount <= PC.promptIdealMaxWords ? 20 : 0)
   );
 
   const successCriteria = hasSuccess ? 100 :
@@ -217,7 +218,7 @@ export function analyzePrompt(prompt) {
 
   const lengthScore = wordCount < 4 ? 0 :
     wordCount < 10 ? 40 :
-    wordCount > 500 ? 50 :
+    wordCount > PC.promptTooLongWords ? 50 :
     100;
 
   // Weighted overall (specificity matters most for prompt quality)
@@ -255,7 +256,7 @@ export function analyzePrompt(prompt) {
   if (wordCount < 6) {
     suggestions.push('Prompt is very short — Claude will likely re-read many files to guess intent. Add 1–2 sentences of context.');
   }
-  if (wordCount > 500) {
+  if (wordCount > PC.promptTooLongWords) {
     suggestions.push('Prompt is long — the actual ask may be buried. Lead with one sentence stating the goal.');
   }
   if (hasQuestionMark && !hasStrongVerb && wordCount < 30) {

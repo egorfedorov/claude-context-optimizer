@@ -29,7 +29,7 @@ import { join, basename, extname, dirname } from 'path';
 import {
   PATTERNS_FILE, loadJSON, formatTokens, estimateTokens,
   computeUsefulness, computeConfidence, getEffectiveBudget, loadConfig,
-  shouldSkipFile
+  shouldSkipFile, getThresholds
 } from './utils.js';
 import { parseFileStructure } from './file-digest.js';
 
@@ -223,10 +223,11 @@ export function buildPack(task, cwd) {
 
   enriched.sort((a, b) => b.relevance - a.relevance);
 
-  // Honour budget — stop adding files once we'd consume >25% of effective budget.
+  // Honour budget — stop adding files once we'd consume more than
+  // thresholds.packBudgetPercent of the effective budget (default 25%, #39).
   const config = loadConfig();
   const budget = getEffectiveBudget(config);
-  const cap = Math.round(budget * 0.25);
+  const cap = Math.round(budget * (getThresholds().packBudgetPercent / 100));
   let running = 0;
   const final = [];
   for (const it of enriched) {

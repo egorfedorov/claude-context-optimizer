@@ -1,7 +1,7 @@
 {
   "name": "claude-context-optimizer",
-  "version": "4.7.0",
-  "description": "Opus 4.8-aware context optimization: cache-aware real costs & cache-break detection, session baseline audit (/cco-overhead), auto .contextignore, self-calibrating estimates, delegation advisor, ru/en prompt coach — now Windows-correct",
+  "version": "4.8.0",
+  "description": "Opus 4.8-aware context optimization: cache-aware real costs & cache-break detection, session baseline audit (/cco-overhead), auto .contextignore, self-calibrating estimates, delegation advisor, ru/en prompt coach, per-language token estimation, tunable thresholds via /cco-config",
   "type": "module",
   "main": "src/tracker.js",
   "bin": {

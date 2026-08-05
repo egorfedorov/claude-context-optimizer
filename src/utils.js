@@ -165,11 +165,65 @@ export const TOKEN_RATIOS = {
   '.svg': 3.0, '.proto': 3.6, '.graphql': 3.7, '.gql': 3.7, '.sql': 3.6,
 };
 
+// Average characters per LINE, by extension. Line count is what the hooks can
+// cheaply observe; chars/line is what turns it into a token estimate, so a flat
+// constant here biased the headline "tokens saved" figure per file.
+//
+// Values marked (m) were MEASURED over 6.3K real source files; the rest inherit
+// from the nearest measured sibling in the same family. Anything unlisted falls
+// back to AVG_CHARS_PER_LINE. Override any of these via config.charsPerLine.
+export const CHARS_PER_LINE = {
+  // Python family
+  '.py': 34.5, '.pyi': 35, '.pyx': 31, '.pxd': 22,                    // (m)
+  // JS / TS family
+  '.ts': 44, '.js': 39, '.mjs': 41,                                   // (m)
+  '.tsx': 40, '.jsx': 40, '.cjs': 39,
+  '.svelte': 42, '.vue': 42, '.astro': 42,                            // .svelte (m)
+  // Docs / markup
+  '.md': 36, '.txt': 28, '.html': 42, '.htm': 42,                     // (m)
+  '.mdx': 36, '.rst': 33, '.xml': 40,
+  // Data / config
+  '.json': 39, '.yml': 29, '.yaml': 29,                               // (m)
+  '.toml': 28, '.ini': 26, '.env': 26,
+  // Styles — notably SHORTER than the old flat 35
+  '.css': 25.3, '.scss': 26, '.sass': 24, '.less': 26, '.styl': 24,   // .css (m)
+  // Compiled / systems
+  '.go': 30, '.sql': 46, '.swift': 47, '.c': 40, '.h': 30,            // (m)
+  '.cpp': 40, '.cc': 40, '.cxx': 40, '.hpp': 30,
+  '.rs': 34, '.java': 40, '.kt': 38, '.cs': 38, '.scala': 38, '.dart': 38,
+  '.rb': 32, '.php': 38, '.lua': 32, '.pl': 34, '.r': 34,
+  // Shell
+  '.sh': 33.3, '.bash': 33, '.zsh': 33, '.fish': 33, '.ps1': 35,      // .sh (m)
+  // The big outlier: generated SVG runs ~3x the old flat assumption.
+  '.svg': 100.5,                                                       // (m)
+  '.proto': 32, '.graphql': 28, '.gql': 28,
+};
+
 const AVG_CHARS_PER_LINE = 35;
+
+let _charsPerLineOverrides = null;
+
+/**
+ * Chars-per-line for an extension: user override → measured default → 35.
+ * The config lookup is cached; hooks call this on every tracked file.
+ */
+export function charsPerLine(ext) {
+  if (_charsPerLineOverrides === null) {
+    const cfg = loadJSON(CONFIG_FILE);
+    _charsPerLineOverrides = (cfg && cfg.charsPerLine) || {};
+  }
+  const key = (ext || '').toLowerCase();
+  const override = _charsPerLineOverrides[key];
+  if (typeof override === 'number' && override > 0) return override;
+  return CHARS_PER_LINE[key] || AVG_CHARS_PER_LINE;
+}
+
+/** Test seam — drop the cached config overrides. */
+export function clearCharsPerLineCache() { _charsPerLineOverrides = null; }
 
 export function estimateTokens(lineCount, ext) {
   const ratio = TOKEN_RATIOS[ext] || 3.7;
-  return Math.round((lineCount * AVG_CHARS_PER_LINE) / ratio);
+  return Math.round((lineCount * charsPerLine(ext)) / ratio);
 }
 
 /** Estimate tokens directly from a string. Used by prompt-coach and budget. */
@@ -247,6 +301,69 @@ const DEFAULT_CONFIG = {
   bigFileDigest: true,         // on first full read of a very large file, show its
   bigFileThreshold: 1500,      // map once (≈14K+ tokens) so Claude reads targeted
 };
+
+// ── Tunable thresholds (#39) ─────────────────────────────────────────────────
+// These decide how aggressive CCO is. They were scattered as magic numbers
+// across four modules; different context sizes and workflows want different
+// aggressiveness, and tuning should not mean editing source.
+// Each entry: [default, min, max, description].
+export const THRESHOLD_SPEC = {
+  rereadWarnAt:       [3,      2,    20,      'reads of an unedited file before the first re-read warning'],
+  rereadEscalateAt:   [5,      3,    50,      'reads before the "put it in CLAUDE.md" escalation'],
+  bigFileLines:       [500,    100,  10000,   'full-read line count that triggers the offset/limit warning'],
+  mediumFileLines:    [200,    50,   5000,    'full-read line count that triggers the soft hint'],
+  staleTokenRatio:    [0.10,   0.01, 1,       'share of budget loaded after a file before it counts as evicted'],
+  staleFiles:         [8,      2,    100,     'other files loaded after a file before it counts as evicted (at 200K)'],
+  staleTimeMs:        [600000, 60000, 86400000, 'ms since last read before a cached file counts as stale'],
+  promptMinWords:     [8,      1,    100,     'prompt word count below which the coach calls it too vague'],
+  promptIdealMaxWords:[200,    20,   2000,    'upper bound of the coach\'s "ideal length" band'],
+  promptTooLongWords: [500,    50,   5000,    'prompt word count above which the ask is considered buried'],
+  packBudgetPercent:  [25,     1,    90,      'max share of the budget /cco-pack may consume'],
+};
+
+export const DEFAULT_THRESHOLDS = Object.fromEntries(
+  Object.entries(THRESHOLD_SPEC).map(([k, [d]]) => [k, d])
+);
+
+/**
+ * Validate a threshold value against its spec.
+ * Returns { ok, value, error } — callers decide whether to warn or throw.
+ */
+export function validateThreshold(key, raw) {
+  const spec = THRESHOLD_SPEC[key];
+  if (!spec) return { ok: false, error: `unknown key "${key}"` };
+  const [, min, max] = spec;
+  const value = typeof raw === 'string' ? Number(raw) : raw;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return { ok: false, error: `${key} must be a number` };
+  }
+  if (value < min || value > max) {
+    return { ok: false, error: `${key} must be between ${min} and ${max} (got ${value})` };
+  }
+  return { ok: true, value };
+}
+
+let _thresholds = null;
+
+/**
+ * Resolved thresholds: config.thresholds over defaults, invalid values
+ * ignored (a typo must never make a hook behave wildly). Cached — hooks call
+ * this on the hot path.
+ */
+export function getThresholds() {
+  if (_thresholds) return _thresholds;
+  const cfg = loadJSON(CONFIG_FILE);
+  const out = { ...DEFAULT_THRESHOLDS };
+  for (const [k, v] of Object.entries((cfg && cfg.thresholds) || {})) {
+    const r = validateThreshold(k, v);
+    if (r.ok) out[k] = r.value;
+  }
+  _thresholds = out;
+  return out;
+}
+
+/** Test seam — drop the cached thresholds. */
+export function clearThresholdCache() { _thresholds = null; }
 
 export function loadConfig() {
   const config = loadJSON(CONFIG_FILE);
@@ -495,7 +612,9 @@ export function getFileLines(filePath, maxBytes = 10 * 1024 * 1024) {
     // Hot path (called from Pre/PostToolUse hooks): don't slurp multi-MB files
     // just to count lines — estimate from size instead. Exact only when small.
     if (stat.size > 1024 * 1024) {
-      return Math.round(stat.size / (AVG_CHARS_PER_LINE + 1));
+      // +1 for the newline itself. Per-extension, so a 5MB .svg isn't counted
+      // as if its lines were 35 chars long when they average ~100.
+      return Math.round(stat.size / (charsPerLine(extname(filePath)) + 1));
     }
     const content = readFileSync(filePath, 'utf-8');
     return content.split('\n').length;
