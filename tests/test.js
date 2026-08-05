@@ -10,10 +10,13 @@ import {
   BUDGET_CONFIG_FILE, loadJSON,
   MODEL_COSTS, MODEL_INPUT_COST, getModelCost, getModelContextWindow,
   getEffectiveBudget, categorizeFile, shouldSkipFile, shouldIgnoreForTracking,
-  isMainModule, getFileLines, toPosixPath
+  isMainModule, getFileLines, toPosixPath,
+  CHARS_PER_LINE, charsPerLine, clearCharsPerLineCache
 } from '../src/utils.js';
 import { analyzePrompt, buildImprovedPrompt, classifyPrompt } from '../src/prompt-coach.js';
 import { parseBaselineFromLines, projectTranscriptDir } from '../src/overhead.js';
+import { THRESHOLD_SPEC, validateThreshold } from '../src/utils.js';
+import { describeThresholds, applySet, applyReset } from '../src/config.js';
 import { buildIgnoreSuggestions } from '../src/context-shield.js';
 import { updateExploreStreak } from '../src/tracker.js';
 import { computeCacheAwareCost, emaCalibration } from '../src/utils.js';
@@ -23,15 +26,20 @@ import {
 import {
   emptyLedger, shouldEmit, recordEmit, DEFAULT_NOTICE_CAP
 } from '../src/notices.js';
-import { shouldNudgeBigFile } from '../src/read-cache.js';
-import { estimateToolTokens, computeCost } from '../src/budget.js';
+import { shouldNudgeBigFile, checkStaleness } from '../src/read-cache.js';
+import {
+  estimateToolTokens, computeCost, selectWarnings,
+  shouldWarnCacheBreak, shouldWarnContextRot, buildCompactRecommendation
+} from '../src/budget.js';
 import {
   isContextIgnored, _globToRegex, _parseIgnoreFile, clearContextIgnoreCache
 } from '../src/contextignore.js';
 import { writeFileSync, unlinkSync, mkdirSync, existsSync } from 'fs';
 import { parseUsageFromLines, readRealUsage, parseEconomicsFromLines } from '../src/transcript-usage.js';
 import { acquireFileLock } from '../src/utils.js';
-import { trackSearch, trackToolUse } from '../src/tracker.js';
+import {
+  trackSearch, trackToolUse, aggregateSessionFiles, buildCoOccurrence
+} from '../src/tracker.js';
 
 // ── Recreated pure functions from read-cache.js ─────────────────────────────
 
@@ -61,25 +69,65 @@ const shouldSkip = shouldSkipFile;
 
 describe('utils', () => {
   describe('estimateTokens', () => {
-    it('uses extension-specific ratio for .js', () => {
-      // 100 lines * 35 chars / 3.8 ratio = 921
-      assert.equal(estimateTokens(100, '.js'), Math.round((100 * 35) / 3.8));
+    it('uses extension-specific chars/line AND ratio for .js', () => {
+      assert.equal(estimateTokens(100, '.js'), Math.round((100 * CHARS_PER_LINE['.js']) / 3.8));
     });
 
-    it('uses extension-specific ratio for .md', () => {
-      assert.equal(estimateTokens(100, '.md'), Math.round((100 * 35) / 4.2));
+    it('uses extension-specific chars/line AND ratio for .md', () => {
+      assert.equal(estimateTokens(100, '.md'), Math.round((100 * CHARS_PER_LINE['.md']) / 4.2));
     });
 
-    it('uses extension-specific ratio for .json', () => {
-      assert.equal(estimateTokens(100, '.json'), Math.round((100 * 35) / 3.2));
+    it('uses extension-specific chars/line AND ratio for .json', () => {
+      assert.equal(estimateTokens(100, '.json'), Math.round((100 * CHARS_PER_LINE['.json']) / 3.2));
     });
 
-    it('falls back to 3.7 for unknown extensions', () => {
+    it('falls back to 3.7 ratio and 35 chars/line for unknown extensions', () => {
       assert.equal(estimateTokens(100, '.xyz'), Math.round((100 * 35) / 3.7));
     });
 
     it('returns 0 for 0 lines', () => {
       assert.equal(estimateTokens(0, '.js'), 0);
+    });
+  });
+
+  // #35: a flat 35 chars/line biased the headline "tokens saved" figure. These
+  // pin the per-extension behaviour against the measured sample.
+  describe('charsPerLine (#35)', () => {
+    it('reflects that SVG lines are ~3x longer than the old flat assumption', () => {
+      assert.ok(charsPerLine('.svg') > 90, 'measured ~100 chars/line');
+      // A 1000-line SVG was under-counted nearly 3x before.
+      assert.ok(estimateTokens(1000, '.svg') / Math.round((1000 * 35) / 3.0) > 2.5);
+    });
+
+    it('reflects that CSS lines are SHORTER than the old flat assumption', () => {
+      assert.ok(charsPerLine('.css') < 30, 'measured ~25 chars/line');
+      assert.ok(estimateTokens(1000, '.css') < Math.round((1000 * 35) / 3.8));
+    });
+
+    it('is case-insensitive about the extension', () => {
+      assert.equal(charsPerLine('.TS'), charsPerLine('.ts'));
+    });
+
+    it('falls back to 35 for an unlisted extension', () => {
+      assert.equal(charsPerLine('.zzz'), 35);
+      assert.equal(charsPerLine(''), 35);
+      assert.equal(charsPerLine(undefined), 35);
+    });
+
+    it('keeps every default within a sane 15-150 chars/line band', () => {
+      for (const [ext, v] of Object.entries(CHARS_PER_LINE)) {
+        assert.ok(v >= 15 && v <= 150, `${ext} = ${v} is out of band`);
+      }
+    });
+
+    it('lands within 25% of the measured value for the top languages', () => {
+      // Ground truth measured over 6.3K real files (see CHANGELOG 4.8.0).
+      const MEASURED = { '.py': 34.5, '.ts': 44, '.md': 35.8, '.json': 38.8, '.go': 29.9, '.css': 25.3 };
+      for (const [ext, real] of Object.entries(MEASURED)) {
+        const got = charsPerLine(ext);
+        assert.ok(Math.abs(got - real) / real < 0.25,
+          `${ext}: ${got} is >25% off the measured ${real}`);
+      }
     });
   });
 
@@ -1247,13 +1295,13 @@ describe('unified classification', () => {
 
 describe('estimateTokens (extended ratios)', () => {
   it('uses ratio for .svelte', () => {
-    assert.equal(estimateTokens(100, '.svelte'), Math.round((100 * 35) / 3.6));
+    assert.equal(estimateTokens(100, '.svelte'), Math.round((100 * CHARS_PER_LINE['.svelte']) / 3.6));
   });
   it('uses ratio for .sh', () => {
-    assert.equal(estimateTokens(100, '.sh'), Math.round((100 * 35) / 3.5));
+    assert.equal(estimateTokens(100, '.sh'), Math.round((100 * CHARS_PER_LINE['.sh']) / 3.5));
   });
   it('uses ratio for .php', () => {
-    assert.equal(estimateTokens(100, '.php'), Math.round((100 * 35) / 3.7));
+    assert.equal(estimateTokens(100, '.php'), Math.round((100 * CHARS_PER_LINE['.php']) / 3.7));
   });
 });
 
@@ -1416,8 +1464,10 @@ describe('cost + estimation regressions', () => {
 
   it('getFileLines estimates large files from size instead of reading them', () => {
     const tmp = join(homedir(), '.claude-context-optimizer', 'test-large.txt');
-    const line = 'x'.repeat(35) + '\n'; // matches the 36-bytes/line estimate
-    writeFileSync(tmp, line.repeat(40000)); // ~1.44MB, 40K lines
+    // Lines sized to .txt's measured chars/line, so the size-based shortcut
+    // should land on the real count. (#35 made this per-extension.)
+    const line = 'x'.repeat(charsPerLine('.txt')) + '\n';
+    writeFileSync(tmp, line.repeat(40000)); // 40K lines
     try {
       const lines = getFileLines(tmp);
       assert.ok(Math.abs(lines - 40000) < 2000, `estimate ${lines} too far from 40000`);
@@ -1771,5 +1821,342 @@ describe('MCP usage audit', () => {
     assert.equal(used[0].calls, 90);
     assert.deepEqual(unused.map(s => s.name), ['ghost']);
     assert.equal(unused[0].calls, 0);
+  });
+});
+
+// ── v4.8.0 (#36): the decision logic that actually gates output ─────────────
+// These paths decide what reaches Claude's context and which tokens get
+// reported as waste. Previously untested — the formatters had coverage, the
+// decisions did not.
+
+describe('budget: threshold gating', () => {
+  const WARN_AT = [50, 70, 85, 95];
+
+  it('emits a threshold exactly once per session', () => {
+    const sent = [];
+    // First crossing fires…
+    const first = selectWarnings(72, WARN_AT, sent);
+    assert.deepEqual(first, [50, 70]);
+    sent.push(...first);
+    // …a second event at the same level fires nothing.
+    assert.deepEqual(selectWarnings(72, WARN_AT, sent), []);
+    // …and only the newly crossed one fires later.
+    assert.deepEqual(selectWarnings(86, WARN_AT, sent), [85]);
+  });
+
+  it('reports skipped thresholds in ascending order on a big jump', () => {
+    assert.deepEqual(selectWarnings(96, WARN_AT, []), [50, 70, 85, 95]);
+  });
+
+  it('emits nothing below the lowest threshold', () => {
+    assert.deepEqual(selectWarnings(49, WARN_AT, []), []);
+  });
+
+  it('fires exactly at the boundary, not just above it', () => {
+    assert.deepEqual(selectWarnings(50, WARN_AT, []), [50]);
+  });
+
+  it('tolerates an empty/missing warnAt config', () => {
+    assert.deepEqual(selectWarnings(99, [], []), []);
+    assert.deepEqual(selectWarnings(99, undefined, undefined), []);
+  });
+});
+
+describe('budget: cache-break warning', () => {
+  const MIN = 60_000;
+  const base = { lastEventAt: 1_000_000, realContextTokens: 150_000 };
+
+  it('warns after a pause past the 5-min cache TTL', () => {
+    assert.equal(shouldWarnCacheBreak({ ...base, now: base.lastEventAt + 6 * MIN }), true);
+  });
+
+  it('stays quiet inside the TTL', () => {
+    assert.equal(shouldWarnCacheBreak({ ...base, now: base.lastEventAt + 4 * MIN }), false);
+  });
+
+  it('fires exactly at the 5-min boundary', () => {
+    assert.equal(shouldWarnCacheBreak({ ...base, now: base.lastEventAt + 5 * MIN }), true);
+  });
+
+  it('stays quiet when there is too little context to be worth re-warming', () => {
+    assert.equal(shouldWarnCacheBreak({
+      lastEventAt: base.lastEventAt, realContextTokens: 5_000, now: base.lastEventAt + 60 * MIN
+    }), false);
+  });
+
+  it('stays quiet on the first event of a session (no prior timestamp)', () => {
+    assert.equal(shouldWarnCacheBreak({
+      lastEventAt: null, realContextTokens: 500_000, now: 9_999_999
+    }), false);
+  });
+});
+
+describe('budget: context-rot warning', () => {
+  it('fires once past 350K on a 1M-window model', () => {
+    assert.equal(shouldWarnContextRot({
+      contextWindow: 1_000_000, contextTokens: 360_000, alreadyWarned: false
+    }), true);
+  });
+
+  it('never fires twice', () => {
+    assert.equal(shouldWarnContextRot({
+      contextWindow: 1_000_000, contextTokens: 900_000, alreadyWarned: true
+    }), false);
+  });
+
+  it('does not apply to 200K-window models (percent warnings cover those)', () => {
+    assert.equal(shouldWarnContextRot({
+      contextWindow: 200_000, contextTokens: 190_000, alreadyWarned: false
+    }), false);
+  });
+
+  it('stays quiet below the degradation zone', () => {
+    assert.equal(shouldWarnContextRot({
+      contextWindow: 1_000_000, contextTokens: 349_999, alreadyWarned: false
+    }), false);
+  });
+});
+
+describe('budget: compact recommendation', () => {
+  it('recommends dropping read-but-never-edited files, biggest first', () => {
+    const rec = buildCompactRecommendation({ filesLoaded: {
+      '/p/big.ts':    { reads: 2, edits: 0, tokens: 30_000 },
+      '/p/small.ts':  { reads: 1, edits: 0, tokens: 5_000 },
+      '/p/edited.ts': { reads: 3, edits: 2, tokens: 90_000 }, // in use — keep
+    }});
+    assert.deepEqual(rec.files, ['/p/big.ts', '/p/small.ts']);
+    assert.equal(rec.reclaimableTokens, 35_000);
+    assert.ok(!rec.message.includes('edited.ts'), 'must not suggest dropping an edited file');
+  });
+
+  it('returns null when every loaded file was edited', () => {
+    assert.equal(buildCompactRecommendation({ filesLoaded: {
+      '/p/a.ts': { reads: 1, edits: 1, tokens: 10_000 },
+    }}), null);
+  });
+
+  it('caps the suggestion list at 5 files', () => {
+    const filesLoaded = {};
+    for (let i = 0; i < 12; i++) filesLoaded[`/p/f${i}.ts`] = { reads: 1, edits: 0, tokens: 1000 * (i + 1) };
+    assert.equal(buildCompactRecommendation({ filesLoaded }).files.length, 5);
+  });
+});
+
+describe('read-cache: staleness', () => {
+  const TH = { tokens: 50_000, files: 8, timeMs: 10 * 60_000 };
+  const NOW = 5_000_000;
+  // A cache where `target` was read first, then `n` other files after it.
+  const cacheWith = (others) => ({ files: {
+    '/p/target.ts': { readAtMs: NOW - 60_000, tokens: 1000 },
+    ...Object.fromEntries(others.map((tokens, i) =>
+      [`/p/other${i}.ts`, { readAtMs: NOW - 30_000, tokens }])),
+  }});
+
+  it('is fresh when nothing displaced it', () => {
+    assert.equal(checkStaleness(cacheWith([]), '/p/target.ts', TH, NOW).stale, false);
+  });
+
+  it('goes stale once enough OTHER tokens were loaded after it', () => {
+    const r = checkStaleness(cacheWith([30_000, 25_000]), '/p/target.ts', TH, NOW);
+    assert.equal(r.stale, true);
+    assert.match(r.reason, /tokens of other files/);
+  });
+
+  it('goes stale on file count even when those files are tiny', () => {
+    const r = checkStaleness(cacheWith(Array(8).fill(10)), '/p/target.ts', TH, NOW);
+    assert.equal(r.stale, true);
+    assert.match(r.reason, /8 other files/);
+  });
+
+  it('goes stale on elapsed time alone', () => {
+    const cache = { files: { '/p/target.ts': { readAtMs: NOW - 11 * 60_000, tokens: 1000 } } };
+    const r = checkStaleness(cache, '/p/target.ts', TH, NOW);
+    assert.equal(r.stale, true);
+    assert.match(r.reason, /11 min since last read/);
+  });
+
+  it('ignores files read BEFORE the target (they cannot displace it)', () => {
+    const cache = { files: {
+      '/p/target.ts': { readAtMs: NOW - 60_000, tokens: 1000 },
+      '/p/older.ts':  { readAtMs: NOW - 120_000, tokens: 500_000 },
+    }};
+    assert.equal(checkStaleness(cache, '/p/target.ts', TH, NOW).stale, false);
+  });
+
+  it('is never stale for a file it has never seen', () => {
+    assert.equal(checkStaleness({ files: {} }, '/p/nope.ts', TH, NOW).stale, false);
+  });
+});
+
+describe('tracker: session aggregation', () => {
+  it('counts a read-once-never-edited file as pure waste', () => {
+    const r = aggregateSessionFiles({
+      '/p/waste.ts': { estTokens: 1000, reads: 1, edits: 0, wasEdited: false },
+    });
+    assert.equal(r.sessionTokensTotal, 1000);
+    assert.equal(r.sessionTokensWasted, 1000);
+    assert.equal(r.perFile['/p/waste.ts'].wasted, true);
+  });
+
+  it('treats a deliberate re-read as useful, not waste', () => {
+    // computeUsefulness credits re-reads (+0.5 each): coming back to a file is
+    // a signal it mattered, so it must not be billed as waste.
+    const r = aggregateSessionFiles({
+      '/p/reread.ts': { estTokens: 1000, reads: 2, edits: 0, wasEdited: false },
+    });
+    assert.equal(r.sessionTokensWasted, 0);
+    assert.equal(r.perFile['/p/reread.ts'].wasted, false);
+  });
+
+  it('charges ALL reads as waste when a big file is re-read but never edited', () => {
+    // The penalty path: 3+ reads of a >100-line file with no edit cancels the
+    // re-read credit — thrashing, not research. Every read was paid for.
+    const r = aggregateSessionFiles({
+      '/p/thrash.ts': { estTokens: 1000, reads: 3, edits: 0, wasEdited: false, lines: 500 },
+    });
+    assert.equal(r.sessionTokensTotal, 3000);
+    assert.equal(r.sessionTokensWasted, 3000, 'all 3 reads were paid for');
+    assert.equal(r.perFile['/p/thrash.ts'].wasted, true);
+  });
+
+  it('does not count an edited file as waste', () => {
+    const r = aggregateSessionFiles({
+      '/p/used.ts': { estTokens: 1000, reads: 2, edits: 1, wasEdited: true },
+    });
+    assert.equal(r.sessionTokensTotal, 2000);
+    assert.equal(r.sessionTokensWasted, 0);
+    assert.deepEqual(r.editedFiles, ['/p/used.ts']);
+  });
+
+  it('separates waste from useful work in a mixed session', () => {
+    const r = aggregateSessionFiles({
+      '/p/a.ts': { estTokens: 1000, reads: 2, edits: 1, wasEdited: true },  // 2000 useful
+      '/p/b.ts': { estTokens: 2000, reads: 1, edits: 0, wasEdited: false }, // 2000 wasted
+    });
+    assert.equal(r.sessionTokensTotal, 4000);
+    assert.equal(r.sessionTokensWasted, 2000);
+    assert.equal(Math.round((r.sessionTokensWasted / r.sessionTokensTotal) * 100), 50);
+  });
+
+  it('returns zeroes for an empty session', () => {
+    const r = aggregateSessionFiles({});
+    assert.equal(r.sessionTokensTotal, 0);
+    assert.equal(r.sessionTokensWasted, 0);
+    assert.deepEqual(r.editedFiles, []);
+  });
+
+  it('handles a missing files object without throwing', () => {
+    assert.equal(aggregateSessionFiles(undefined).sessionTokensTotal, 0);
+  });
+});
+
+describe('tracker: co-occurrence', () => {
+  it('links files edited together, symmetrically', () => {
+    const m = buildCoOccurrence(['/p/a.ts', '/p/b.ts']);
+    assert.equal(m['/p/a.ts']['/p/b.ts'], 1);
+    assert.equal(m['/p/b.ts']['/p/a.ts'], 1);
+  });
+
+  it('never links a file to itself', () => {
+    const m = buildCoOccurrence(['/p/a.ts', '/p/b.ts']);
+    assert.equal(m['/p/a.ts']['/p/a.ts'], undefined);
+  });
+
+  it('accumulates across sessions into the same matrix', () => {
+    const m = buildCoOccurrence(['/p/a.ts', '/p/b.ts']);
+    buildCoOccurrence(['/p/a.ts', '/p/b.ts'], m);
+    assert.equal(m['/p/a.ts']['/p/b.ts'], 2);
+  });
+
+  it('ignores a single-file session (no pair to learn)', () => {
+    assert.deepEqual(buildCoOccurrence(['/p/only.ts']), {});
+  });
+
+  it('ignores a sweeping >20-file refactor (pairs would be noise)', () => {
+    const many = Array.from({ length: 21 }, (_, i) => `/p/f${i}.ts`);
+    assert.deepEqual(buildCoOccurrence(many), {});
+  });
+});
+
+// ── v4.8.0 (#39): config surface ────────────────────────────────────────────
+
+describe('config: threshold validation', () => {
+  it('accepts a value inside the documented range', () => {
+    const r = validateThreshold('rereadWarnAt', 5);
+    assert.equal(r.ok, true);
+    assert.equal(r.value, 5);
+  });
+
+  it('coerces a numeric string (CLI args arrive as strings)', () => {
+    assert.deepEqual(validateThreshold('bigFileLines', '750'), { ok: true, value: 750 });
+  });
+
+  it('rejects out-of-range values with the range in the message', () => {
+    const r = validateThreshold('rereadWarnAt', 999);
+    assert.equal(r.ok, false);
+    assert.match(r.error, /between 2 and 20/);
+  });
+
+  it('rejects an unknown key', () => {
+    assert.equal(validateThreshold('nope', 1).ok, false);
+  });
+
+  it('rejects non-numeric junk rather than coercing it to NaN', () => {
+    assert.equal(validateThreshold('bigFileLines', 'abc').ok, false);
+    assert.equal(validateThreshold('bigFileLines', null).ok, false);
+    assert.equal(validateThreshold('bigFileLines', {}).ok, false);
+  });
+
+  it('every default sits inside its own declared range', () => {
+    for (const [key, [def]] of Object.entries(THRESHOLD_SPEC)) {
+      assert.equal(validateThreshold(key, def).ok, true, `${key} default is out of its range`);
+    }
+  });
+});
+
+describe('config: describe/set/reset', () => {
+  it('labels untouched keys as defaults', () => {
+    const rows = describeThresholds({});
+    assert.ok(rows.every(r => r.source === 'default'));
+    assert.equal(rows.find(r => r.key === 'rereadWarnAt').value, 3);
+  });
+
+  it('labels overridden keys as config and uses the override', () => {
+    const row = describeThresholds({ rereadWarnAt: 7 }).find(r => r.key === 'rereadWarnAt');
+    assert.equal(row.source, 'config');
+    assert.equal(row.value, 7);
+  });
+
+  it('ignores an invalid stored value and falls back to the default', () => {
+    // A typo must never make a hook behave wildly.
+    const row = describeThresholds({ rereadWarnAt: 9999 }).find(r => r.key === 'rereadWarnAt');
+    assert.equal(row.source, 'invalid');
+    assert.equal(row.value, 3, 'must fall back to the default');
+    assert.match(row.error, /between/);
+  });
+
+  it('set refuses a bad value and lists the known keys', () => {
+    const r = applySet({}, 'rereadWarnAt', 999);
+    assert.equal(r.ok, false);
+    assert.match(r.error, /Known keys:/);
+  });
+
+  it('set does not mutate the object it was given', () => {
+    const stored = { rereadWarnAt: 4 };
+    applySet(stored, 'bigFileLines', 900);
+    assert.deepEqual(stored, { rereadWarnAt: 4 });
+  });
+
+  it('reset with a key removes only that key', () => {
+    const r = applyReset({ rereadWarnAt: 4, bigFileLines: 900 }, 'rereadWarnAt');
+    assert.deepEqual(r.thresholds, { bigFileLines: 900 });
+  });
+
+  it('reset without a key clears everything', () => {
+    assert.deepEqual(applyReset({ rereadWarnAt: 4, bigFileLines: 900 }).thresholds, {});
+  });
+
+  it('reset rejects an unknown key instead of silently no-oping', () => {
+    assert.equal(applyReset({}, 'nope').ok, false);
   });
 });

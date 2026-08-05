@@ -31,7 +31,7 @@ import {
   READ_CACHE_DIR,
   estimateTokens, formatTokens, loadJSON, saveJSON, ensureDataDirs,
   loadConfig, getEffectiveBudget, isMainModule, getFileLines, shouldSkipFile,
-  getSessionModel
+  getSessionModel, getThresholds
 } from './utils.js';
 import { isContextIgnored } from './contextignore.js';
 import { parseFileStructure, formatDigest } from './file-digest.js';
@@ -47,9 +47,9 @@ ensureDataDirs();
 // values were 20K/8/10min) — the same fractions on 1M give ~100K/40/10min
 // which keeps Read Cache aggressive without false re-allows.
 
-const STALE_TOKEN_RATIO = 0.10;   // 10% of budget moved → other file likely evicted
-const STALE_FILES_FRACTION_BASE = 8;  // base value for 200K
-const STALE_TIME_MS_DEFAULT = 10 * 60 * 1000;
+// The base ratios are user-tunable (#39): config.thresholds.staleTokenRatio /
+// .staleFiles / .staleTimeMs, each range-validated. CCO_STALE_TIME_MS still
+// wins over config, for one-off experiments without editing anything.
 
 let _thresholdCache = null;
 let _sessionModel = null;
@@ -61,13 +61,14 @@ export function setSessionModel(rawModel) {
 function getStaleThresholds() {
   if (_thresholdCache) return _thresholdCache;
   const config = loadConfig();
+  const t = getThresholds();
   const budget = getEffectiveBudget(config, _sessionModel);
-  // Tokens: 10% of effective budget, clamped to [10K, 200K]
-  const tokens = Math.max(10_000, Math.min(200_000, Math.round(budget * STALE_TOKEN_RATIO)));
-  // Files: scale gently with budget (8 @ 200K, 32 @ 1M)
-  const files = Math.max(6, Math.min(40, Math.round(STALE_FILES_FRACTION_BASE * (budget / 200_000))));
-  // Time: respect env override
-  const timeMs = parseInt(process.env.CCO_STALE_TIME_MS || '', 10) || STALE_TIME_MS_DEFAULT;
+  // Tokens: share of effective budget, clamped to [10K, 200K]
+  const tokens = Math.max(10_000, Math.min(200_000, Math.round(budget * t.staleTokenRatio)));
+  // Files: scale gently with budget (8 @ 200K, 32 @ 1M by default)
+  const files = Math.max(6, Math.min(40, Math.round(t.staleFiles * (budget / 200_000))));
+  // Time: env override beats config
+  const timeMs = parseInt(process.env.CCO_STALE_TIME_MS || '', 10) || t.staleTimeMs;
   _thresholdCache = { tokens, files, timeMs, budget };
   return _thresholdCache;
 }
@@ -116,12 +117,15 @@ function isRangeCovered(ranges, offset, end) {
  *   2. Time decay: enough real time passed that context has likely shifted.
  *
  * Returns { stale: boolean, reason: string }.
+ *
+ * Pure given `thresholds` and `now` — both injectable so tests can drive the
+ * table without a real clock or a real config file. Production passes neither.
  */
-function checkStaleness(cache, filePath) {
+export function checkStaleness(cache, filePath, thresholds = null, now = null) {
   const entry = cache.files[filePath];
   if (!entry || !entry.readAtMs) return { stale: false, reason: '' };
 
-  const { tokens: tokTh, files: fileTh, timeMs } = getStaleThresholds();
+  const { tokens: tokTh, files: fileTh, timeMs } = thresholds || getStaleThresholds();
 
   const readTime = entry.readAtMs;
   let newerFiles = 0;
@@ -149,7 +153,7 @@ function checkStaleness(cache, filePath) {
     };
   }
 
-  const elapsed = Date.now() - readTime;
+  const elapsed = (now === null ? Date.now() : now) - readTime;
   if (elapsed >= timeMs) {
     const mins = Math.round(elapsed / 60_000);
     return {

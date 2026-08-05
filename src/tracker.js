@@ -17,7 +17,7 @@ import {
   estimateTokens, formatTokens, displayPath, computeUsefulness, computeConfidence,
   getDonationMessage, loadJSON, saveJSON, ensureDataDirs,
   shouldIgnoreForTracking, getFileLines, getProjectRoot, isMainModule,
-  acquireFileLock
+  acquireFileLock, getThresholds
 } from './utils.js';
 import { emitNotice } from './notices.js';
 
@@ -155,14 +155,16 @@ function trackRead(session, filePath, lineCount, readOptions = {}) {
   // ── Real-time warnings ──
   const warnings = [];
 
-  if (file.reads >= 3 && !file.wasEdited) {
+  const TH = getThresholds();
+
+  if (file.reads >= TH.rereadWarnAt && !file.wasEdited) {
     const totalTokensSpent = file.estTokens * file.reads;
-    if (file.reads === 3) {
+    if (file.reads === TH.rereadWarnAt) {
       warnings.push(
         `[cco] ${basename(filePath)} read ${file.reads}x (~${formatTokens(totalTokensSpent)} tokens). ` +
         `Consider offset/limit for specific sections.`
       );
-    } else if (file.reads === 5) {
+    } else if (file.reads === TH.rereadEscalateAt) {
       warnings.push(
         `[cco] ${basename(filePath)} read ${file.reads}x (~${formatTokens(totalTokensSpent)} tokens). ` +
         `Add key parts to CLAUDE.md or memory to avoid re-reads.`
@@ -191,11 +193,11 @@ function trackRead(session, filePath, lineCount, readOptions = {}) {
     } catch { /* don't block on pattern load failure */ }
   }
 
-  if (!isPartial && lineCount > 500) {
+  if (!isPartial && lineCount > TH.bigFileLines) {
     warnings.push(
       `[cco] ${basename(filePath)} is ${lineCount} lines (~${formatTokens(tokens)} tokens). Use offset/limit to read specific sections.`
     );
-  } else if (!isPartial && lineCount > 200) {
+  } else if (!isPartial && lineCount > TH.mediumFileLines) {
     // Softer hint for medium files
     if (file.reads === 1) {
       warnings.push(
@@ -327,6 +329,57 @@ function prunePatterns(patterns) {
 
 // ── Session finalization ────────────────────────────────────────────────────
 
+/**
+ * Classify a session's files: what was useful, what was wasted, what got
+ * edited together. Pure — the surrounding finalizeSession() does the locking
+ * and the global read-modify-write, but this is the part that decides which
+ * tokens get reported as WASTE, which is the number the product is built on.
+ *
+ * A file is "wasted" when it was read at least once and scored no usefulness
+ * (read but never edited, never re-read for a reason). Its whole token cost
+ * counts, not a fraction — we paid for every read.
+ */
+export function aggregateSessionFiles(files) {
+  let sessionTokensTotal = 0;
+  let sessionTokensWasted = 0;
+  const perFile = {};
+  const editedFiles = [];
+
+  for (const [filePath, fileData] of Object.entries(files || {})) {
+    const tokensUsed = fileData.estTokens * fileData.reads;
+    sessionTokensTotal += tokensUsed;
+
+    const usefulness = computeUsefulness(fileData);
+    const isUseful = usefulness > 0;
+    const wasted = !isUseful && fileData.reads >= 1;
+    if (wasted) sessionTokensWasted += tokensUsed;
+
+    perFile[filePath] = { tokensUsed, usefulness, isUseful, wasted };
+    if (fileData.wasEdited) editedFiles.push(filePath);
+  }
+
+  return { sessionTokensTotal, sessionTokensWasted, perFile, editedFiles };
+}
+
+/**
+ * Symmetric co-occurrence counts for files edited in the same session.
+ * Pure. Bounded: a 1-file session has no pairs, and a >20-file session is a
+ * sweeping refactor whose pairs are noise, not signal — so it contributes none.
+ */
+export function buildCoOccurrence(editedFiles, into = {}) {
+  if (editedFiles.length < 2 || editedFiles.length > 20) return into;
+  for (let i = 0; i < editedFiles.length; i++) {
+    const a = editedFiles[i];
+    if (!into[a]) into[a] = {};
+    for (let j = 0; j < editedFiles.length; j++) {
+      if (i === j) continue;
+      const b = editedFiles[j];
+      into[a][b] = (into[a][b] || 0) + 1;
+    }
+  }
+  return into;
+}
+
 function finalizeSession(session) {
   const fileEntries = Object.entries(session.files);
   // Skip finalization for empty sessions
@@ -344,20 +397,13 @@ function finalizeSession(session) {
   const globalStats = loadGlobalStats();
   const proj = getProjectPatterns(patterns, session.projectRoot);
 
-  let sessionTokensTotal = 0;
-  let sessionTokensWasted = 0;
-  const editedFiles = [];
+  const { sessionTokensTotal, sessionTokensWasted, perFile, editedFiles } =
+    aggregateSessionFiles(session.files);
 
   for (const [filePath, fileData] of fileEntries) {
-    const tokensUsed = fileData.estTokens * fileData.reads;
-    sessionTokensTotal += tokensUsed;
+    const { tokensUsed, isUseful, wasted } = perFile[filePath];
 
-    const usefulness = computeUsefulness(fileData);
-    const isUseful = usefulness > 0;
-
-    if (!isUseful && fileData.reads >= 1) {
-      sessionTokensWasted += tokensUsed;
-
+    if (wasted) {
       if (!proj.wastedReads[filePath]) {
         proj.wastedReads[filePath] = { count: 0, sessions: 0, totalTokensWasted: 0 };
       }
@@ -378,24 +424,10 @@ function finalizeSession(session) {
     }
     // Update confidence score
     proj.fileFrequency[filePath].confidence = computeConfidence(proj.fileFrequency[filePath], 0);
-
-    if (fileData.wasEdited) {
-      editedFiles.push(filePath);
-    }
   }
 
-  // Build co-occurrence matrix
-  if (editedFiles.length >= 2 && editedFiles.length <= 20) {
-    for (let i = 0; i < editedFiles.length; i++) {
-      const a = editedFiles[i];
-      if (!proj.coOccurrence[a]) proj.coOccurrence[a] = {};
-      for (let j = 0; j < editedFiles.length; j++) {
-        if (i === j) continue;
-        const b = editedFiles[j];
-        proj.coOccurrence[a][b] = (proj.coOccurrence[a][b] || 0) + 1;
-      }
-    }
-  }
+  // Build co-occurrence matrix (editedFiles came from aggregateSessionFiles)
+  buildCoOccurrence(editedFiles, proj.coOccurrence);
 
   // Prune patterns to prevent unbounded growth
   prunePatterns(patterns);

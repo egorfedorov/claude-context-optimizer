@@ -101,8 +101,52 @@ function estimateToolTokens(toolName, toolInput) {
   }
 }
 
+// ── Pure decision cores (exported for tests) ─────────────────────────────────
+// The gating below decides what actually reaches Claude's context. It used to
+// live inline in main(), which reads stdin and calls process.exit — untestable.
+// These are pure: same inputs, same verdict, no I/O.
+
+/**
+ * Which budget thresholds are newly crossed at this usage level.
+ *
+ * Each threshold fires exactly once per session: `warningsSent` is the ledger
+ * of ones already emitted. Returns them ascending so a jump from 40% to 90%
+ * reports 50/70/85 in the order they were passed.
+ */
+export function selectWarnings(usagePercent, warnAt = [], warningsSent = []) {
+  return warnAt
+    .filter(t => usagePercent >= t && !warningsSent.includes(t))
+    .sort((a, b) => a - b);
+}
+
+/**
+ * Did the prompt cache go cold during a pause worth warning about?
+ *
+ * The cache TTL is 5 minutes; re-warming re-bills the whole context at the
+ * cache-write rate. Below 20K of context the loss is pennies, so stay quiet.
+ */
+export function shouldWarnCacheBreak({ lastEventAt, realContextTokens, now, minGapMin = 5, minTokens = 20_000 }) {
+  if (!lastEventAt) return false;
+  if ((realContextTokens || 0) < minTokens) return false;
+  return (now - lastEventAt) / 60_000 >= minGapMin;
+}
+
+/**
+ * Has the session entered the quality-degradation zone?
+ *
+ * Only meaningful on 1M-window models: percentage warnings never fire early
+ * enough there, but quality drops around 300-400K. One-shot per session.
+ */
+export function shouldWarnContextRot({ contextWindow, contextTokens, alreadyWarned, threshold = 350_000 }) {
+  if (alreadyWarned) return false;
+  if (contextWindow < 1_000_000) return false;
+  return contextTokens >= threshold;
+}
+
 /**
  * Build a compact recommendation with specific files to drop.
+ * Exported at the bottom for tests — this is what turns "you're at 85%" into
+ * an action.
  */
 function buildCompactRecommendation(state) {
   const droppable = Object.entries(state.filesLoaded)
@@ -225,20 +269,22 @@ async function main() {
   // break that already happened, but naming its real cost teaches the habit:
   // batch pauses, /compact (or finish) before stepping away.
   const nowMs = Date.now();
-  if (state.lastEventAt && (state.realContextTokens || 0) >= 20_000) {
+  if (shouldWarnCacheBreak({
+    lastEventAt: state.lastEventAt,
+    realContextTokens: state.realContextTokens,
+    now: nowMs,
+  })) {
     const gapMin = (nowMs - state.lastEventAt) / 60_000;
-    if (gapMin >= 5) {
-      const rate = getModelCost(sessionModel).input / 1e6;
-      const lost = state.realContextTokens * rate * (CACHE_WRITE_MULT - CACHE_READ_MULT);
-      state.cacheBreaks = (state.cacheBreaks || 0) + 1;
-      emitNotice(sessionId, {
-        kind: `budget:cachebreak:${state.cacheBreaks}`,
-        text:
-          `[context-budget] ~${Math.round(gapMin)} min pause — the prompt cache (5-min TTL) went cold; ` +
-          `re-warming ${formatTokens(state.realContextTokens)} of context costs ~$${lost.toFixed(2)} extra. ` +
-          `Batch pauses: finish the task first, or /compact before a long break.`,
-      });
-    }
+    const rate = getModelCost(sessionModel).input / 1e6;
+    const lost = state.realContextTokens * rate * (CACHE_WRITE_MULT - CACHE_READ_MULT);
+    state.cacheBreaks = (state.cacheBreaks || 0) + 1;
+    emitNotice(sessionId, {
+      kind: `budget:cachebreak:${state.cacheBreaks}`,
+      text:
+        `[context-budget] ~${Math.round(gapMin)} min pause — the prompt cache (5-min TTL) went cold; ` +
+        `re-warming ${formatTokens(state.realContextTokens)} of context costs ~$${lost.toFixed(2)} extra. ` +
+        `Batch pauses: finish the task first, or /compact before a long break.`,
+    });
   }
   state.lastEventAt = nowMs;
   const contextNow = state.realContextTokens || state.totalTokensEstimated;
@@ -250,7 +296,11 @@ async function main() {
   // warnings (50/70/85) never fire that early on 1M, so this is a separate,
   // one-shot quality signal.
   const window = getModelCost(sessionModel).contextWindow;
-  if (window >= 1_000_000 && contextNow >= 350_000 && !state.rotWarned) {
+  if (shouldWarnContextRot({
+    contextWindow: window,
+    contextTokens: contextNow,
+    alreadyWarned: state.rotWarned,
+  })) {
     state.rotWarned = true;
     const rec = buildCompactRecommendation(state);
     emitNotice(sessionId, {
@@ -267,27 +317,25 @@ async function main() {
   // Only actionable signals reach Claude's context, and only a few per session.
   // 85%+ is critical (always shown, carries a /compact recommendation); the
   // early 50/70 nudges are 'normal' and may be suppressed once the cap is hit.
-  for (const threshold of config.warnAt) {
-    if (usagePercent >= threshold && !state.warningsSent.includes(threshold)) {
-      state.warningsSent.push(threshold);
+  for (const threshold of selectWarnings(usagePercent, config.warnAt, state.warningsSent)) {
+    state.warningsSent.push(threshold);
 
-      const cost = computeCost(state, sessionModel);
-      const src = state.realContextTokens ? '' : '~';
-      let msg = `[context-budget] ${usagePercent}% budget used (${src}${formatTokens(contextNow)}/${formatTokens(effectiveBudget)})`;
-      msg += ` | Cost: $${cost.toFixed(3)} (${sessionModel}: in ${formatTokens(state.inputTokensEstimated)} / out ${formatTokens(state.outputTokensEstimated)})`;
+    const cost = computeCost(state, sessionModel);
+    const src = state.realContextTokens ? '' : '~';
+    let msg = `[context-budget] ${usagePercent}% budget used (${src}${formatTokens(contextNow)}/${formatTokens(effectiveBudget)})`;
+    msg += ` | Cost: $${cost.toFixed(3)} (${sessionModel}: in ${formatTokens(state.inputTokensEstimated)} / out ${formatTokens(state.outputTokensEstimated)})`;
 
-      if (threshold >= 85) {
-        const rec = buildCompactRecommendation(state);
-        if (rec) msg += '\n' + rec.message;
-        else msg += ` | Consider /compact to free context`;
-      }
-
-      emitNotice(sessionId, {
-        kind: `budget:${threshold}`,
-        text: msg,
-        priority: threshold >= 85 ? 'critical' : 'normal',
-      });
+    if (threshold >= 85) {
+      const rec = buildCompactRecommendation(state);
+      if (rec) msg += '\n' + rec.message;
+      else msg += ` | Consider /compact to free context`;
     }
+
+    emitNotice(sessionId, {
+      kind: `budget:${threshold}`,
+      text: msg,
+      priority: threshold >= 85 ? 'critical' : 'normal',
+    });
   }
 
   // ── Auto-compact directives ──────────────────────────────────────────────
