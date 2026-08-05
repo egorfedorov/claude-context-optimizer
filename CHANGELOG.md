@@ -1,5 +1,42 @@
 # Changelog
 
+## 4.7.0 — 2026-08-05
+
+### Windows: the path handling was wrong everywhere it mattered
+CCO assumed POSIX. On Windows that silently degraded four separate features —
+none of them loudly enough to look broken.
+
+- **`/cco-overhead` finds transcripts again** (#46). `projectTranscriptDir()`
+  munged only `/` and `.`, so a Windows cwd kept its `\`, `:` and spaces and
+  produced a malformed lookup path
+  (`~\.claude\projects\C:\Program Files\Git`). Claude Code names that folder
+  `C--Program-Files-Git`; the encoding now matches. This also un-breaks the
+  CLAUDE.md / MEMORY.md itemization, which had been lumping everything into
+  the "system prompt & tools (unattributed)" line.
+- **`.contextignore` matches CRLF files** (#33). Patterns were parsed with
+  `split('\n')`, leaving a trailing `\r` on every line of a Windows-authored
+  file — so *no pattern ever matched* and the whole ignore list was inert.
+  Now `split(/\r?\n/)`.
+- **Glob matching understands backslashes** (#33). Paths are normalized to `/`
+  before matching, so `C:\proj\dist\a.js` matches `dist/**`.
+- **`getProjectRoot()` walks up correctly** (#33). The parent-directory step
+  was a `/`-only regex that never terminated properly on `C:\`; it now uses
+  `path.dirname`.
+- **`displayPath()` shortens Windows paths.** Splitting on `/` treated
+  `C:\a\b\c\file.ts` as one segment, so nothing was truncated and raw absolute
+  paths leaked into every report.
+- New `toPosixPath()` helper in `src/utils.js` — one normalization point at the
+  boundary instead of two separator dialects in every matcher.
+
+### Docs
+- `CONTRIBUTING.md` (#40) — setup, the release checklist, and the platform
+  rules above, so the POSIX assumption doesn't creep back in.
+
+### Tests
+175 → 183. Covers the Windows transcript-folder encoding, CRLF/LF parse
+equivalence, backslash path display, and `toPosixPath`.
+
+
 ## 4.6.0 — 2026-07-06
 
 ### /cco-overhead mcp — observation → the exact removal command

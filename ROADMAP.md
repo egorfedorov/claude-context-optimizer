@@ -26,7 +26,11 @@ must make a number more true, a waste more visible, or a fix more automatic.
 - [ ] **Per-model cache TTL awareness** (1h beta cache pricing) in economics
 - [ ] **Subagent economics**: split main-loop vs agent token spend in `/cco`
       and credit delegation savings to the advisor that suggested it
-- [ ] **Windows-native hooks** (drop the POSIX-shell requirement)
+- [x] **Windows-correct paths** — shipped in v4.7.0: transcript-folder
+      encoding, CRLF `.contextignore`, backslash-aware globs, project-root
+      walk and path display (#46, #33)
+- [ ] **Windows-native hooks** (drop the POSIX-shell requirement — the *only*
+      remaining Windows gap; Git Bash/WSL still required)
 
 ## v5.0 — The ecosystem
 

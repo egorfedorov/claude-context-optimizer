@@ -37,6 +37,32 @@ At $5/M input tokens (Opus 4.8), a developer spending $100/month is lighting **$
 
 ---
 
+## What's new in v4.7 — Windows works
+
+CCO quietly assumed POSIX paths. On Windows that broke four things at once, and
+none of them looked broken — they just reported less:
+
+- **`/cco-overhead` said "no session transcripts found"** even with transcripts
+  right there. The cwd → folder encoding dropped `\`, `:` and spaces, so it
+  looked in `~\.claude\projects\C:\Program Files\Git` instead of
+  `…\projects\C--Program-Files-Git`. Fixed — which also restores the
+  CLAUDE.md/memory itemization that had been collapsing into "system prompt &
+  tools (unattributed)". ([#46](https://github.com/egorfedorov/claude-context-optimizer/issues/46))
+- **`.contextignore` was inert on Windows.** CRLF files left a `\r` on every
+  pattern, so not one of them matched. Every lockfile you thought you'd
+  excluded was still being counted. ([#33](https://github.com/egorfedorov/claude-context-optimizer/issues/33))
+- **Globs now understand `\`** — `C:\proj\dist\a.js` matches `dist/**`.
+- **Project-root detection and path display** are separator-aware, so reports
+  stop leaking raw `C:\…` paths.
+
+Plus a [CONTRIBUTING.md](CONTRIBUTING.md) with the platform rules, so this
+doesn't regress. 183 tests, green on Node 18/20/22.
+
+> Hooks still need a POSIX shell (Git Bash or WSL) — native Windows hooks are
+> tracked on the [roadmap](ROADMAP.md).
+
+---
+
 ## What's new in v4.5 — model auto-detection & the dollar leaks
 
 <p align="center">

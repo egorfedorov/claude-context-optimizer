@@ -50,9 +50,15 @@ export function parseBaselineFromLines(lines) {
 
 // ── Transcript discovery ─────────────────────────────────────────────────────
 
-/** Claude Code stores transcripts under ~/.claude/projects/<munged-cwd>/. */
+/**
+ * Claude Code stores transcripts under ~/.claude/projects/<munged-cwd>/, where
+ * the munging replaces every path-ish character with '-'. On Windows the cwd
+ * also carries '\', ':' and spaces (`C:\Program Files\Git` becomes
+ * `C--Program-Files-Git`); missing those left the path malformed and every
+ * lookup reported "no session transcripts found".
+ */
 export function projectTranscriptDir(cwd) {
-  return join(homedir(), '.claude', 'projects', cwd.replace(/[/.]/g, '-'));
+  return join(homedir(), '.claude', 'projects', cwd.replace(/[/.:\\ ]/g, '-'));
 }
 
 function recentTranscripts(cwd, limit = 10) {

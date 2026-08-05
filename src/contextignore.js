@@ -18,6 +18,7 @@
 import { readFileSync } from 'fs';
 import { join, basename, resolve } from 'path';
 import { homedir } from 'os';
+import { toPosixPath } from './utils.js';
 
 // ── Pattern cache ────────────────────────────────────────────────────────────
 
@@ -37,7 +38,9 @@ function parseIgnoreFile(filePath) {
   }
 
   const patterns = [];
-  for (const rawLine of content.split('\n')) {
+  // Split on CRLF or LF — a Windows-authored .contextignore otherwise leaves a
+  // trailing \r on every pattern, and nothing ever matches.
+  for (const rawLine of content.split(/\r?\n/)) {
     const line = rawLine.trim();
     // Skip blank lines and comments
     if (!line || line.startsWith('#')) continue;
@@ -121,9 +124,11 @@ function globToRegex(pattern) {
  * - Patterns with / or ** are matched against the full normalized path.
  */
 function matchesPattern(filePath, pattern) {
-  const normalized = resolve(filePath);
+  // Patterns are always written with `/`; normalize the path to match so a
+  // Windows `C:\proj\dist\a.js` still matches `dist/**`.
+  const normalized = toPosixPath(resolve(filePath));
   const name = basename(normalized);
-  const raw = pattern.raw;
+  const raw = toPosixPath(pattern.raw);
 
   // Determine match target: basename-only for simple patterns,
   // full path for patterns containing / or **
@@ -138,7 +143,7 @@ function matchesPattern(filePath, pattern) {
     if (regex.test(normalized)) return true;
 
     // Also try matching against a relative-ish path from cwd
-    const cwd = process.cwd();
+    const cwd = toPosixPath(process.cwd());
     if (normalized.startsWith(cwd + '/')) {
       const relative = normalized.slice(cwd.length + 1);
       if (regex.test(relative)) return true;
