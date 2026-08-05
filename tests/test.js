@@ -10,10 +10,10 @@ import {
   BUDGET_CONFIG_FILE, loadJSON,
   MODEL_COSTS, MODEL_INPUT_COST, getModelCost, getModelContextWindow,
   getEffectiveBudget, categorizeFile, shouldSkipFile, shouldIgnoreForTracking,
-  isMainModule, getFileLines
+  isMainModule, getFileLines, toPosixPath
 } from '../src/utils.js';
 import { analyzePrompt, buildImprovedPrompt, classifyPrompt } from '../src/prompt-coach.js';
-import { parseBaselineFromLines } from '../src/overhead.js';
+import { parseBaselineFromLines, projectTranscriptDir } from '../src/overhead.js';
 import { buildIgnoreSuggestions } from '../src/context-shield.js';
 import { updateExploreStreak } from '../src/tracker.js';
 import { computeCacheAwareCost, emaCalibration } from '../src/utils.js';
@@ -124,6 +124,29 @@ describe('utils', () => {
       const result = displayPath(home + '/projects/foo/bar.ts');
       assert.ok(result.startsWith('~') || !result.includes(home),
         'should replace homedir with ~');
+    });
+
+    // Issue #33: on Windows the whole path is one segment under split('/'),
+    // so nothing was ever shortened and the raw C:\... path leaked into output.
+    it('truncates Windows-style backslash paths to last 3 segments', () => {
+      assert.equal(displayPath('C:\\a\\b\\c\\d\\e\\file.ts'), 'd/e/file.ts');
+    });
+  });
+
+  describe('toPosixPath', () => {
+    it('converts backslash separators to forward slashes', () => {
+      assert.equal(toPosixPath('C:\\Users\\me\\proj\\src\\a.ts'),
+        'C:/Users/me/proj/src/a.ts');
+    });
+
+    it('leaves POSIX paths untouched', () => {
+      assert.equal(toPosixPath('/Users/me/proj/src/a.ts'),
+        '/Users/me/proj/src/a.ts');
+    });
+
+    it('passes through non-strings unchanged', () => {
+      assert.equal(toPosixPath(undefined), undefined);
+      assert.equal(toPosixPath(null), null);
     });
   });
 
@@ -390,6 +413,25 @@ describe('contextignore', () => {
     it('returns empty array for non-existent file', () => {
       const result = _parseIgnoreFile('/tmp/nonexistent-contextignore-' + Date.now());
       assert.deepEqual(result, []);
+    });
+
+    // Issue #33: a Windows-authored .contextignore is CRLF; a trailing \r on
+    // every pattern made all of them silently fail to match.
+    it('parses CRLF and LF files identically', () => {
+      const body = '# comment\n*.lock\n\ndist/**\n';
+      const lf = join('/tmp', `cco-ignore-lf-${process.pid}`);
+      const crlf = join('/tmp', `cco-ignore-crlf-${process.pid}`);
+      writeFileSync(lf, body);
+      writeFileSync(crlf, body.replace(/\n/g, '\r\n'));
+      try {
+        const rawsLf = _parseIgnoreFile(lf).map(p => p.raw);
+        const rawsCrlf = _parseIgnoreFile(crlf).map(p => p.raw);
+        assert.deepEqual(rawsLf, ['*.lock', 'dist/**']);
+        assert.deepEqual(rawsCrlf, rawsLf);
+      } finally {
+        unlinkSync(lf);
+        unlinkSync(crlf);
+      }
     });
   });
 
@@ -1574,6 +1616,25 @@ describe('overhead baseline', () => {
 
   it('returns null when the transcript has no usage', () => {
     assert.equal(parseBaselineFromLines(['{"x":1}']), null);
+  });
+
+  // Issue #46: Claude Code munges '\', ':' and spaces to '-' as well, so a
+  // Windows cwd produced a malformed path and "no session transcripts found".
+  describe('projectTranscriptDir', () => {
+    const folder = cwd => basename(projectTranscriptDir(cwd));
+
+    it('encodes a Windows cwd the way Claude Code names the folder', () => {
+      assert.equal(folder('C:\\Program Files\\Git'), 'C--Program-Files-Git');
+    });
+
+    it('still encodes a POSIX cwd unchanged', () => {
+      assert.equal(folder('/Users/me/dev/my.app'), '-Users-me-dev-my-app');
+    });
+
+    it('roots the folder under ~/.claude/projects', () => {
+      assert.ok(projectTranscriptDir('/a/b')
+        .startsWith(join(homedir(), '.claude', 'projects')));
+    });
   });
 });
 

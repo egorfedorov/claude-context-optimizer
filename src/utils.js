@@ -6,9 +6,17 @@
  */
 
 import { readFileSync, writeFileSync, renameSync, mkdirSync, rmdirSync, existsSync, statSync, realpathSync, readdirSync } from 'fs';
-import { join, basename, extname } from 'path';
+import { join, basename, extname, dirname } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
+
+// ── Path normalization ───────────────────────────────────────────────────────
+// Windows hands us `C:\Users\me\proj\src\a.ts`; every glob, split and display
+// helper here reasons in `/`. Normalize once at the boundary rather than
+// teaching each matcher two separator dialects.
+export function toPosixPath(p) {
+  return typeof p === 'string' ? p.replace(/\\/g, '/') : p;
+}
 
 // ── Main-module guard ────────────────────────────────────────────────────────
 // True only when the given module is the process entry point (i.e. run as
@@ -189,6 +197,7 @@ export function displayPath(filePath, maxLen = 35) {
   if (display.startsWith(home)) {
     display = '~' + display.slice(home.length);
   }
+  display = toPosixPath(display);
   const parts = display.split('/');
   if (parts.length > 3) {
     display = parts.slice(-3).join('/');
@@ -498,15 +507,16 @@ export function getFileLines(filePath, maxBytes = 10 * 1024 * 1024) {
 export function getProjectRoot(filePath) {
   try {
     let dir = filePath;
-    // If filePath is a file, walk from its dir
-    try { if (statSync(dir).isFile()) dir = dir.replace(/\/[^/]+$/, ''); } catch { /* ignore */ }
+    // If filePath is a file, walk from its dir. `dirname` is separator-aware,
+    // so this also terminates correctly at `C:\` on Windows, not just `/`.
+    try { if (statSync(dir).isFile()) dir = dirname(dir); } catch { /* ignore */ }
     for (let i = 0; i < 10; i++) {
       if (existsSync(join(dir, '.git'))) return dir;
       if (existsSync(join(dir, 'package.json'))) return dir;
       if (existsSync(join(dir, 'Cargo.toml'))) return dir;
       if (existsSync(join(dir, 'go.mod'))) return dir;
       if (existsSync(join(dir, 'pyproject.toml'))) return dir;
-      const parent = dir.replace(/\/[^/]+$/, '');
+      const parent = dirname(dir);
       if (parent === dir || !parent) break;
       dir = parent;
     }
