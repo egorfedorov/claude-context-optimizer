@@ -25,6 +25,7 @@ import {
 } from './utils.js';
 import { emitNotice } from './notices.js';
 import { readRealUsage } from './transcript-usage.js';
+import { recordToolCost, getLearnedToolCost } from './tool-costs.js';
 
 ensureDataDirs();
 
@@ -55,6 +56,11 @@ function saveBudgetState(state) {
  * Returns { input, output }.
  */
 function estimateToolTokens(toolName, toolInput) {
+  // #38: once we've watched a tool a few times, what it ACTUALLY costs beats
+  // any constant. Only applies to the guessed tools — Read/Edit/Write derive
+  // their estimate from real arguments, which an average can't improve on.
+  const learned = getLearnedToolCost(toolName);
+
   switch (toolName) {
     case 'Read': {
       // Input = file contents echoed back into context. Cap the assumed line
@@ -83,21 +89,21 @@ function estimateToolTokens(toolName, toolInput) {
       return { input: 30, output: Math.round(contentLen / 3.7) };
     }
     case 'Grep':
-      return { input: 200, output: 50 };
+      return { input: learned ?? 200, output: 50 };
     case 'Glob':
-      return { input: 100, output: 30 };
+      return { input: learned ?? 100, output: 30 };
     case 'Bash':
       // Command echo + typical output; real size comes from tool_response below.
-      return { input: 300, output: 20 };
+      return { input: learned ?? 300, output: 20 };
     case 'Agent':
       // Subagents emit a summary back; estimate moderate output.
-      return { input: 500, output: 1000 };
+      return { input: learned ?? 500, output: 1000 };
     default:
-      // MCP and unknown tools — small default.
+      // MCP and unknown tools — a constant until we've learned better.
       if (toolName && toolName.startsWith('mcp__')) {
-        return { input: 200, output: 300 };
+        return { input: learned ?? 200, output: 300 };
       }
-      return { input: 50, output: 50 };
+      return { input: learned ?? 50, output: 50 };
   }
 }
 
@@ -204,6 +210,9 @@ async function main() {
       respTokens = Math.round((respText || '').length / 4);
     } catch { /* keep estimate */ }
   }
+  // #38: teach the estimator what this tool really costs, so the NEXT session
+  // budgets it from evidence instead of a constant.
+  if (respTokens > 0) recordToolCost(toolName, respTokens);
   // Self-calibration: sessions with transcript ground truth teach the local
   // real/estimated drift (see utils.updateCalibrationFromSession). Input-side
   // only — output estimates already come from exact string lengths.

@@ -19,6 +19,7 @@ import {
   shouldIgnoreForTracking, getFileLines, getProjectRoot, isMainModule,
   acquireFileLock, getThresholds
 } from './utils.js';
+import { importedVerdict } from './patterns-share.js';
 import { emitNotice } from './notices.js';
 
 ensureDataDirs();
@@ -189,6 +190,18 @@ function trackRead(session, filePath, lineCount, readOptions = {}) {
         warnings.push(
           `[cco] ${basename(filePath)} was wasted in ${wasteData.sessions} past sessions. Consider skipping.`
         );
+      } else {
+        // #37: nothing learned locally — fall back to an imported team digest
+        // if one was merged. This is the fresh-clone case the feature exists
+        // for. Labelled as shared, because it is not YOUR measurement.
+        const shared = importedVerdict(proj, filePath, session.projectRoot);
+        if (shared && shared.kind === 'waste') {
+          const cost = shared.tokens ? ` (~${formatTokens(shared.tokens)} wasted)` : '';
+          warnings.push(
+            `[cco] ${basename(filePath)} is marked wasteful in this project's shared patterns — ` +
+            `unused in ${shared.sessions} sessions${cost}. Try Grep for specific content instead.`
+          );
+        }
       }
     } catch { /* don't block on pattern load failure */ }
   }

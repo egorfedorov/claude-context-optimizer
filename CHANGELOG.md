@@ -1,5 +1,53 @@
 # Changelog
 
+## 4.9.0 — 2026-08-05
+
+### Self-learning tool costs (#38)
+MCP and Agent token costs were hardcoded constants (`mcp__*` ≈ 200 in,
+`Agent` ≈ 500). Real results vary by orders of magnitude, so on MCP-heavy
+sessions the budget meter was guessing at its own biggest line item.
+
+- New `src/tool-costs.js` + `tool-costs.json`: PostToolUse already measured the
+  real `tool_response` size — it now records a per-tool rolling average and
+  hands it back to the estimator.
+- An **EMA** (α=0.25), not a flat mean, so a tool that genuinely gets more
+  expensive is tracked rather than averaged away. `max` and `total` are kept
+  alongside for the report.
+- Holds off until **3 samples**, so one freak 200K response can't become "the
+  estimate". Table is capped at 200 tools, least-observed pruned first.
+- Applies only to guessed tools. `Read`/`Edit`/`Write` derive their estimate
+  from real arguments (file size, string lengths) — an average would be
+  strictly worse than what can be computed.
+- New `/cco-tools` shows the learned table sorted by total spend, which is
+  usually the honest answer to "where does my context actually go".
+- Writes are file-locked; a failed learn never fails the hook.
+
+### Cross-project / team pattern sharing (#37)
+Patterns were locked to one machine, so a teammate's fresh clone started blind
+and re-learned the same lessons by wasting the same tokens.
+
+- New `src/patterns-share.js` + `/cco-patterns export|import|show`.
+- The digest carries **relative paths and counts only** — no file contents, no
+  absolute paths, no home directory. Unrelativizable entries are dropped and
+  the count reported. Paths that merely share a prefix with the root
+  (`/p/proj-secret` vs `/p/proj`) are correctly treated as outside.
+- `auditDigest()` runs before writing **and on import** — a digest is rejected,
+  never sanitized, if it carries absolute paths, traversal, or string values
+  where only counts belong.
+- Imported data is stored in `proj.imported`, a **separate prior that never
+  touches local counts**. `confidence` means "sessions *I* observed this in";
+  blending in someone else's would make the user's own numbers a lie. Merges
+  take the stronger signal, so importing twice is a no-op.
+- Wired to a real consumer: on a first read with no local history, the tracker
+  surfaces the shared verdict, labelled as shared. Local evidence always wins.
+- This repo now ships its own `.cco/patterns.digest.json` as a live example.
+
+### Tests
+238 → 274. Heavy emphasis on the privacy boundary (path relativization,
+prefix-sibling rejection, traversal, digest audit) and on the invariant that
+imported data can never override a local observation.
+
+
 ## 4.8.0 — 2026-08-05
 
 ### Per-language token estimation (#35)

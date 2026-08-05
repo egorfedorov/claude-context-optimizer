@@ -26,6 +26,8 @@ must make a number more true, a waste more visible, or a fix more automatic.
 - [ ] **Exact token counting** for estimates via a local BPE approximation
       (self-calibration + per-language chars/line narrow the gap; kill it entirely)
 - [ ] **Per-model cache TTL awareness** (1h beta cache pricing) in economics
+- [x] **Self-learning tool costs** — shipped in v4.9.0: per-tool EMA from
+      observed result sizes replaces the hardcoded MCP/Agent guesses (#38)
 - [ ] **Subagent economics**: split main-loop vs agent token spend in `/cco`
       and credit delegation savings to the advisor that suggested it
 - [x] **Windows-correct paths** — shipped in v4.7.0: transcript-folder
@@ -36,8 +38,9 @@ must make a number more true, a waste more visible, or a fix more automatic.
 
 ## v5.0 — The ecosystem
 
-- [ ] **Team patterns**: opt-in export/import of waste patterns and
-      `.contextignore` presets per repo (a lockfile is a lockfile everywhere)
+- [x] **Team patterns** — shipped in v4.9.0: `/cco-patterns export|import`,
+      anonymized relative-path digest committed to the repo, merged as a
+      separate prior that never overrides local observations (#37)
 - [ ] **Unified local dashboard** with [cco-arcade](https://github.com/egorfedorov/cco-arcade):
       one server, two tabs — the truth (CCO analytics) and the fun (Token City);
       cache breaks render as lightning storms over the city

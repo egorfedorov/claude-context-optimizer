@@ -37,6 +37,54 @@ At $5/M input tokens (Opus 4.8), a developer spending $100/month is lighting **$
 
 ---
 
+## What's new in v4.9 — the optimizer learns, and the team shares
+
+**Your tools now price themselves.** MCP and Agent costs were constants someone
+picked once — `mcp__*` ≈ 200 tokens in, `Agent` ≈ 500. Real results vary by
+orders of magnitude: a "list all issues" query and a one-row lookup are the same
+tool name and nowhere near the same cost. On MCP-heavy sessions the budget meter
+was guessing at its own biggest line item.
+
+CCO already measured every tool result; now it remembers. After three calls a
+tool is budgeted from what it actually costs **you**:
+
+```
+/cco-tools
+  tool                          calls      avg      max    total
+   mcp__linear__list_issues        41    38.2K   112.0K     1.5M   ← where your budget really goes
+   Bash                           380      133      342    50.5K
+  · mcp__github__get_pr             2     4.1K     6.0K     8.2K   ← still on the constant
+```
+
+Pair it with `/cco-overhead mcp`: that finds servers you never call, this prices
+the ones you do. ([#38](https://github.com/egorfedorov/claude-context-optimizer/issues/38))
+
+**Patterns travel with the repo.** What CCO learns — which files are usually
+waste, usually useful, edited together — was locked to one machine. A teammate's
+fresh clone started blind and re-learned the same lessons by wasting the same
+tokens.
+
+```bash
+/cco-patterns export     # → .cco/patterns.digest.json — commit it
+/cco-patterns import     # teammate, day one on a fresh clone
+```
+
+The digest carries **relative paths and counts only** — no file contents, no
+absolute paths, no home directory. Anything that can't be expressed relative to
+the project root is dropped, and the file is audited before writing *and* on
+import; a digest with absolute paths is rejected, not sanitized.
+
+Imported data is stored as a **separate prior and never merged into your own
+counts**. That's deliberate: `confidence` means "how many sessions *I* observed
+this in", and folding someone else's sessions into it would make your own
+numbers a lie. The import fills in only where you have no evidence of your own.
+([#37](https://github.com/egorfedorov/claude-context-optimizer/issues/37))
+
+> This repo ships its own `.cco/patterns.digest.json` — clone it and
+> `/cco-patterns import` to see the feature work on real data.
+
+---
+
 ## What's new in v4.8 — the metric gets honest, the knobs come out
 
 - **Token estimates are per-language now.** The headline "tokens saved" number
@@ -559,6 +607,8 @@ When installed as a plugin, commands are namespaced: `/claude-context-optimizer:
 | `/cco-pack [task]` | **NEW** — Build optimal context pack for a task: ranked files with offset/limit |
 | `/cco-doctor` | **NEW** — Plugin health check (versions, hooks, data dir, model config) |
 | `/cco-config [show\|get\|set\|reset]` | **NEW** — tune the behavior thresholds below without editing source |
+| `/cco-patterns [export\|import\|show]` | **NEW** — share learned file patterns with your team via a committed digest |
+| `/cco-tools [show\|reset]` | **NEW** — what your tools really cost, learned from observed results |
 
 ### Tunable thresholds (`/cco-config`)
 

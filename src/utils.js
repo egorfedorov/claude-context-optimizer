@@ -49,6 +49,7 @@ export const SUMMARIES_DIR = join(DATA_DIR, 'summaries');
 export const PROMPTS_DIR = join(DATA_DIR, 'prompts');
 export const NOTICES_DIR = join(DATA_DIR, 'notices');
 export const TASKS_FILE = join(DATA_DIR, 'tasks.json');
+export const TOOL_COSTS_FILE = join(DATA_DIR, 'tool-costs.json');
 
 // ── Model costs ($/M tokens — input/output) — platform.claude.com/docs pricing ─
 // Current lineup (Opus 4.8 era). Output costs included for accurate ROI.

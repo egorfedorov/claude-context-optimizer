@@ -17,6 +17,12 @@ import { analyzePrompt, buildImprovedPrompt, classifyPrompt } from '../src/promp
 import { parseBaselineFromLines, projectTranscriptDir } from '../src/overhead.js';
 import { THRESHOLD_SPEC, validateThreshold } from '../src/utils.js';
 import { describeThresholds, applySet, applyReset } from '../src/config.js';
+import {
+  updateToolStat, learnedCost, pruneTools, isLearnable, MIN_SAMPLES
+} from '../src/tool-costs.js';
+import {
+  relativizePath, buildDigest, auditDigest, mergeDigest, importedVerdict
+} from '../src/patterns-share.js';
 import { buildIgnoreSuggestions } from '../src/context-shield.js';
 import { updateExploreStreak } from '../src/tracker.js';
 import { computeCacheAwareCost, emaCalibration } from '../src/utils.js';
@@ -2158,5 +2164,248 @@ describe('config: describe/set/reset', () => {
 
   it('reset rejects an unknown key instead of silently no-oping', () => {
     assert.equal(applyReset({}, 'nope').ok, false);
+  });
+});
+
+// ── v4.9.0 (#38): self-learning tool costs ──────────────────────────────────
+
+describe('tool costs: rolling stat', () => {
+  it('records the first observation verbatim', () => {
+    assert.deepEqual(updateToolStat(undefined, 5000), { samples: 1, avg: 5000, max: 5000, total: 5000 });
+  });
+
+  it('moves the average toward recent observations (EMA, not a flat mean)', () => {
+    let s = updateToolStat(undefined, 1000);
+    s = updateToolStat(s, 9000);
+    // A flat mean would be 5000; the EMA leans on history, so it stays lower.
+    assert.ok(s.avg > 1000 && s.avg < 5000, `avg was ${s.avg}`);
+    assert.equal(s.samples, 2);
+  });
+
+  it('tracks the worst case and the running total separately', () => {
+    let s = updateToolStat(undefined, 1000);
+    s = updateToolStat(s, 90000);
+    s = updateToolStat(s, 2000);
+    assert.equal(s.max, 90000, 'max must survive later small calls');
+    assert.equal(s.total, 93000);
+  });
+
+  it('never records a negative cost', () => {
+    assert.equal(updateToolStat(undefined, -5).avg, 0);
+  });
+
+  it('adapts when a tool genuinely gets more expensive', () => {
+    let s = updateToolStat(undefined, 100);
+    for (let i = 0; i < 25; i++) s = updateToolStat(s, 50000);
+    assert.ok(s.avg > 40000, `should converge on the new reality, got ${s.avg}`);
+  });
+});
+
+describe('tool costs: when to trust the learning', () => {
+  it('withholds a verdict until there is enough evidence', () => {
+    assert.equal(learnedCost({ t: { samples: 2, avg: 9999 } }, 't'), null,
+      'one freak response must not become "the estimate"');
+  });
+
+  it('reports the average once the sample threshold is met', () => {
+    assert.equal(learnedCost({ t: { samples: MIN_SAMPLES, avg: 4200 } }, 't'), 4200);
+  });
+
+  it('returns null for a tool never seen', () => {
+    assert.equal(learnedCost({}, 'unseen'), null);
+    assert.equal(learnedCost(null, 'unseen'), null);
+  });
+
+  it('does not learn for tools whose estimate comes from real arguments', () => {
+    // Read/Edit/Write are computed from file size and string lengths — an
+    // average would be strictly worse than what we can already compute.
+    for (const t of ['Read', 'Edit', 'Write']) assert.equal(isLearnable(t), false, t);
+    for (const t of ['Bash', 'Agent', 'mcp__linear__list_issues', 'Grep']) {
+      assert.equal(isLearnable(t), true, t);
+    }
+  });
+
+  it('bounds the table by dropping the least-observed tools', () => {
+    const stats = {};
+    for (let i = 0; i < 10; i++) stats[`t${i}`] = { samples: i, avg: 1, max: 1, total: 1 };
+    const pruned = pruneTools(stats, 3);
+    assert.deepEqual(Object.keys(pruned).sort(), ['t7', 't8', 't9']);
+  });
+});
+
+// ── v4.9.0 (#37): pattern sharing ───────────────────────────────────────────
+
+describe('pattern sharing: path relativization (privacy critical)', () => {
+  it('relativizes a path inside the project root', () => {
+    assert.equal(relativizePath('/home/me/proj/src/a.ts', '/home/me/proj'), 'src/a.ts');
+  });
+
+  it('refuses a path outside the project root', () => {
+    // This is the whole safety story: anything unrelativizable would leak a
+    // username or an unrelated client's directory into a committed file.
+    assert.equal(relativizePath('/home/me/other/secret.ts', '/home/me/proj'), null);
+    assert.equal(relativizePath('/etc/passwd', '/home/me/proj'), null);
+  });
+
+  it('refuses a sibling directory that merely shares a prefix', () => {
+    assert.equal(relativizePath('/home/me/proj-secret/a.ts', '/home/me/proj'), null);
+  });
+
+  it('refuses traversal segments', () => {
+    assert.equal(relativizePath('/home/me/proj/../evil/a.ts', '/home/me/proj'), null);
+  });
+
+  it('handles Windows separators', () => {
+    assert.equal(relativizePath('C:\\dev\\proj\\src\\a.ts', 'C:\\dev\\proj'), 'src/a.ts');
+  });
+
+  it('tolerates a trailing slash on the root', () => {
+    assert.equal(relativizePath('/p/src/a.ts', '/p/'), 'src/a.ts');
+  });
+
+  it('returns null on missing inputs rather than guessing', () => {
+    assert.equal(relativizePath(null, '/p'), null);
+    assert.equal(relativizePath('/p/a.ts', null), null);
+  });
+});
+
+describe('pattern sharing: digest build + audit', () => {
+  const ROOT = '/home/me/proj';
+  const proj = {
+    fileFrequency: {
+      '/home/me/proj/src/a.ts': { sessions: 5, usefulness: 4, totalReads: 9, totalEdits: 3 },
+      '/home/me/proj/src/rare.ts': { sessions: 1, usefulness: 1, totalReads: 1, totalEdits: 0 },
+      '/home/me/elsewhere/leak.ts': { sessions: 9, usefulness: 9, totalReads: 9, totalEdits: 9 },
+    },
+    wastedReads: {
+      '/home/me/proj/package-lock.json': { sessions: 4, count: 4, totalTokensWasted: 88000 },
+    },
+    coOccurrence: {
+      '/home/me/proj/src/a.ts': { '/home/me/proj/src/b.ts': 3, '/home/me/elsewhere/x.ts': 2 },
+    },
+  };
+
+  it('emits only project-relative paths', () => {
+    const { digest } = buildDigest(proj, ROOT);
+    assert.ok(digest.files['src/a.ts']);
+    assert.ok(digest.files['package-lock.json']);
+    assert.deepEqual(auditDigest(digest), [], 'digest must pass its own privacy audit');
+  });
+
+  it('drops files outside the project root and counts them', () => {
+    const { digest, stats } = buildDigest(proj, ROOT);
+    assert.ok(!Object.keys(digest.files).some(p => p.includes('leak')));
+    assert.ok(stats.dropped >= 1, 'must report what was withheld');
+  });
+
+  it('drops co-occurrence partners outside the root but keeps the rest', () => {
+    const { digest } = buildDigest(proj, ROOT);
+    assert.deepEqual(digest.coOccurrence['src/a.ts'], { 'src/b.ts': 3 });
+  });
+
+  it('skips thin evidence that would just be noise', () => {
+    const { digest } = buildDigest(proj, ROOT);
+    assert.equal(digest.files['src/rare.ts'], undefined, 'seen in only 1 session');
+  });
+
+  it('carries waste cost so a teammate learns what it costs', () => {
+    const { digest } = buildDigest(proj, ROOT);
+    assert.equal(digest.files['package-lock.json'].wastedSessions, 4);
+    assert.equal(digest.files['package-lock.json'].wastedTokens, 88000);
+  });
+
+  it('never carries file contents — counts only', () => {
+    const { digest } = buildDigest(proj, ROOT);
+    for (const d of Object.values(digest.files)) {
+      for (const v of Object.values(d)) assert.equal(typeof v, 'number');
+    }
+  });
+});
+
+describe('pattern sharing: audit catches a tampered digest', () => {
+  it('flags an absolute path', () => {
+    assert.ok(auditDigest({ files: { '/home/me/x.ts': {} } }).length);
+  });
+
+  it('flags a Windows absolute path', () => {
+    assert.ok(auditDigest({ files: { 'C:/Users/me/x.ts': {} } }).length);
+  });
+
+  it('flags traversal', () => {
+    assert.ok(auditDigest({ files: { '../../etc/passwd': {} } }).length);
+  });
+
+  it('flags string values where only counts belong', () => {
+    assert.ok(auditDigest({ files: { 'a.ts': { note: 'secret contents' } } }).length);
+  });
+
+  it('passes a clean digest', () => {
+    assert.deepEqual(auditDigest({ files: { 'src/a.ts': { sessions: 2 } }, coOccurrence: {} }), []);
+  });
+});
+
+describe('pattern sharing: merge keeps local counts sacred', () => {
+  const digest = { version: 1, files: { 'src/a.ts': { sessions: 5, usefulness: 5, wastedSessions: 0 } }, coOccurrence: {} };
+
+  it('stores imported data separately, never in the local counts', () => {
+    const proj = { fileFrequency: { '/p/src/a.ts': { sessions: 1, usefulness: 0 } }, wastedReads: {}, coOccurrence: {} };
+    const { imported } = mergeDigest(proj, digest);
+    // The local observation is untouched — confidence stays honest about what
+    // THIS machine measured.
+    assert.equal(proj.fileFrequency['/p/src/a.ts'].sessions, 1);
+    assert.equal(imported.files['src/a.ts'].sessions, 5);
+  });
+
+  it('is idempotent — importing the same digest twice does not double counts', () => {
+    const proj = { fileFrequency: {}, wastedReads: {}, coOccurrence: {} };
+    proj.imported = mergeDigest(proj, digest).imported;
+    const second = mergeDigest(proj, digest);
+    assert.equal(second.imported.files['src/a.ts'].sessions, 5);
+    assert.equal(second.stats.added, 0, 'nothing new the second time');
+  });
+
+  it('keeps the stronger signal when two digests disagree', () => {
+    const proj = { fileFrequency: {}, wastedReads: {}, coOccurrence: {} };
+    proj.imported = mergeDigest(proj, digest).imported;
+    const weaker = { version: 1, files: { 'src/a.ts': { sessions: 2, usefulness: 1 } }, coOccurrence: {} };
+    const merged = mergeDigest(proj, weaker);
+    assert.equal(merged.imported.files['src/a.ts'].sessions, 5);
+  });
+});
+
+describe('pattern sharing: imported data never overrides local evidence', () => {
+  const ROOT = '/p';
+  const base = () => ({
+    fileFrequency: {}, wastedReads: {}, coOccurrence: {},
+    imported: { files: {
+      'src/waste.ts': { sessions: 6, usefulness: 0, wastedSessions: 5, wastedTokens: 40000 },
+      'src/good.ts':  { sessions: 6, usefulness: 5, wastedSessions: 0 },
+    }, coOccurrence: {} },
+  });
+
+  it('reports a shared waste verdict when nothing is known locally', () => {
+    const v = importedVerdict(base(), '/p/src/waste.ts', ROOT);
+    assert.equal(v.kind, 'waste');
+    assert.equal(v.sessions, 5);
+    assert.equal(v.tokens, 40000);
+  });
+
+  it('stays silent once this machine has its OWN observation', () => {
+    const proj = base();
+    proj.fileFrequency['/p/src/waste.ts'] = { sessions: 1, usefulness: 1 };
+    assert.equal(importedVerdict(proj, '/p/src/waste.ts', ROOT), null,
+      'local evidence must always win');
+  });
+
+  it('stays silent for a file the digest never mentioned', () => {
+    assert.equal(importedVerdict(base(), '/p/src/unknown.ts', ROOT), null);
+  });
+
+  it('stays silent for a path outside the project root', () => {
+    assert.equal(importedVerdict(base(), '/elsewhere/x.ts', ROOT), null);
+  });
+
+  it('stays silent when nothing was ever imported', () => {
+    assert.equal(importedVerdict({ fileFrequency: {}, wastedReads: {} }, '/p/a.ts', ROOT), null);
   });
 });
