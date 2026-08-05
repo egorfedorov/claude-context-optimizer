@@ -1,0 +1,44 @@
+name: Dependabot auto-merge
+
+# CI-only version bumps used to sit in the PR queue for weeks (setup-node 6→7
+# waited three). Nothing about them needs a human: they touch a workflow file,
+# and the test matrix already proves whether they broke anything.
+#
+# Patch and minor bumps merge themselves once the required checks pass. MAJOR
+# bumps are left open on purpose — those can change runner behaviour in ways
+# green tests don't always catch, so they get a look.
+
+on: pull_request_target
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # --auto queues the merge behind the branch protection checks rather than
+      # merging now, so a bump that breaks the matrix never lands.
+      - name: Enable auto-merge for patch and minor bumps
+        if: steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor'
+        run: gh pr merge --auto --merge "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Leave a note on major bumps
+        if: steps.meta.outputs.update-type == 'version-update:semver-major'
+        run: |
+          gh pr comment "$PR_URL" --body \
+            "Major bump — not auto-merging. Check the action's changelog for runner or input changes, then merge by hand."
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
