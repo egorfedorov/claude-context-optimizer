@@ -2418,3 +2418,116 @@ describe('pattern sharing: imported data never overrides local evidence', () => 
     assert.equal(importedVerdict({ fileFrequency: {}, wastedReads: {} }, '/p/a.ts', ROOT), null);
   });
 });
+
+// ── smart-pack: the logic that decides what reaches the context ─────────────
+// /cco-pack proposes files for Claude to read. Nothing here was under test, so
+// a scoping bug could recommend another project's source and no one would know.
+
+describe('smart-pack: path scoping', () => {
+  it('isInside respects path boundaries, not string prefixes', async () => {
+    const { isInside } = await import('../src/smart-pack.js');
+    assert.equal(isInside('/a/b/src/x.js', '/a/b'), true);
+    assert.equal(isInside('/a/b', '/a/b'), true);          // the root itself
+    assert.equal(isInside('/a/bc/x.js', '/a/b'), false);   // sibling, not child
+    assert.equal(isInside('/a/b/x.js', '/a/b/'), true);    // trailing slash
+    assert.equal(isInside('/other/x.js', '/a/b'), false);
+    assert.equal(isInside('', '/a/b'), false);
+    assert.equal(isInside('/a/b/x.js', ''), false);
+  });
+
+  it('isInside normalizes Windows separators', async () => {
+    const { isInside } = await import('../src/smart-pack.js');
+    assert.equal(isInside('C:\\proj\\src\\a.ts', 'C:\\proj'), true);
+    assert.equal(isInside('C:\\projX\\src\\a.ts', 'C:\\proj'), false);
+  });
+
+  it('projectScope picks the longest tracked root owning cwd', async () => {
+    const { projectScope } = await import('../src/smart-pack.js');
+    const keys = ['_global', '/repos', '/repos/app', '/elsewhere'];
+    assert.equal(projectScope('/repos/app/src', keys), '/repos/app'); // most specific
+    assert.equal(projectScope('/repos/other', keys), '/repos');
+    assert.equal(projectScope('/nowhere', keys), '/nowhere');         // falls back to cwd
+    assert.equal(projectScope('/x', ['_global']), '/x');              // never _global
+  });
+});
+
+describe('smart-pack: candidate merge', () => {
+  it('first source to claim a path owns its relevance', async () => {
+    const { mergeCandidates } = await import('../src/smart-pack.js');
+    const items = mergeCandidates({
+      mentioned: ['/p/a.js'],
+      changed: ['/p/a.js', '/p/b.js'],                                  // a.js already claimed
+      historic: [{ file: '/p/c.js', confidence: 0.5, edits: 2, sessions: 4 }],
+      keywordHits: [{ file: '/p/b.js', score: 9 }, { file: '/p/d.js', score: 2 }],
+    });
+    assert.deepEqual(items.map(i => i.file), ['/p/a.js', '/p/b.js', '/p/c.js', '/p/d.js']);
+    assert.equal(items[0].relevance, 100);                              // mentioned wins
+    assert.equal(items[1].relevance, 85);                               // changed, not keyword
+    assert.equal(items[2].relevance, 35);                               // round(70 * 0.5)
+    assert.equal(items[3].relevance, 36);                               // 30 + min(40, 2*3)
+  });
+
+  it('keyword relevance is capped so it can never outrank a changed file', async () => {
+    const { mergeCandidates } = await import('../src/smart-pack.js');
+    const [only] = mergeCandidates({ keywordHits: [{ file: '/p/a.js', score: 10_000 }] });
+    assert.equal(only.relevance, 70);                                   // 30 + 40, not 30030
+  });
+
+  it('drops files nothing should ever read', async () => {
+    const { mergeCandidates } = await import('../src/smart-pack.js');
+    const items = mergeCandidates({
+      mentioned: ['/p/logo.png', '/p/bundle.min.js', '/p/real.js'],
+      historic: [{ file: '/p/package-lock.json', confidence: 1, edits: 9, sessions: 9 }],
+    });
+    assert.deepEqual(items.map(i => i.file), ['/p/real.js']);
+  });
+});
+
+describe('smart-pack: budget cap', () => {
+  const items = n => Array.from({ length: n }, (_, i) => ({ file: `/p/${i}.js`, tokens: 100 }));
+
+  it('stops before breaking the cap', async () => {
+    const { applyBudgetCap } = await import('../src/smart-pack.js');
+    const { files, totalTokens, capUsedPercent } = applyBudgetCap(items(10), 450);
+    assert.equal(files.length, 4);          // 4*100=400 fits, 500 would not
+    assert.equal(totalTokens, 400);
+    assert.equal(capUsedPercent, 89);
+  });
+
+  it('always returns a usable pack even when the cap is tiny', async () => {
+    const { applyBudgetCap } = await import('../src/smart-pack.js');
+    const { files } = applyBudgetCap(items(10), 1);
+    assert.equal(files.length, 3);          // minFiles beats the cap
+  });
+
+  it('reports no percentage rather than NaN when the cap is zero', async () => {
+    const { applyBudgetCap } = await import('../src/smart-pack.js');
+    const { files, capUsedPercent } = applyBudgetCap(items(10), 0);
+    assert.equal(capUsedPercent, null);     // not NaN, not Infinity
+    assert.equal(files.length, 3);
+  });
+
+  it('one oversized file does not swallow the whole pack', async () => {
+    const { applyBudgetCap } = await import('../src/smart-pack.js');
+    const { files, totalTokens } = applyBudgetCap(
+      [{ file: '/p/huge.js', tokens: 999_999 }, ...items(5)], 450);
+    assert.equal(files.length, 3);          // huge one still counted, minFiles honoured
+    assert.ok(totalTokens > 999_999);
+  });
+});
+
+describe('smart-pack: keyword extraction', () => {
+  it('keeps meaningful terms and drops filler', async () => {
+    const { extractKeywords } = await import('../src/smart-pack.js');
+    const kw = extractKeywords('Please fix the bug in the authentication middleware');
+    assert.ok(kw.includes('authentication'));
+    assert.ok(kw.includes('middleware'));
+    for (const filler of ['please', 'fix', 'bug', 'the']) assert.ok(!kw.includes(filler));
+  });
+
+  it('returns nothing for an empty task instead of throwing', async () => {
+    const { extractKeywords } = await import('../src/smart-pack.js');
+    assert.deepEqual(extractKeywords(''), []);
+    assert.deepEqual(extractKeywords(undefined), []);
+  });
+});

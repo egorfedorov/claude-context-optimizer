@@ -29,7 +29,7 @@ import { join, basename, extname, dirname } from 'path';
 import {
   PATTERNS_FILE, loadJSON, formatTokens, estimateTokens,
   computeUsefulness, computeConfidence, getEffectiveBudget, loadConfig,
-  shouldSkipFile, getThresholds
+  shouldSkipFile, getThresholds, toPosixPath
 } from './utils.js';
 import { parseFileStructure } from './file-digest.js';
 
@@ -73,8 +73,29 @@ function extractMentionedPaths(task, cwd) {
   return [...new Set(real)];
 }
 
+// ── Path scoping ─────────────────────────────────────────────────────────────
+
+/** Is `filePath` at or below `root`? Boundary-aware: /a/bc is NOT inside /a/b. */
+export function isInside(filePath, root) {
+  if (!filePath || !root) return false;
+  const p = toPosixPath(filePath);
+  const r = toPosixPath(root).replace(/\/+$/, '');
+  return p === r || p.startsWith(r + '/');
+}
+
+/**
+ * The recorded project root that owns `cwd` — the longest tracked key `cwd`
+ * sits inside, else `cwd` itself. Files outside this scope belong to another
+ * project and must never be proposed as context for this one.
+ */
+export function projectScope(cwd, projectKeys = []) {
+  return projectKeys
+    .filter(k => k !== '_global' && isInside(cwd, k))
+    .sort((a, b) => b.length - a.length)[0] || cwd;
+}
+
 /** Extract keywords for grep-like matching against file paths. */
-function extractKeywords(task) {
+export function extractKeywords(task) {
   if (!task) return [];
   return task
     .toLowerCase()
@@ -109,11 +130,16 @@ function findFilesByKeywords(cwd, keywords, limit = 12) {
 
 function findHistoricallyUseful(cwd, limit = 8) {
   const patterns = loadJSON(PATTERNS_FILE) || { projects: {} };
+  const scope = projectScope(cwd, Object.keys(patterns.projects || {}));
   const candidates = [];
   for (const [projKey, proj] of Object.entries(patterns.projects || {})) {
-    if (projKey !== '_global' && !cwd.startsWith(projKey)) continue;
+    if (projKey !== '_global' && !isInside(cwd, projKey)) continue;
     for (const [path, data] of Object.entries(proj.fileFrequency || {})) {
       if (data.usefulness < 2 || (data.totalEdits || 0) === 0) continue;
+      // The _global bucket spans every project on this machine, and a file from
+      // another repo exists on disk — so it clears every other filter and gets
+      // proposed as context for THIS project. Scope is the only thing stopping it.
+      if (!isInside(path, scope)) continue;
       const daysSince = data.lastSeen
         ? Math.round((Date.now() - new Date(data.lastSeen)) / 86400000)
         : 30;
@@ -171,6 +197,55 @@ function suggestRange(filePath, keywords) {
   }
 }
 
+// ── Pure decision logic ──────────────────────────────────────────────────────
+
+/**
+ * Merge the four candidate sources into one ranked list.
+ * Priority is by source: mentioned > changed > historic > keyword — the first
+ * source to claim a path owns it, so a file named in the prompt keeps
+ * relevance 100 even if it is also a keyword hit.
+ */
+export function mergeCandidates({ mentioned = [], changed = [], historic = [], keywordHits = [] }) {
+  const seen = new Set();
+  const items = [];
+  const add = (file, reason, relevance) => {
+    if (seen.has(file) || shouldSkipFile(file)) return;
+    seen.add(file);
+    items.push({ file, reason, relevance });
+  };
+
+  for (const f of mentioned) add(f, 'mentioned in prompt', 100);
+  for (const f of changed) add(f, 'modified in git working tree', 85);
+  for (const h of historic) {
+    add(h.file, `historically useful (edited in ${h.edits}/${h.sessions} sessions)`,
+      Math.round(70 * h.confidence));
+  }
+  for (const k of keywordHits) {
+    add(k.file, `matches task keywords (score ${k.score})`, 30 + Math.min(40, k.score * 3));
+  }
+  return items;
+}
+
+/**
+ * Take files off the ranked list until the next one would break the cap.
+ * Stops rather than skips: the list is relevance-sorted, so continuing past a
+ * big file would trade a more relevant file for a less relevant one.
+ * `minFiles` wins over the cap — a pack of one file helps nobody.
+ */
+export function applyBudgetCap(items, cap, minFiles = 3) {
+  const files = [];
+  let totalTokens = 0;
+  for (const it of items) {
+    if (totalTokens + it.tokens > cap && files.length >= minFiles) break;
+    files.push(it);
+    totalTokens += it.tokens;
+  }
+  // cap is 0 when packBudgetPercent is configured to 0 (#39). Dividing by it
+  // printed NaN%; a percentage of nothing is not a number we can defend.
+  const capUsedPercent = cap > 0 ? Math.round((totalTokens / cap) * 100) : null;
+  return { files, totalTokens, capUsedPercent };
+}
+
 // ── Main composition ─────────────────────────────────────────────────────────
 
 export function buildPack(task, cwd) {
@@ -180,38 +255,7 @@ export function buildPack(task, cwd) {
   const historic = findHistoricallyUseful(cwd, 6);
   const keywordHits = findFilesByKeywords(cwd, keywords, 10);
 
-  // Merge with priorities: mentioned > changed > historic > keyword
-  const seen = new Set();
-  const items = [];
-
-  for (const f of mentioned) {
-    if (seen.has(f) || shouldSkipFile(f)) continue;
-    seen.add(f);
-    items.push({ file: f, reason: 'mentioned in prompt', relevance: 100 });
-  }
-  for (const f of changed) {
-    if (seen.has(f) || shouldSkipFile(f)) continue;
-    seen.add(f);
-    items.push({ file: f, reason: 'modified in git working tree', relevance: 85 });
-  }
-  for (const h of historic) {
-    if (seen.has(h.file)) continue;
-    seen.add(h.file);
-    items.push({
-      file: h.file,
-      reason: `historically useful (edited in ${h.edits}/${h.sessions} sessions)`,
-      relevance: Math.round(70 * h.confidence),
-    });
-  }
-  for (const k of keywordHits) {
-    if (seen.has(k.file)) continue;
-    seen.add(k.file);
-    items.push({
-      file: k.file,
-      reason: `matches task keywords (score ${k.score})`,
-      relevance: 30 + Math.min(40, k.score * 3),
-    });
-  }
+  const items = mergeCandidates({ mentioned, changed, historic, keywordHits });
 
   // For each item, suggest a range and estimate tokens.
   const enriched = items.map(it => {
@@ -228,22 +272,16 @@ export function buildPack(task, cwd) {
   const config = loadConfig();
   const budget = getEffectiveBudget(config);
   const cap = Math.round(budget * (getThresholds().packBudgetPercent / 100));
-  let running = 0;
-  const final = [];
-  for (const it of enriched) {
-    if (running + it.tokens > cap && final.length >= 3) break;
-    final.push(it);
-    running += it.tokens;
-  }
+  const { files, totalTokens, capUsedPercent } = applyBudgetCap(enriched, cap);
 
   return {
     task,
     cwd,
     keywords,
-    files: final,
-    totalEstTokens: running,
+    files,
+    totalEstTokens: totalTokens,
     budget,
-    capUsedPercent: Math.round((running / cap) * 100),
+    capUsedPercent,
   };
 }
 
@@ -256,7 +294,8 @@ function formatPack(pack, asJson) {
   out.push('  ' + '─'.repeat(70));
   out.push(`  Task: ${pack.task ? pack.task.slice(0, 80) : '(none — using git state)'}`);
   out.push(`  Files proposed: ${pack.files.length}`);
-  out.push(`  Est. tokens: ${formatTokens(pack.totalEstTokens)} (${pack.capUsedPercent}% of context budget cap)`);
+  out.push(`  Est. tokens: ${formatTokens(pack.totalEstTokens)}` +
+    (pack.capUsedPercent === null ? ' (no budget cap configured)' : ` (${pack.capUsedPercent}% of context budget cap)`));
   if (pack.keywords.length > 0) out.push(`  Keywords: ${pack.keywords.join(', ')}`);
   out.push('');
   out.push('  Read these in order:');
