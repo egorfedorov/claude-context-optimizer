@@ -2531,3 +2531,101 @@ describe('smart-pack: keyword extraction', () => {
     assert.deepEqual(extractKeywords(undefined), []);
   });
 });
+
+// ── export: reports get shared, so names must not become markup ─────────────
+
+describe('export: untrusted names never become markup', () => {
+  const hostileStats = {
+    totalSessions: 1, totalTokensTracked: 1000, estimatedTokensSaved: 100, avgTokensPerSession: 1000,
+    sessionHistory: [{
+      date: '2026-08-01T10:00:00Z', project: "</script><script>alert(1)</script>",
+      tokensTotal: 1000, tokensWasted: 100, filesRead: 1, totalReads: 1, totalEdits: 1, wastePercent: 10,
+    }],
+    topWastedFiles: [{ fullPath: "/r/<img src=x onerror=alert(1)>.js", totalTokensWasted: 100, sessions: 1 }],
+    topUsefulFiles: [{ fullPath: "/r/a`b|c.js", totalEdits: 1, totalReads: 1, sessions: 1, usefulness: 3 }],
+  };
+
+  it('escapes a hostile file name in the HTML report', async () => {
+    const { buildHtml } = await import('../src/export.js');
+    const html = buildHtml(hostileStats, '2026-08-01');
+    assert.ok(!html.includes('<img src=x onerror'), 'raw tag reached the document');
+    assert.ok(html.includes('&lt;img src=x onerror'), 'name should survive, escaped');
+  });
+
+  it('a project name cannot break out of the chart <script> block', async () => {
+    const { buildHtml } = await import('../src/export.js');
+    const html = buildHtml(hostileStats, '2026-08-01');
+    // JSON.stringify alone does NOT escape </script>; this is the whole point.
+    assert.ok(!html.includes('</script><script>alert(1)'), 'script block was closed early');
+    assert.ok(html.includes('\\u003c/script>'), 'the name should be there, neutralized');
+  });
+
+  it('keeps hostile names from breaking the markdown table', async () => {
+    const { buildMarkdown } = await import('../src/export.js');
+    const md = buildMarkdown(hostileStats, '2026-08-01');
+    const row = md.split('\n').find(l => l.includes('a') && l.includes('b') && l.startsWith('| `'));
+    assert.ok(row, 'useful-files row missing');
+    assert.ok(!row.includes('`b|c'), 'unescaped pipe would split the cell');
+  });
+
+  it('escapes backslashes before pipes, so a\\|b cannot split the cell', async () => {
+    const { escapeMarkdownCell } = await import('../src/export.js');
+    // Pipe-first ordering produced `a\\|b`: the pair reads as a literal
+    // backslash and the pipe is bare again.
+    assert.equal(escapeMarkdownCell('a\\|b'), 'a\\\\\\|b');
+    assert.equal(escapeMarkdownCell('plain.js'), 'plain.js');
+  });
+
+  it('escapeHtml and jsonForScript handle empty input without throwing', async () => {
+    const { escapeHtml, jsonForScript } = await import('../src/export.js');
+    assert.equal(escapeHtml(undefined), '');
+    assert.equal(escapeHtml(null), '');
+    assert.equal(escapeHtml('a & b'), 'a &amp; b');
+    assert.equal(jsonForScript([]), '[]');
+  });
+});
+
+// ── roi: a projection may be a guess, but must not claim to be a measurement ─
+
+describe('roi: provenance of the waste figure', () => {
+  const session = files => ({ files });
+
+  it('reports real numbers as measured', async () => {
+    const { deriveRoiInputs } = await import('../src/roi.js');
+    const r = deriveRoiInputs([session({
+      '/a.js': { estTokens: 800, reads: 1, edits: 0 },   // read, never edited → waste
+      '/b.js': { estTokens: 200, reads: 1, edits: 3 },   // useful
+    })]);
+    assert.equal(r.measured, true);
+    assert.equal(Math.round(r.wastePercent), 80);
+    assert.equal(r.avgTokens, 1000);
+    assert.match(r.dataSource, /1 session\(s\), last 30 days/);
+  });
+
+  it('does not credit tracked sessions for a number they did not produce', async () => {
+    const { deriveRoiInputs, ROI_FALLBACK } = await import('../src/roi.js');
+    // #53's shape: sessions exist, but nothing was ever read in them.
+    const r = deriveRoiInputs([session({}), session({}), session({})]);
+    assert.equal(r.measured, false);
+    assert.equal(r.wastePercent, ROI_FALLBACK.wastePercent);
+    assert.match(r.dataSource, /industry estimate/);
+    assert.ok(!/last 30 days/.test(r.dataSource), 'must not imply the figure came from those sessions');
+  });
+
+  it('falls back cleanly with no sessions at all', async () => {
+    const { deriveRoiInputs, ROI_FALLBACK } = await import('../src/roi.js');
+    const r = deriveRoiInputs([]);
+    assert.equal(r.measured, false);
+    assert.equal(r.avgTokens, ROI_FALLBACK.avgTokens);
+    assert.ok(Number.isFinite(r.wastePercent), 'no NaN from dividing by zero sessions');
+  });
+
+  it('builds a finite table for every model', async () => {
+    const { buildROITable } = await import('../src/roi.js');
+    const rows = buildROITable(35, 80_000, 5);
+    assert.equal(rows.length, 3);
+    for (const r of rows) {
+      for (const v of Object.values(r)) assert.ok(!/NaN|undefined/.test(String(v)), `bad cell: ${v}`);
+    }
+  });
+});

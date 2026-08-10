@@ -1,5 +1,63 @@
 # Changelog
 
+## 4.9.2 — 2026-08-10
+
+Three modules that shape what Claude reads, what you share, and what you
+believe about your spend had no tests. Writing them found four defects.
+
+### Security: exported HTML reports executed hostile file names
+
+`/cco-export html` builds a report the module itself describes as being "for
+sharing" — and interpolated file and project names straight into markup:
+
+```js
+`<td><code>${basename(f.fullPath)}</code></td>`     // a name can be a tag
+labels: ${JSON.stringify(projects.map(([n]) => n))} // inside <script>
+```
+
+`JSON.stringify` does not escape `</script>`, so a project directory named
+`</script><script>…` closed the block and everything after it parsed as markup.
+Both were confirmed with a proof-of-concept report before fixing. Reaching them
+means opening a repo whose file or directory names are hostile, exporting, and
+sending the report to someone — a plausible chain for a shared artifact.
+
+All interpolated names now go through `escapeHtml`, every in-`<script>` payload
+through `jsonForScript`, and markdown cells through `escapeMarkdownCell`.
+
+### `/cco-pack` could propose another project's source (#59)
+
+`findHistoricallyUseful` always folds in the `_global` patterns bucket, which
+spans every project on the machine and stores absolute paths — so a file from
+an unrelated repo passed `existsSync` and every other filter. On real data
+here, **64 of 98** historic candidates lived outside the project, one ranking
+8th by confidence. Candidates are now scoped to the tracked root owning `cwd`,
+using boundary-aware containment (`/a/bc` is no longer "inside" `/a/b`).
+
+### `/cco-roi` credited tracked sessions for a number they did not produce
+
+When sessions existed but none had recorded a file read — a fresh install, the
+same shape as #53 — the report fell back to a hardcoded 35% waste while still
+labelling itself `N sessions (last 30 days)`. It now names the estimate as an
+estimate, marks the derived figures `(assumed)`, and warns that the whole
+projection rests on them. Wording that claimed CCO had already "blocked" those
+tokens now says they were identified as waste.
+
+### `NaN%` in `/cco-pack`
+
+`capUsedPercent` divided by a cap that is `0` whenever `packBudgetPercent` is
+configured to `0` (#39). It now reports no percentage rather than `NaN`.
+
+### Importing a module no longer runs its CLI
+
+`src/export.js` and `src/roi.js` executed their CLI at import time — importing
+`export.js` wrote a report into the user's exports directory. Both are guarded
+with the existing `isMainModule` helper.
+
+### Tests
+275 → 295. New coverage for smart-pack (path scoping, source priority,
+relevance caps, budget arithmetic), export (escaping in all three formats) and
+roi (provenance, fallbacks, table integrity).
+
 ## 4.9.1 — 2026-08-10
 
 ### Fix: `/cco-overhead mcp` told fresh installs to delete working MCP servers (#53)

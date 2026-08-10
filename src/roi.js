@@ -10,7 +10,7 @@
 import { readdirSync, existsSync } from 'fs';
 import {
   SESSIONS_DIR, DATA_DIR,
-  formatTokens, loadJSON, MODEL_INPUT_COST, ensureDataDirs
+  formatTokens, loadJSON, MODEL_INPUT_COST, ensureDataDirs, isMainModule
 } from './utils.js';
 
 ensureDataDirs();
@@ -29,7 +29,7 @@ function loadRecentSessions(days = 30) {
   return sessions;
 }
 
-function analyzeWaste(sessions) {
+export function analyzeWaste(sessions) {
   let totalTokens = 0;
   let wastedTokens = 0;
   let totalFiles = 0;
@@ -50,7 +50,36 @@ function analyzeWaste(sessions) {
   return { totalTokens, wastedTokens, totalFiles, wastedFiles };
 }
 
-function buildROITable(avgWastePercent, avgTokensPerSession, sessionsPerDay) {
+/** No local evidence — the numbers a first run has to fall back on. */
+export const ROI_FALLBACK = { wastePercent: 35, avgTokens: 80_000 };
+
+/**
+ * The waste figure to project from, and — the part that matters — where it
+ * actually came from. Sessions can exist while carrying no file reads at all
+ * (a fresh install, same shape as #53), and the old code took the hardcoded
+ * 35% in that case while still labelling the report "N sessions (last 30
+ * days)". A projection may be a guess; it may not claim to be a measurement.
+ */
+export function deriveRoiInputs(sessions) {
+  const { totalTokens, wastedTokens } = analyzeWaste(sessions);
+  if (totalTokens === 0) {
+    return {
+      ...ROI_FALLBACK,
+      measured: false,
+      dataSource: sessions.length
+        ? `industry estimate — ${sessions.length} session(s) tracked, none with file reads yet`
+        : 'industry estimate (no local data yet)',
+    };
+  }
+  return {
+    wastePercent: (wastedTokens / totalTokens) * 100,
+    avgTokens: totalTokens / sessions.length,
+    measured: true,
+    dataSource: `${sessions.length} session(s), last 30 days`,
+  };
+}
+
+export function buildROITable(avgWastePercent, avgTokensPerSession, sessionsPerDay) {
   const models = ['haiku', 'sonnet', 'opus'];
   const rows = [];
 
@@ -82,29 +111,23 @@ function formatROIReport(sessions, sessionsPerDay) {
   lines.push('  ╚══════════════════════════════════════════════════════════════╝');
   lines.push('');
 
-  let wastePercent, avgTokens, dataSource;
-
-  if (sessions.length > 0) {
-    const { totalTokens, wastedTokens } = analyzeWaste(sessions);
-    wastePercent = totalTokens > 0 ? (wastedTokens / totalTokens) * 100 : 35;
-    avgTokens = totalTokens / sessions.length;
-    dataSource = `${sessions.length} sessions (last 30 days)`;
-  } else {
-    wastePercent = 35;
-    avgTokens = 80000;
-    dataSource = 'Industry estimate (no local data yet)';
-  }
+  const { wastePercent, avgTokens, dataSource, measured } = deriveRoiInputs(sessions);
 
   lines.push(`  Data source: ${dataSource}`);
-  lines.push(`  Average waste: ${wastePercent.toFixed(1)}%`);
-  lines.push(`  Avg tokens/session: ${formatTokens(Math.round(avgTokens))}`);
+  lines.push(`  Average waste: ${wastePercent.toFixed(1)}%${measured ? '' : ' (assumed)'}`);
+  lines.push(`  Avg tokens/session: ${formatTokens(Math.round(avgTokens))}${measured ? '' : ' (assumed)'}`);
   lines.push(`  Sessions/day: ${sessionsPerDay}`);
+  if (!measured) {
+    lines.push('');
+    lines.push('  ⚠ Everything below is a projection from those assumptions, not your');
+    lines.push('    numbers. Re-run once CCO has tracked a few sessions with file reads.');
+  }
   lines.push('');
 
   // Savings overview
   const savedTokensPerSession = Math.round(avgTokens * (wastePercent / 100));
-  lines.push('  ── What CCO Saves You ──────────────────────────────────────');
-  lines.push(`  Per session:   ~${formatTokens(savedTokensPerSession)} tokens blocked/deduplicated`);
+  lines.push('  ── What CCO Can Save You ───────────────────────────────────');
+  lines.push(`  Per session:   ~${formatTokens(savedTokensPerSession)} tokens identified as waste`);
   lines.push(`  Per day:       ~${formatTokens(savedTokensPerSession * sessionsPerDay)} tokens`);
   lines.push(`  Per month:     ~${formatTokens(savedTokensPerSession * sessionsPerDay * 30)} tokens`);
   lines.push('');
@@ -130,7 +153,7 @@ function formatROIReport(sessions, sessionsPerDay) {
   // Context budget multiplier
   const multiplier = (1 / (1 - Math.min(99, wastePercent) / 100)).toFixed(1);
   lines.push('  ── Effective Context Multiplier ─────────────────────────────');
-  lines.push(`  CCO makes your context budget ${multiplier}x more effective`);
+  lines.push(`  Cutting that waste makes your context budget ${multiplier}x more effective`);
   lines.push(`  200K context → effectively ${formatTokens(Math.round(200000 * parseFloat(multiplier)))} of useful context`);
   lines.push(`  1M context   → effectively ${formatTokens(Math.round(1000000 * parseFloat(multiplier)))} of useful context`);
   lines.push('');
@@ -148,7 +171,9 @@ function formatROIReport(sessions, sessionsPerDay) {
 
 // ── CLI ────────────────────────────────────────────────────────────────────
 
-const args = process.argv.slice(2);
-const sessionsPerDay = parseInt(args[0]) || 5;
-const sessions = loadRecentSessions(30);
-console.log(formatROIReport(sessions, sessionsPerDay));
+// Guarded: importing this module for tests must not print a report or read
+// the user's real session directory.
+if (isMainModule(import.meta.url)) {
+  const sessionsPerDay = parseInt(process.argv[2]) || 5;
+  console.log(formatROIReport(loadRecentSessions(30), sessionsPerDay));
+}
