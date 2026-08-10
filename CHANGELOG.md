@@ -4,6 +4,9 @@
 
 ### Fix: `/cco-overhead mcp` told fresh installs to delete working MCP servers (#53)
 
+Reported by [@harvest316](https://github.com/harvest316), with the root cause,
+the on-disk verification, and the fix already in the report.
+
 On a fresh install the audit reported **every** configured MCP server as
 `0 calls` and printed a ready-to-run `claude mcp remove` for each — including
 servers in active, heavy use. The skill then offered to execute them.
