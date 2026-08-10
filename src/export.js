@@ -41,9 +41,16 @@ export function jsonForScript(value) {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
-/** Text safe inside a markdown table cell rendered as a code span. */
+/**
+ * Text safe inside a markdown table cell rendered as a code span.
+ * Backslashes go first: escaping `|` before `\` turns `a\|b` into `a\\|b`,
+ * where the pair reads as a literal backslash and the pipe splits the cell again.
+ */
 export function escapeMarkdownCell(value) {
-  return String(value ?? '').replace(/\|/g, '\\|').replace(/`/g, "'");
+  return String(value ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/`/g, "'");
 }
 
 export function buildMarkdown(stats, date) {

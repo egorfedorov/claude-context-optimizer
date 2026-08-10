@@ -2568,6 +2568,14 @@ describe('export: untrusted names never become markup', () => {
     assert.ok(!row.includes('`b|c'), 'unescaped pipe would split the cell');
   });
 
+  it('escapes backslashes before pipes, so a\\|b cannot split the cell', async () => {
+    const { escapeMarkdownCell } = await import('../src/export.js');
+    // Pipe-first ordering produced `a\\|b`: the pair reads as a literal
+    // backslash and the pipe is bare again.
+    assert.equal(escapeMarkdownCell('a\\|b'), 'a\\\\\\|b');
+    assert.equal(escapeMarkdownCell('plain.js'), 'plain.js');
+  });
+
   it('escapeHtml and jsonForScript handle empty input without throwing', async () => {
     const { escapeHtml, jsonForScript } = await import('../src/export.js');
     assert.equal(escapeHtml(undefined), '');
