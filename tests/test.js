@@ -1828,6 +1828,15 @@ describe('MCP usage audit', () => {
     assert.deepEqual(unused.map(s => s.name), ['ghost']);
     assert.equal(unused[0].calls, 0);
   });
+
+  // #53: a tracker that never saw an MCP call must not sentence servers to removal.
+  it('withholds unused verdicts until an MCP call was actually observed', async () => {
+    const { haveMcpEvidence } = await import('../src/overhead.js');
+    assert.equal(haveMcpEvidence({}, 25), false);          // many sessions, zero MCP data
+    assert.equal(haveMcpEvidence({ ghost: 0 }, 25), false); // key present, still no calls
+    assert.equal(haveMcpEvidence({ chrome: 2 }, 3), false); // real calls, too few sessions
+    assert.equal(haveMcpEvidence({ chrome: 2 }, 5), true);  // evidence + enough sessions
+  });
 });
 
 // ── v4.8.0 (#36): the decision logic that actually gates output ─────────────
