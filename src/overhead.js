@@ -19,7 +19,7 @@
  *   node src/overhead.js                      # last 10 sessions of this project
  */
 
-import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
+import { readFileSync, readdirSync, existsSync, statSync, openSync, fstatSync, closeSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import {
@@ -240,10 +240,14 @@ export function aggregateMcpUsage(sessionsDir = SESSIONS_DIR, sinceMs = Date.now
   try {
     for (const f of readdirSync(sessionsDir).filter(f => f.endsWith('.json'))) {
       const p = join(sessionsDir, f);
+      // stat and read through ONE handle: the recency check and the read must
+      // describe the same file, or a session rotated mid-scan skews the window.
+      let fd;
       try {
-        const mtimeMs = statSync(p).mtimeMs;
+        fd = openSync(p, 'r');
+        const mtimeMs = fstatSync(fd).mtimeMs;
         if (mtimeMs < sinceMs) continue;
-        const s = JSON.parse(readFileSync(p, 'utf-8'));
+        const s = JSON.parse(readFileSync(fd, 'utf-8'));
         sessions++;
         if (!oldestMs || mtimeMs < oldestMs) oldestMs = mtimeMs;
         for (const [tool, d] of Object.entries(s.tools || {})) {
@@ -252,6 +256,7 @@ export function aggregateMcpUsage(sessionsDir = SESSIONS_DIR, sinceMs = Date.now
           if (server) usage[server] = (usage[server] || 0) + (d.calls || 0);
         }
       } catch { /* skip unreadable session */ }
+      finally { if (fd !== undefined) try { closeSync(fd); } catch { /* already gone */ } }
     }
   } catch { /* no sessions dir */ }
   return { usage, sessions, oldestMs };
