@@ -915,7 +915,22 @@ context-optimizer is **100% free and open source**. No paywalls, no premium tier
 
 ## Contributing
 
-PRs welcome: better token counting (AST-based), VSCode heatmap overlay, team pattern sharing, `/cost` integration, multi-language CLAUDE.md analysis.
+PRs welcome: better token counting (AST-based), VS Code heatmap overlay, `/cost` integration, multi-language CLAUDE.md analysis, Windows-native hooks. See [ROADMAP.md](ROADMAP.md) for what's planned and [CONTRIBUTING.md](CONTRIBUTING.md) for how to start.
+
+## Credits
+
+GitHub's [contributors graph](https://github.com/egorfedorov/claude-context-optimizer/graphs/contributors) only counts commits, so the people who found the bugs don't appear in it. They should. Every entry below changed the tool:
+
+| | Found | Shipped |
+|---|---|---|
+| **[@GesPacClinica](https://github.com/GesPacClinica)** | [#1](https://github.com/egorfedorov/claude-context-optimizer/issues/1) — the very first issue: a clean install on fresh Linux Mint crashed Node on every hook, because `npx skills add` puts `CLAUDE_PLUGIN_ROOT` somewhere with no `src/` | `fd5dc7e` — every hook now tests for the file before running it |
+| **[@zwrose](https://github.com/zwrose)** | [#29](https://github.com/egorfedorov/claude-context-optimizer/pull/29) — `/cco-report` crashed outright, and its cost table printed `$NaN` | sent the fix themselves, as a PR |
+| **[@Reapper-Stack](https://github.com/Reapper-Stack)** | [#46](https://github.com/egorfedorov/claude-context-optimizer/issues/46) — on Windows every transcript lookup pointed at a malformed path, so `/cco-overhead` always claimed "no transcripts found" — reported with the root cause | v4.7.0 Windows-correct paths |
+| **[@harvest316](https://github.com/harvest316)** | [#53](https://github.com/egorfedorov/claude-context-optimizer/issues/53) — `/cco-overhead mcp` told fresh installs to delete MCP servers it had never actually watched; the cold-start guard counted sessions, not evidence — reported with the root cause, the on-disk verification, and the fix | v4.9.1 |
+
+A report that names the root cause is worth more than one that just names the symptom — #46 and #53 both arrived that way, and #29 arrived as the patch itself.
+
+Found something? [Open an issue](https://github.com/egorfedorov/claude-context-optimizer/issues/new) — you'll end up on this list.
 
 ## License
 
