@@ -37,9 +37,13 @@ called:
 node ${CLAUDE_PLUGIN_ROOT}/src/overhead.js mcp
 ```
 
-If it lists unused servers with `claude mcp remove ...` commands, OFFER to run
-them for the user (each removal repays in every future session; `claude mcp
+Only if the report actually prints `claude mcp remove ...` commands, OFFER to
+run them for the user (each removal repays in every future session; `claude mcp
 add` restores any time). Only run them after the user agrees.
+
+If a server is listed as `? not observed`, the tracker has no MCP data yet —
+that is not a verdict. Never suggest removing those servers, and never
+construct a `claude mcp remove` command the report did not print.
 
 Present the output to the user as-is (it is already formatted). If the report
 says no transcripts were found, explain that the audit needs at least one

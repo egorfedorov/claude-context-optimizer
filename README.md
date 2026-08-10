@@ -15,6 +15,10 @@
   <img src="https://img.shields.io/badge/telemetry-none-critical?style=flat-square" alt="No Telemetry"/>
 </p>
 
+<p align="center">
+  <a href="https://github.com/hesreallyhim/awesome-claude-code"><img src="https://awesome.re/mentioned-badge.svg" alt="Mentioned in Awesome Claude Code"/></a>
+</p>
+
 ---
 
 ## The Problem

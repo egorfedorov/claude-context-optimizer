@@ -236,14 +236,16 @@ export function collectConfiguredMcpServers(cwd, home = homedir()) {
 /** Sum mcp__<server>__* calls across tracked sessions newer than sinceMs. */
 export function aggregateMcpUsage(sessionsDir = SESSIONS_DIR, sinceMs = Date.now() - 30 * 86400_000) {
   const usage = {};
-  let sessions = 0;
+  let sessions = 0, oldestMs = 0;
   try {
     for (const f of readdirSync(sessionsDir).filter(f => f.endsWith('.json'))) {
       const p = join(sessionsDir, f);
       try {
-        if (statSync(p).mtimeMs < sinceMs) continue;
+        const mtimeMs = statSync(p).mtimeMs;
+        if (mtimeMs < sinceMs) continue;
         const s = JSON.parse(readFileSync(p, 'utf-8'));
         sessions++;
+        if (!oldestMs || mtimeMs < oldestMs) oldestMs = mtimeMs;
         for (const [tool, d] of Object.entries(s.tools || {})) {
           if (!tool.startsWith('mcp__')) continue;
           const server = tool.split('__')[1] || '';
@@ -252,7 +254,7 @@ export function aggregateMcpUsage(sessionsDir = SESSIONS_DIR, sinceMs = Date.now
       } catch { /* skip unreadable session */ }
     }
   } catch { /* no sessions dir */ }
-  return { usage, sessions };
+  return { usage, sessions, oldestMs };
 }
 
 /** Split configured servers into used/unused given observed calls. Pure. */
@@ -266,14 +268,25 @@ export function splitMcpByUsage(configured, usage) {
   return { used, unused };
 }
 
-export function buildMcpReport(cwd) {
+/**
+ * Can a configured-but-unobserved server honestly be called "unused"? Pure.
+ * Zero observed MCP calls anywhere means the tracker has no MCP data — absence
+ * of evidence, not evidence of absence — so no server may be judged unused.
+ */
+export function haveMcpEvidence(usage, sessions) {
+  const totalCalls = Object.values(usage).reduce((a, b) => a + b, 0);
+  return sessions >= 5 && totalCalls > 0;
+}
+
+export function buildMcpReport(cwd, now = Date.now()) {
   const configured = collectConfiguredMcpServers(cwd);
-  const { usage, sessions } = aggregateMcpUsage();
+  const { usage, sessions, oldestMs } = aggregateMcpUsage();
   const { used, unused } = splitMcpByUsage(configured, usage);
+  const observedDays = oldestMs ? Math.max(1, Math.round((now - oldestMs) / 86400_000)) : 0;
 
   const L = [];
   L.push('');
-  L.push('  MCP SERVER USAGE — last 30 days');
+  L.push(`  MCP SERVER USAGE — ${observedDays ? `last ${observedDays} day(s) observed` : 'no tracked sessions yet'}`);
   L.push('  ' + '─'.repeat(60));
   if (!configured.length) {
     L.push('  No MCP servers configured (checked ~/.claude.json and ./.mcp.json).');
@@ -284,10 +297,13 @@ export function buildMcpReport(cwd) {
   for (const s of used) {
     L.push(`    ✔ ${s.name.padEnd(28)} ${String(s.calls).padStart(6)} calls   (${s.scope})`);
   }
+  const evidence = haveMcpEvidence(usage, sessions);
   for (const s of unused) {
-    L.push(`    ✖ ${s.name.padEnd(28)}      0 calls   (${s.scope}) — schemas still load every session`);
+    L.push(evidence
+      ? `    ✖ ${s.name.padEnd(28)}      0 calls   (${s.scope}) — schemas still load every session`
+      : `    ? ${s.name.padEnd(28)}   not observed  (${s.scope}) — no data yet, not a verdict`);
   }
-  if (unused.length && sessions >= 5) {
+  if (unused.length && evidence) {
     L.push('');
     L.push('  Fix — remove what you never call (each removal repays in EVERY session):');
     for (const s of unused) {
@@ -296,7 +312,10 @@ export function buildMcpReport(cwd) {
     L.push('  (re-add any time with `claude mcp add`)');
   } else if (unused.length) {
     L.push('');
-    L.push(`  Only ${sessions} tracked session(s) so far — verdicts firm up at 5+. Re-run later.`);
+    L.push(Object.values(usage).reduce((a, b) => a + b, 0) === 0
+      ? '  No MCP calls observed yet — tracking usually started recently. Verdicts appear'
+        + '\n  once CCO has seen MCP activity; nothing here is a reason to remove a server.'
+      : `  Only ${sessions} tracked session(s) so far — verdicts firm up at 5+. Re-run later.`);
   } else {
     L.push('');
     L.push('  ✅ Every configured server was actually used. Nothing to trim.');

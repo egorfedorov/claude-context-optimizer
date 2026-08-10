@@ -1,5 +1,36 @@
 # Changelog
 
+## 4.9.1 — 2026-08-10
+
+### Fix: `/cco-overhead mcp` told fresh installs to delete working MCP servers (#53)
+
+On a fresh install the audit reported **every** configured MCP server as
+`0 calls` and printed a ready-to-run `claude mcp remove` for each — including
+servers in active, heavy use. The skill then offered to execute them.
+
+The cold-start guard existed but asked the wrong question: it counted session
+*files* (`sessions >= 5`), not whether a single `mcp__*` call had ever been
+observed. A handful of short sessions cleared the bar while carrying zero MCP
+evidence, so a tracker that had been running for twenty minutes rendered a
+confident "last 30 days" verdict.
+
+- New `haveMcpEvidence(usage, sessions)`: a server may be judged unused only
+  when the tracker has recorded **at least one MCP call somewhere**. Zero
+  observed calls is absence of evidence, not evidence of absence.
+- Unobserved servers now render `? not observed — no data yet, not a verdict`
+  instead of `✖ 0 calls`, and **no removal command is printed at all**.
+- The header states the **real observed span** ("last 3 day(s) observed")
+  instead of a fixed "last 30 days" the data may not cover.
+- `cco-overhead` skill: never suggest removing a `? not observed` server, and
+  never construct a `claude mcp remove` the report did not print.
+
+The asymmetry is the point — a genuinely unused server and one the tracker
+never watched look identical in the data, and only one is safe to remove.
+Failing closed costs the user nothing; failing open costs working config.
+
+### Docs
+- README: Awesome Claude Code badge (#54).
+
 ## 4.9.0 — 2026-08-05
 
 ### Self-learning tool costs (#38)
