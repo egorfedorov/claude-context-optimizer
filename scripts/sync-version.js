@@ -83,15 +83,30 @@ if (!changed && !drift.length) console.log(`✓ versions already in sync: ${pkg.
 
 // External marketplace repo — read-only check, never fails the run.
 const EXT = 'egorfedorov/claude-plugins';
+// Read through the API, NOT raw.githubusercontent: the raw CDN kept serving a
+// stale `x-cache: HIT` to fetch() long after the bump landed — through
+// cache-busting query strings and no-cache headers alike — so the check
+// reported a bump it had just been told to make. The API reflects the commit
+// immediately. Falls back to raw (with the caveat) if the API is unreachable.
+async function fetchExtVersion() {
+  const opts = { signal: AbortSignal.timeout(4000), headers: { 'User-Agent': 'cco-sync-version' } };
+  try {
+    const res = await fetch(`https://api.github.com/repos/${EXT}/contents/.claude-plugin/marketplace.json`,
+      { ...opts, headers: { ...opts.headers, Accept: 'application/vnd.github.raw' } });
+    if (!res.ok) throw new Error(`api ${res.status}`);
+    return { data: JSON.parse(await res.text()), stale: false };
+  } catch {
+    const res = await fetch(`https://raw.githubusercontent.com/${EXT}/main/.claude-plugin/marketplace.json`, opts);
+    return { data: await res.json(), stale: true };
+  }
+}
+
 try {
-  const res = await fetch(
-    `https://raw.githubusercontent.com/${EXT}/main/.claude-plugin/marketplace.json`,
-    { signal: AbortSignal.timeout(4000) }
-  );
-  const ext = (await res.json()).plugins?.find(p => p.name === pkg.name);
+  const { data, stale } = await fetchExtVersion();
+  const ext = data.plugins?.find(p => p.name === pkg.name);
   if (ext && ext.version !== pkg.version) {
     console.log(`⚠ ${EXT} still lists v${ext.version} — bump its .claude-plugin/marketplace.json to v${pkg.version}`);
-    console.log(`  (raw.githubusercontent is CDN-cached for a few minutes — verify with \`gh api\` before believing this)`);
+    if (stale) console.log('  (read via the CDN, which can serve a stale copy — confirm with `gh api` before believing it)');
   } else if (ext) {
     console.log(`✓ ${EXT} marketplace in sync: v${ext.version}`);
   }
