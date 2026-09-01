@@ -27,8 +27,12 @@ import { buildIgnoreSuggestions } from '../src/context-shield.js';
 import { updateExploreStreak } from '../src/tracker.js';
 import { computeCacheAwareCost, emaCalibration } from '../src/utils.js';
 import {
-  emptyState, addTask, completeActiveTask, getActiveTask, taskSpend, tasksForProject
+  emptyState, addTask, completeActiveTask, getActiveTask, taskSpend, tasksForProject,
+  applyStatePatch, patchActiveTask, renderRehydration, shouldRehydrate, TASK_STATE_MAX_CHARS
 } from '../src/tasks.js';
+import { getCacheRates, CACHE_WRITE_1H_MULT, normalizeModelId as normModel } from '../src/utils.js';
+import { cacheTtlOf } from '../src/transcript-usage.js';
+import { cacheTtlMinutes } from '../src/budget.js';
 import {
   emptyLedger, shouldEmit, recordEmit, DEFAULT_NOTICE_CAP
 } from '../src/notices.js';
@@ -1622,7 +1626,7 @@ describe('cache economics', () => {
   it('totals usage across all turns', () => {
     const e = parseEconomicsFromLines([econLine(10, 0, 30000, 500), econLine(10, 30000, 5000, 400)]);
     assert.equal(e.turns, 2);
-    assert.deepEqual(e.totals, { input: 20, cacheRead: 30000, cacheCreation: 35000, output: 900 });
+    assert.deepEqual(e.totals, { input: 20, cacheRead: 30000, cacheCreation: 35000, cacheCreation1h: 0, output: 900 });
     assert.equal(e.breaks.length, 0);
   });
 
@@ -1770,9 +1774,14 @@ describe('updateExploreStreak', () => {
 describe('normalizeModelId', () => {
   it('maps raw session ids to pricing keys', async () => {
     const { normalizeModelId } = await import('../src/utils.js');
-    assert.equal(normalizeModelId('claude-fable-5'), 'fable');
-    assert.equal(normalizeModelId('claude-fable-5[1m]'), 'fable');
-    assert.equal(normalizeModelId('claude-mythos-5'), 'fable');
+    assert.equal(normalizeModelId('claude-fable-5'), 'fable-5');
+    assert.equal(normalizeModelId('claude-fable-5[1m]'), 'fable-5');
+    assert.equal(normalizeModelId('claude-mythos-5'), 'fable-5');
+    assert.equal(normalizeModelId('claude-fable-5-1'), 'fable-5.1');
+    assert.equal(normalizeModelId('claude-fable-5-1[1m]'), 'fable-5.1');
+    assert.equal(normalizeModelId('claude-mythos-5-1'), 'fable-5.1');
+    assert.equal(normalizeModelId('claude-opus-5'), 'opus-5');
+    assert.equal(normalizeModelId('claude-opus-4-5-20251101'), 'opus', 'opus 4.5 is not opus 5');
     assert.equal(normalizeModelId('claude-opus-4-8'), 'opus-4.8');
     assert.equal(normalizeModelId('claude-sonnet-5'), 'sonnet-5');
     assert.equal(normalizeModelId('claude-haiku-4-5-20251001'), 'haiku');
@@ -2627,5 +2636,140 @@ describe('roi: provenance of the waste figure', () => {
     for (const r of rows) {
       for (const v of Object.values(r)) assert.ok(!/NaN|undefined/.test(String(v)), `bad cell: ${v}`);
     }
+  });
+});
+
+// ── v4.10.0: Claude 5 lineup, 1h cache TTL, task execution state ────────────
+
+describe('v4.10 model lineup', () => {
+  it('fable-5.1 is $10/$50, 1M, with the 0.025× cache-read rate', () => {
+    const c = getModelCost('fable-5.1');
+    assert.equal(c.input, 10);
+    assert.equal(c.output, 50);
+    assert.equal(c.contextWindow, 1_000_000);
+    assert.equal(getCacheRates('fable-5.1').read, 0.025);
+    assert.equal(getCacheRates('fable').read, 0.025, '"fable" means the newest Fable');
+  });
+
+  it('fable-5 keeps the standard 0.1× cache-read rate at the same per-token price', () => {
+    const c = getModelCost('fable-5');
+    assert.equal(c.input, 10);
+    assert.equal(getCacheRates('fable-5').read, 0.1);
+  });
+
+  it('opus-5 is priced at the Opus tier; sonnet-5 at $2/$10', () => {
+    assert.deepEqual([getModelCost('opus-5').input, getModelCost('opus-5').output], [5, 25]);
+    assert.deepEqual([getModelCost('sonnet-5').input, getModelCost('sonnet-5').output], [2, 10]);
+    assert.equal(normModel('claude-sonnet-5'), 'sonnet-5');
+    assert.equal(normModel('claude-sonnet-4-6'), 'sonnet');
+  });
+
+  it('every model without an override reads cache at 10%', () => {
+    for (const m of ['opus-5', 'opus-4.8', 'sonnet-5', 'haiku-4.5']) {
+      assert.equal(getCacheRates(m).read, 0.1, m);
+    }
+  });
+});
+
+describe('v4.10 1-hour cache TTL', () => {
+  const line = (u) => JSON.stringify({ message: { model: 'claude-fable-5-1', usage: u } });
+  const base = { input_tokens: 10, cache_read_input_tokens: 0, output_tokens: 5 };
+
+  it('getCacheRates prices 1h writes at 2×, 5m at 1.25×', () => {
+    assert.equal(getCacheRates('opus-5', '1h').write, CACHE_WRITE_1H_MULT);
+    assert.equal(getCacheRates('opus-5', '1h').write, 2);
+    assert.equal(getCacheRates('opus-5', '5m').write, 1.25);
+    assert.equal(getCacheRates('opus-5').write, 1.25, 'default is the 5m rate');
+  });
+
+  it('cacheTtlOf detects 1h from cache_creation.ephemeral_1h_input_tokens', () => {
+    assert.equal(cacheTtlOf({ ...base, cache_creation: { ephemeral_1h_input_tokens: 100, ephemeral_5m_input_tokens: 0 } }), '1h');
+    assert.equal(cacheTtlOf({ ...base, cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 100 } }), '5m');
+    assert.equal(cacheTtlOf(base), '5m', 'no breakdown → 5m');
+  });
+
+  it('parseUsageFromLines reports the session TTL and model', () => {
+    const u = parseUsageFromLines([line({ ...base, cache_creation_input_tokens: 44094,
+      cache_creation: { ephemeral_1h_input_tokens: 44094, ephemeral_5m_input_tokens: 0 } })]);
+    assert.equal(u.cacheTtl, '1h');
+    assert.equal(u.model, 'claude-fable-5-1');
+    assert.equal(u.contextTokens, 44104);
+  });
+
+  it('parseEconomicsFromLines splits the 1h share of cache writes', () => {
+    const e = parseEconomicsFromLines([
+      line({ ...base, cache_creation_input_tokens: 30000, cache_creation: { ephemeral_1h_input_tokens: 30000 } }),
+      line({ ...base, cache_read_input_tokens: 30000, cache_creation_input_tokens: 5000 }),
+    ]);
+    assert.equal(e.totals.cacheCreation, 35000);
+    assert.equal(e.totals.cacheCreation1h, 30000);
+  });
+
+  it('computeCacheAwareCost bills 1h writes at 2× and Fable 5.1 reads at 0.025×', () => {
+    // fable-5.1: 1M reads × $10 × 0.025 = $0.25; 100K 1h writes × $10 × 2 = $2; 10K out × $50 = $0.5
+    const c = computeCacheAwareCost(
+      { input: 0, cacheRead: 1_000_000, cacheCreation: 100_000, cacheCreation1h: 100_000, output: 10_000 }, 'fable-5.1');
+    assert.ok(Math.abs(c.real - 2.75) < 1e-9, `got ${c.real}`);
+    // opus-5, half the writes on 1h: 50K×5×1.25 + 50K×5×2 = 0.3125 + 0.5
+    const o = computeCacheAwareCost(
+      { input: 0, cacheRead: 0, cacheCreation: 100_000, cacheCreation1h: 50_000, output: 0 }, 'opus-5');
+    assert.ok(Math.abs(o.real - 0.8125) < 1e-9, `got ${o.real}`);
+  });
+
+  it('cache-break guard waits an hour on 1h sessions, five minutes on 5m', () => {
+    assert.equal(cacheTtlMinutes('1h'), 60);
+    assert.equal(cacheTtlMinutes('5m'), 5);
+    const now = Date.now();
+    const args = { lastEventAt: now - 20 * 60_000, realContextTokens: 100_000, now };
+    assert.equal(shouldWarnCacheBreak({ ...args, minGapMin: cacheTtlMinutes('5m') }), true);
+    assert.equal(shouldWarnCacheBreak({ ...args, minGapMin: cacheTtlMinutes('1h') }), false,
+      'a 20-min pause is not a break when the cache lives an hour');
+  });
+});
+
+describe('v4.10 task execution state (SKILL.state)', () => {
+  it('applyStatePatch sets keys and deletes on null', () => {
+    const r = applyStatePatch({ goal: 'ship', step: 1, tmp: 'x' }, { step: 2, tmp: null, next: 'test' });
+    assert.deepEqual(r.state, { goal: 'ship', step: 2, next: 'test' });
+  });
+
+  it('applyStatePatch rejects non-object patches and oversize states', () => {
+    assert.ok(applyStatePatch({}, [1, 2]).error);
+    assert.ok(applyStatePatch({}, 'nope').error);
+    const big = applyStatePatch({}, { blob: 'x'.repeat(TASK_STATE_MAX_CHARS) });
+    assert.match(big.error, /cap/);
+    assert.equal(applyStatePatch({}, { ok: 'x'.repeat(100) }).error, undefined);
+  });
+
+  it('patchActiveTask updates only the active task in scope and stamps it', () => {
+    let s = emptyState();
+    s = addTask(s, { name: 'A', project: '/p', tokensNow: 0 }).state;
+    const r = patchActiveTask(s, { project: '/p', patch: { goal: 'A done right' }, stamp: 'T1' });
+    assert.equal(r.error, undefined);
+    assert.deepEqual(r.task.state, { goal: 'A done right' });
+    assert.equal(r.task.stateUpdatedAt, 'T1');
+    assert.equal(getActiveTask(r.state, { project: '/p' }).state.goal, 'A done right');
+    assert.match(patchActiveTask(s, { project: '/other', patch: { a: 1 } }).error, /no active task/);
+  });
+
+  it('renderRehydration is bounded, names the task, and is null with nothing to say', () => {
+    let s = emptyState();
+    s = addTask(s, { name: 'Refactor auth', project: '/p' }).state;
+    assert.equal(renderRehydration(getActiveTask(s, { project: '/p' })), null, 'empty state → inject nothing');
+    const r = patchActiveTask(s, { project: '/p', patch: { done: ['read auth.ts'], next: 'write tests' } });
+    const block = renderRehydration(r.task);
+    assert.match(block, /Active task #1: Refactor auth/);
+    assert.match(block, /"next":"write tests"/);
+    assert.ok(block.length < TASK_STATE_MAX_CHARS + 400, 'block stays O(1) in the step count');
+    const done = completeActiveTask(r.state, { project: '/p' }).task;
+    assert.equal(renderRehydration(done), null, 'finished tasks are not re-injected');
+  });
+
+  it('shouldRehydrate only after compact or resume', () => {
+    assert.equal(shouldRehydrate('compact'), true);
+    assert.equal(shouldRehydrate('resume'), true);
+    assert.equal(shouldRehydrate('startup'), false);
+    assert.equal(shouldRehydrate('clear'), false);
+    assert.equal(shouldRehydrate(undefined), false);
   });
 });

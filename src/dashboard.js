@@ -23,7 +23,7 @@ import { existsSync, readFileSync } from 'fs';
 import {
   SESSIONS_DIR, BUDGET_STATE_DIR, READ_CACHE_DIR, PROMPTS_DIR,
   loadJSON, loadConfig, getEffectiveBudget, getModelCost, formatTokens, displayPath,
-  getLatestSessionId, isMainModule, computeCacheAwareCost, CACHE_WRITE_MULT, CACHE_READ_MULT,
+  getLatestSessionId, isMainModule, computeCacheAwareCost, getCacheRates,
   updateCalibrationFromSession, getSessionModel, normalizeModelId,
 } from './utils.js';
 import { loadTasks, getActiveTask, taskSpend, tasksForProject } from './tasks.js';
@@ -48,7 +48,7 @@ export function gather(sessionId) {
   // Prefer the model the SESSION actually runs on (detected by the budget hook
   // from the transcript) over the static config value.
   const rawSessionModel = getSessionModel(sessionId);
-  const model = normalizeModelId(rawSessionModel) || config.model || 'opus-4.8';
+  const model = normalizeModelId(rawSessionModel) || config.model || 'opus-5';
   const cost = getModelCost(model);
   const effectiveBudget = getEffectiveBudget(config, rawSessionModel);
 
@@ -63,8 +63,9 @@ export function gather(sessionId) {
   const outTok = (budget && budget.outputTokensEstimated) || 0;
 
   // Cache economics — exact usage totals from the full transcript, priced at
-  // real cache rates (reads 10%, writes 125% of input). This is what the
-  // session actually bills; the estimate below stays as the fallback.
+  // real cache rates (reads 10% — 2.5% on Fable 5.1; writes 125%, or 200% for
+  // 1-hour entries). This is what the session actually bills; the estimate
+  // below stays as the fallback.
   const econ = budget && budget.transcriptPath
     ? readTranscriptEconomics(budget.transcriptPath) : null;
   let dollars, cacheEcon = null;
@@ -73,14 +74,17 @@ export function gather(sessionId) {
     dollars = costs.real;
     const inputSide = econ.totals.input + econ.totals.cacheRead + econ.totals.cacheCreation;
     const breakTokens = econ.breaks.reduce((s, b) => s + b.lostTokens, 0);
+    const ttl = econ.totals.cacheCreation1h > 0 ? '1h' : '5m';
+    const rates = getCacheRates(model, ttl);
     cacheEcon = {
       hitPct: inputSide > 0 ? Math.round((econ.totals.cacheRead / inputSide) * 100) : 0,
       savings: costs.cacheSavings,
       naive: costs.naive,
       breaks: econ.breaks.length,
       breakTokens,
-      // A break re-writes cached tokens at 1.25× instead of re-reading at 0.1×.
-      breakCost: (breakTokens / 1e6) * cost.input * (CACHE_WRITE_MULT - CACHE_READ_MULT),
+      // A break re-writes cached tokens at the write rate instead of re-reading.
+      breakCost: (breakTokens / 1e6) * cost.input * (rates.write - rates.read),
+      ttl,
       turns: econ.turns,
     };
   } else {

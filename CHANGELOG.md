@@ -1,5 +1,71 @@
 # Changelog
 
+## 4.10.0 — 2026-09-02
+
+Three things: the price table catches up with the Claude 5 lineup, the cache
+math catches up with the 1-hour TTL Claude Code actually uses, and tasks gain a
+bounded execution state that survives `/compact` — the piece of Google/Purdue's
+SKILL.state that a plugin can honestly apply.
+
+### Claude 5 lineup: Fable 5.1, Opus 5, Sonnet 5
+
+`claude-fable-5-1` and `claude-opus-5` are what sessions report today, and
+neither had a pricing row. Fable/Mythos sessions were priced at the Opus tier
+("until Anthropic announces") — they cost twice that. Sonnet 5 was priced as
+Sonnet 4.6; it is cheaper.
+
+| key | $/M in / out | cache read | window |
+|---|---|---|---|
+| `fable-5.1` (alias `fable`), Mythos 5.1 | 10 / 50 | **0.025×** | 1M |
+| `fable-5`, Mythos 5 | 10 / 50 | 0.1× | 1M |
+| `opus-5` (alias `opus`, new default fallback) | 5 / 25 | 0.1× | 1M |
+| `sonnet-5` | **2 / 10** | 0.1× | 1M |
+
+`normalizeModelId` now tells Fable 5.1 from Fable 5 (they share a per-token
+price but not a cache-read rate) and Opus 5 from Opus 4.5. Per-model
+`cacheRead` overrides flow through `getCacheRates()`; every dollar figure in
+`/cco`, the budget hook and `/cco-overhead` reads from it.
+
+### 1-hour cache TTL: writes at 2×, breaks after an hour
+
+Every recent transcript here carries
+`usage.cache_creation.ephemeral_1h_input_tokens` — Claude Code keeps the
+prompt cache alive for an hour on these sessions. CCO priced every write at the
+5-minute 1.25× rate (real: 2×) and told you the cache "went cold (5-min TTL)"
+after any 5-minute pause, when it had 55 minutes left. Both were wrong in the
+direction of a number we could not defend.
+
+- `parseEconomicsFromLines` splits the 1h share of cache writes; the session
+  bill prices it at 2×.
+- The budget hook reads the session's TTL from the transcript. On 1h sessions
+  the cache-break guard waits 60 minutes and names the right TTL and the right
+  (write − read) cost when it does fire.
+- `/cco-overhead` prices the baseline write at the TTL the latest session used.
+
+### Task execution state (SKILL.state, where it applies)
+
+SKILL.state replaces the agent's growing history with instructions + a
+structured state + the latest observation, so the prompt is O(1) in the step
+count (Google/Purdue report ~50× fewer tokens and higher accuracy on 200-step
+tasks). A Claude Code plugin cannot replace the harness's history — and with
+prompt caching, replayed history costs 0.1× (0.025× on Fable 5.1), so the
+dollar headline does not transfer. What does transfer is the moment history is
+*replaced*: `/compact`. Its summary is free-form and lossy; a bounded state is
+exact.
+
+- `/cco-task patch '{"key": value, "gone": null}'` — SKILL.state-style patch
+  semantics on the active task; `state` prints it. Capped at 4,000 chars
+  (~1K tokens) so it never grows with the task; over the cap the patch is
+  rejected with instructions to prune.
+- The SessionStart hook re-injects the active task's state after `compact`
+  and on `resume` — never on a fresh start — as an authoritative block.
+- The skill documents state discipline (facts to continue, not a log) and
+  recommends the state as the delegation brief for subagents.
+
+### Tests
+296 → 311: lineup prices and ids, cache rates per model/TTL, 1h split in the
+economics parser, TTL-aware break guard, state patching/cap/rehydration gating.
+
 ## 4.9.2 — 2026-08-10
 
 Three modules that shape what Claude reads, what you share, and what you

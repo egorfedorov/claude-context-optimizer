@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Context Optimizer — 63% Fewer Tokens + Better Prompts for Claude Opus 4.8</title>
-<meta name="description" content="Tuned for Claude Opus 4.8 (full 1M context at standard price). Prompt Coach grades and improves your prompts. Smart Context Pack picks optimal files. Read Cache blocks redundant reads. 63% token savings, benchmarked.">
-<meta property="og:title" content="Context Optimizer — Opus 4.8 ready, 63% fewer tokens, better prompts">
+<title>Context Optimizer — 63% Fewer Tokens + Better Prompts for Claude 5 (Fable 5.1 / Opus 5)</title>
+<meta name="description" content="Tuned for the Claude 5 lineup — Fable 5.1, Opus 5, Sonnet 5 — with real cache pricing (1h TTL, per-model read rates). Prompt Coach grades and improves your prompts. Smart Context Pack picks optimal files. Read Cache blocks redundant reads. 63% token savings, benchmarked.">
+<meta property="og:title" content="Context Optimizer — Claude 5 ready, 63% fewer tokens, better prompts">
 <meta property="og:description" content="Prompt Coach + Smart Pack + Read Cache. 1M context aware. Benchmarked at 63% savings. Zero telemetry, MIT.">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>">
@@ -836,13 +836,13 @@
   <div class="container">
     <div class="badge">
       <div class="badge-dot"></div>
-      v4.9.2 &middot; Claude 5 ready &middot; model auto-detect &middot; Benchmarked
+      v4.10.0 &middot; Claude 5 ready &middot; model auto-detect &middot; Benchmarked
     </div>
     <div class="hero-stat">63%</div>
     <h1>fewer tokens. <span class="highlight">Sharper prompts.</span><br>Works with every Claude.</h1>
     <p class="hero-sub">
       Read Cache blocks redundant reads. <strong>Prompt Coach</strong> grades and rewrites weak prompts before they cost you context.
-      <strong>Smart Pack</strong> picks the optimal file set for your task. The session's real model — Fable&nbsp;5, Opus, Sonnet, Haiku —
+      <strong>Smart Pack</strong> picks the optimal file set for your task. The session's real model — Fable&nbsp;5.1, Opus&nbsp;5, Sonnet&nbsp;5, Haiku —
       is detected from the transcript, so windows and pricing are always right.
       Measured at 63% token savings across 7 reproducible scenarios.
     </p>
@@ -1000,7 +1000,7 @@
       </tbody>
     </table>
 
-    <p class="roi-note">* Individual developer. For a team of 10 on Opus: <strong style="color:var(--green)">$2,520/year</strong> saved. Opus 4.8 delivers the full 1M context window at $5/$25 per M — no premium tier.</p>
+    <p class="roi-note">* Individual developer. For a team of 10 on Opus: <strong style="color:var(--green)">$2,520/year</strong> saved. Opus 5 delivers the full 1M context window at $5/$25 per M — no premium tier; Fable 5.1 is $10/$50 with cache reads at 0.025×.</p>
 
     <!-- Context multiplier -->
     <div class="multiplier-grid" style="margin-top:48px;">
@@ -1194,7 +1194,7 @@
         <div class="feature-icon blue">&#x1F9ED;</div>
         <h3>Model auto-detection</h3>
         <p>
-          Fable&nbsp;5, Opus, Sonnet, Haiku — detected per session from the transcript,
+          Fable&nbsp;5.1, Opus&nbsp;5, Sonnet&nbsp;5, Haiku — detected per session from the transcript,
           <strong>zero config</strong>. Switch <code>/model</code> mid-day and nothing miscalibrates;
           <code>config.model</code> is only the fallback. Claude&nbsp;5 family in the pricing table.
         </p>
@@ -1316,7 +1316,7 @@
         <h3>Real Cost Tracking</h3>
         <p>
           Budget monitor now estimates input <strong>and output</strong> tokens separately
-          and uses each model's real prices (Opus 4.8: $5/$25, Sonnet 4.6: $3/$15, Haiku 4.5: $1/$5).
+          and uses each model's real prices (Fable 5.1: $10/$50, Opus 5: $5/$25, Sonnet 5: $2/$10, Haiku 4.5: $1/$5) and real cache rates (1h writes at 2×).
           You see actual cost — not just half of it.
         </p>
       </div>

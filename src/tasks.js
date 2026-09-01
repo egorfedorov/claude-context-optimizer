@@ -11,16 +11,30 @@
  * Storage: one JSON file (TASKS_FILE), a flat list of tasks scoped by project +
  * session. At most one task is "active" per (project, session) at a time.
  *
+ * Execution state (v4.10, after SKILL.state — Google/Purdue, 2026): each task
+ * carries a small JSON `state` that Claude updates with PATCHES (set keys,
+ * `null` deletes) instead of re-deriving progress from the transcript. It is
+ * capped in size, so it stays O(1) however long the task runs, and it is
+ * re-injected verbatim after /compact and on resume — the one moment where a
+ * plugin can replace "re-read the history" with "read the state".
+ *
  * The core logic is pure (no I/O) so it is unit-testable; loadTasks/saveTasks
  * wrap it with disk access.
  */
 
+import { readFileSync } from 'fs';
 import {
   TASKS_FILE, loadJSON, saveJSON, ensureDataDirs, isMainModule,
   formatTokens, getModelCost, loadConfig, getLatestSessionId, getSessionTokenTotal
 } from './utils.js';
 
 const STATE_VERSION = 1;
+
+// Bound on the serialized task state. SKILL.state's whole point is a prompt
+// that does not grow with the step count; ~1K tokens is enough for a goal,
+// a done-list, open questions and the next action. Over the cap the patch is
+// rejected and the caller is told to prune (set finished keys to null).
+export const TASK_STATE_MAX_CHARS = 4000;
 
 export function emptyState() {
   return { version: STATE_VERSION, tasks: [], nextId: 1 };
@@ -71,6 +85,8 @@ export function addTask(state, { name, project = null, sessionId = null, tokensN
     tokensAtEnd: null,
     packedFiles: Array.isArray(files) ? files.slice(0, 200) : [],
     note: '',
+    state: {},
+    stateUpdatedAt: null,
   };
   next.tasks.push(task);
   next.nextId = id + 1;
@@ -86,6 +102,60 @@ export function completeActiveTask(state, { project = null, sessionId = null, to
   const done = { ...active, status: 'done', tokensAtEnd: tokensNow, completedAt: stamp, note: note || active.note };
   next.tasks[idx] = done;
   return { state: next, task: done };
+}
+
+/**
+ * Apply a SKILL.state-style patch to a state object: every key in `patch` is
+ * set; a `null` value deletes the key. Pure. Returns { state } or { error }
+ * when the patch is not a plain object or the result exceeds the size cap.
+ */
+export function applyStatePatch(state, patch, maxChars = TASK_STATE_MAX_CHARS) {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+    return { error: 'patch must be a JSON object: {"key": value, "finished_key": null}' };
+  }
+  const next = { ...(state && typeof state === 'object' ? state : {}) };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null) delete next[k];
+    else next[k] = v;
+  }
+  const size = JSON.stringify(next).length;
+  if (size > maxChars) {
+    return { error: `state would be ${size} chars (cap ${maxChars}) — prune finished keys with null before adding more` };
+  }
+  return { state: next };
+}
+
+/** Patch the active task's state in a scope. Returns { state, task, error? }. */
+export function patchActiveTask(state, { project = null, sessionId = null, patch, stamp = null } = {}) {
+  const active = getActiveTask(state, { project, sessionId });
+  if (!active) return { state, task: null, error: 'no active task — start one with /cco-task add "<name>"' };
+  const r = applyStatePatch(active.state || {}, patch);
+  if (r.error) return { state, task: active, error: r.error };
+  const next = { ...state, tasks: [...state.tasks] };
+  const updated = { ...active, state: r.state, stateUpdatedAt: stamp };
+  next.tasks[next.tasks.indexOf(active)] = updated;
+  return { state: next, task: updated };
+}
+
+/**
+ * The bounded block re-injected after /compact or on resume: instructions +
+ * current state, nothing else. Null when there is nothing worth injecting.
+ */
+export function renderRehydration(task) {
+  if (!task || task.status !== 'active') return null;
+  const st = task.state && typeof task.state === 'object' ? task.state : {};
+  if (!Object.keys(st).length) return null;
+  return [
+    `[cco-task] Active task #${task.id}: ${task.name}`,
+    'Execution state (authoritative — trust this over any summary of earlier turns):',
+    JSON.stringify(st),
+    'Update it as you go: /cco-task patch \'{"key": value, "finished_key": null}\'',
+  ].join('\n');
+}
+
+/** Should a SessionStart event re-inject task state? Only after compaction / resume. */
+export function shouldRehydrate(source) {
+  return source === 'compact' || source === 'resume';
 }
 
 /** Tasks for a project (newest first), optional limit. */
@@ -144,7 +214,7 @@ function main() {
   const rest = process.argv.slice(3).join(' ').trim();
   const project = process.env.CCO_PROJECT || process.cwd();
   const sessionId = getLatestSessionId();
-  const model = (loadConfig().model) || 'opus-4.8';
+  const model = (loadConfig().model) || 'opus-5';
   const tokensNow = getSessionTokenTotal(sessionId);
   const stamp = new Date().toISOString();
   let state = loadTasks();
@@ -155,6 +225,34 @@ function main() {
     saveTasks(r.state);
     console.log(`▶ Started task #${r.task.id}: ${r.task.name}`);
     console.log('  Pack the minimal context for it:  /cco-pack "' + r.task.name + '"');
+    return;
+  }
+  if (action === 'patch') {
+    let patch;
+    try { patch = JSON.parse(rest); } catch { console.error('Usage: cco-task patch \'{"key": value, "gone": null}\'  (valid JSON object)'); process.exit(1); }
+    const r = patchActiveTask(state, { project, patch, stamp });
+    if (r.error) { console.error(`[cco-task] ${r.error}`); process.exit(1); }
+    saveTasks(r.state);
+    const size = JSON.stringify(r.task.state).length;
+    console.log(`✓ State of task #${r.task.id} updated (${Object.keys(r.task.state).length} keys, ${size}/${TASK_STATE_MAX_CHARS} chars)`);
+    return;
+  }
+  if (action === 'state') {
+    const active = getActiveTask(state, { project });
+    if (!active) { console.log('No active task.'); return; }
+    console.log(`#${active.id} ${active.name}`);
+    console.log(JSON.stringify(active.state || {}, null, 2));
+    return;
+  }
+  if (action === 'rehydrate') {
+    // SessionStart hook: stdin carries { source, cwd, ... }. Print the bounded
+    // state block to stdout (it enters Claude's context) only after a compact
+    // or a resume — a fresh session should not inherit an old task by surprise.
+    let event = {};
+    try { event = JSON.parse(readFileSync(0, 'utf-8') || '{}'); } catch { /* no stdin */ }
+    if (!shouldRehydrate(event.source)) return;
+    const block = renderRehydration(getActiveTask(state, { project: event.cwd || project }));
+    if (block) console.log(block);
     return;
   }
   if (action === 'done') {

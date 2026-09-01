@@ -15,6 +15,12 @@
 
 import { openSync, readSync, fstatSync, closeSync } from 'fs';
 
+/** '1h' when the usage record carries any 1-hour cache write, else '5m'. */
+export function cacheTtlOf(u) {
+  const cc = u && u.cache_creation;
+  return cc && (cc.ephemeral_1h_input_tokens || 0) > 0 ? '1h' : '5m';
+}
+
 /**
  * Scan transcript lines from the end for the most recent assistant usage.
  * Pure — exported for tests. Returns { contextTokens, outputTokens } or null.
@@ -32,10 +38,13 @@ export function parseUsageFromLines(lines) {
           (u.cache_read_input_tokens || 0) +
           (u.cache_creation_input_tokens || 0),
         outputTokens: u.output_tokens || 0,
-        // The session's REAL model id (e.g. "claude-fable-5") — lets budget /
+        // The session's REAL model id (e.g. "claude-fable-5-1") — lets budget /
         // dashboard / read-cache adapt window+pricing per session instead of
         // trusting the static config.model.
         model: (obj.message.model || null),
+        // Which prompt-cache TTL this session is on. Claude Code writes 1-hour
+        // entries on most sessions now (2× write rate, 60-min break window).
+        cacheTtl: cacheTtlOf(u),
       };
     }
   }
@@ -46,15 +55,17 @@ export function parseUsageFromLines(lines) {
  * Full-session cache economics from every assistant usage record, in order.
  * Pure — exported for tests.
  *
- * Returns { turns, totals: {input, cacheRead, cacheCreation, output}, breaks }.
+ * Returns { turns, totals: {input, cacheRead, cacheCreation, cacheCreation1h,
+ * output}, breaks }. `cacheCreation1h` is the share of `cacheCreation` written
+ * with the 1-hour TTL (billed at 2× instead of 1.25×).
  * A cache BREAK is a turn where the previously-cached context stopped being
  * read from cache (gap > cache TTL, mid-session system-prompt change, model
  * switch): cache_read drops far below the previous turn's cached total and the
- * whole context is re-written at the 1.25× write rate. `lostTokens` is the
+ * whole context is re-written at the cache-write rate (1.25× / 2× for 1h TTL). `lostTokens` is the
  * cached prefix that had to be paid for again.
  */
 export function parseEconomicsFromLines(lines) {
-  const totals = { input: 0, cacheRead: 0, cacheCreation: 0, output: 0 };
+  const totals = { input: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0, output: 0 };
   const breaks = [];
   let turns = 0;
   let prevCached = 0;
@@ -71,6 +82,7 @@ export function parseEconomicsFromLines(lines) {
     totals.input += u.input_tokens || 0;
     totals.cacheRead += cacheRead;
     totals.cacheCreation += cacheCreation;
+    totals.cacheCreation1h += Math.min(cacheCreation, (u.cache_creation && u.cache_creation.ephemeral_1h_input_tokens) || 0);
     totals.output += u.output_tokens || 0;
 
     // Warm cache suddenly went cold: >20K was cached, but this turn read back

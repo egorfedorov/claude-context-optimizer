@@ -22,10 +22,11 @@
 import { readFileSync, readdirSync, existsSync, statSync, openSync, fstatSync, closeSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import { cacheTtlOf } from './transcript-usage.js';
 import {
   SESSIONS_DIR,
   formatTokens, estimateTokensFromString, loadConfig, getModelCost,
-  getEffectiveBudget, CACHE_WRITE_MULT, isMainModule, getDonationMessage,
+  getEffectiveBudget, getCacheRates, normalizeModelId, isMainModule, getDonationMessage,
 } from './utils.js';
 
 // ── Pure parsing (exported for tests) ───────────────────────────────────────
@@ -44,6 +45,20 @@ export function parseBaselineFromLines(lines) {
              (u.cache_read_input_tokens || 0) +
              (u.cache_creation_input_tokens || 0);
     }
+  }
+  return null;
+}
+
+/**
+ * Cache TTL ('1h' | '5m') and raw model id of the first assistant usage
+ * record, or null — the session's real pricing basis.
+ */
+export function parseBaselineTtlFromLines(lines) {
+  for (const line of lines) {
+    let obj;
+    try { obj = JSON.parse(line); } catch { continue; }
+    const u = obj && obj.message && obj.message.usage;
+    if (u && typeof u.input_tokens === 'number') return { ttl: cacheTtlOf(u), model: obj.message.model || null };
   }
   return null;
 }
@@ -80,7 +95,8 @@ function baselineOf(transcriptPath) {
   try {
     // Baseline lives at the head of the file — 512KB is plenty.
     const buf = readFileSync(transcriptPath, 'utf-8').slice(0, 512 * 1024);
-    return parseBaselineFromLines(buf.split('\n').filter(Boolean));
+    const lines = buf.split('\n').filter(Boolean);
+    return { tokens: parseBaselineFromLines(lines), ...(parseBaselineTtlFromLines(lines) || {}) };
   } catch {
     return null;
   }
@@ -140,13 +156,12 @@ export function measureLocalSources(cwd) {
 
 export function buildReport(cwd, transcriptArg) {
   const config = loadConfig();
-  const model = config.model || 'opus-4.8';
-  const cost = getModelCost(model);
   const budget = getEffectiveBudget(config);
 
   const transcripts = transcriptArg ? [transcriptArg] : recentTranscripts(cwd);
   const baselines = transcripts
-    .map(p => ({ path: p, baseline: baselineOf(p) }))
+    .map(p => ({ path: p, ...(baselineOf(p) || {}) }))
+    .map(b => ({ path: b.path, baseline: b.tokens, ttl: b.ttl, model: b.model }))
     .filter(b => b.baseline && b.baseline > 0);
 
   const L = [];
@@ -161,15 +176,20 @@ export function buildReport(cwd, transcriptArg) {
     return L.join('\n');
   }
 
+  // Price at the model the latest session actually ran on; config is the fallback.
+  const model = normalizeModelId(baselines[0].model) || config.model || 'opus-5';
+  const cost = getModelCost(model);
   const latest = baselines[0].baseline;
   const avg = Math.round(baselines.reduce((s, b) => s + b.baseline, 0) / baselines.length);
   const pctOfBudget = Math.round((avg / budget) * 100);
-  // Every session writes the baseline into cache once at the 1.25× rate.
-  const perSession = (avg / 1e6) * cost.input * CACHE_WRITE_MULT;
+  // Every session writes the baseline into cache once at the write rate —
+  // 1.25× for 5-minute entries, 2× for the 1-hour TTL the latest session used.
+  const ttl = baselines[0].ttl === '1h' ? '1h' : '5m';
+  const perSession = (avg / 1e6) * cost.input * getCacheRates(model, ttl).write;
 
   L.push(`  Latest session started at   ${formatTokens(latest)} tokens before any work`);
   L.push(`  Average over ${String(baselines.length).padStart(2)} session(s)   ${formatTokens(avg)} tokens  (${pctOfBudget}% of your ${formatTokens(budget)} budget)`);
-  L.push(`  Cost per session            ~$${perSession.toFixed(3)} written to cache (${model})`);
+  L.push(`  Cost per session            ~$${perSession.toFixed(3)} written to cache (${model}, ${ttl} TTL)`);
   L.push('');
 
   const items = measureLocalSources(cwd).sort((a, b) => b.tokens - a.tokens);

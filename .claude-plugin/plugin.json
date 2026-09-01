@@ -1,7 +1,7 @@
 {
   "name": "claude-context-optimizer",
-  "version": "4.9.2",
-  "description": "Opus 4.8-aware context optimization: cache-aware real costs & cache-break detection, session baseline audit (/cco-overhead), auto .contextignore, self-calibrating estimates, delegation advisor, ru/en prompt coach, per-language token estimation, tunable thresholds via /cco-config, self-learning tool costs, team pattern sharing",
+  "version": "4.10.0",
+  "description": "Claude 5-aware context optimization (Fable 5.1 / Opus 5 / Sonnet 5 pricing, 1h-cache-aware real costs & cache-break detection), SKILL.state-style task state that survives /compact, session baseline audit (/cco-overhead), auto .contextignore, self-calibrating estimates, delegation advisor, ru/en prompt coach, per-language token estimation, tunable thresholds via /cco-config, self-learning tool costs, team pattern sharing",
   "author": {
     "name": "Egor Fedorov"
   },
@@ -9,7 +9,9 @@
   "license": "MIT",
   "keywords": [
     "claude-code",
-    "claude-opus-4.8",
+    "claude-5",
+    "claude-fable-5.1",
+    "claude-opus-5",
     "context-optimization",
     "token-tracking",
     "prompt-engineering",
