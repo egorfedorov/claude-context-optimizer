@@ -4,7 +4,7 @@
 
 <p align="center">
   <strong>Stop burning tokens on weak prompts and redundant reads.</strong><br/>
-  <sub>Model-aware for the whole Claude lineup — Fable 5, Opus, Sonnet, Haiku — detected per session, zero config.</sub>
+  <sub>Model-aware for the whole Claude lineup — Fable 5.1, Opus 5, Sonnet 5, Haiku — detected per session, zero config.</sub>
 </p>
 
 <p align="center">
@@ -29,7 +29,7 @@ The average Claude Code session **wastes 30-50% of tokens** on files that are re
 - A README you glanced at once? **2,400 tokens burned.**
 - That `package.json` Claude reads "just in case"? **120 tokens, every time.**
 
-At $5/M input tokens (Opus 4.8), a developer spending $100/month is lighting **$30-50 on fire** on irrelevant context.
+At $5/M input tokens (Opus 5) — $10/M on Fable 5.1 — a developer spending $100/month is lighting **$30-50 on fire** on irrelevant context.
 
 ## The Solution
 
@@ -40,6 +40,44 @@ At $5/M input tokens (Opus 4.8), a developer spending $100/month is lighting **$
 </p>
 
 ---
+
+## What's new in v4.10 — Claude 5 prices, the 1-hour cache, and task state that survives /compact
+
+**The price table caught up.** Sessions now report `claude-fable-5-1` and
+`claude-opus-5`; neither had a row. Fable was priced at the Opus tier — it costs
+twice that ($10/$50) — and Sonnet 5 is cheaper ($2/$10) than the Sonnet 4.6 row it
+was using. Fable 5.1 also bills cache *reads* at 0.025× instead of 0.1×, so it
+carries its own rate; every dollar figure reads the per-model rates.
+
+**The cache math caught up.** Claude Code keeps the prompt cache alive for an
+**hour** on most sessions today (`ephemeral_1h_input_tokens` in the transcript).
+CCO priced every write at the 5-minute 1.25× rate (real: 2×) and warned that the
+cache "went cold" after a 5-minute pause when it had 55 minutes left. Now the
+TTL is read per session: writes are billed at their real rate, and the
+cache-break guard waits the full hour on 1h sessions.
+
+**Task state that survives `/compact`** — the honest slice of Google/Purdue's
+SKILL.state. That architecture replaces an agent's growing history with
+instructions + a small structured state + the latest observation, so the prompt
+stays O(1) in the step count. A plugin can't replace Claude Code's history (and
+with caching, replayed history is cheap anyway) — but it *can* own the moment
+history gets replaced. `/compact` writes a lossy free-form summary; CCO now keeps
+an exact, bounded state per task and re-injects it right after compaction:
+
+```
+/cco-task patch '{"goal": "ship 1h-cache pricing", "done": ["parser", "tests"], "next": "README", "scratch": null}'
+✓ State of task #7 updated (3 keys, 118/4000 chars)
+
+… /compact …
+
+[cco-task] Active task #7: ship 1h-cache pricing
+Execution state (authoritative — trust this over any summary of earlier turns):
+{"goal":"ship 1h-cache pricing","done":["parser","tests"],"next":"README"}
+```
+
+Patch semantics are SKILL.state's: set keys, `null` deletes. The cap (~1K tokens)
+is the point — the state never grows with the task, and the patch is rejected
+until you prune. Full notes in the [CHANGELOG](CHANGELOG.md).
 
 ## What's new in v4.9 — the optimizer learns, and the team shares
 
@@ -883,10 +921,12 @@ A: No. Hook scripts run asynchronously and typically complete in <10ms.
 **Q: How accurate are the token estimates?**
 A: They use a ~4 tokens/line heuristic. Not exact, but consistent across sessions for reliable trends.
 
-**Q: Can I use this with Claude Sonnet / Haiku / Opus 4.7 / Opus 4.8?**
-A: Yes. `/cco-budget model haiku-4.5` / `sonnet-4.6` / `opus-4.7` / `opus-4.8` — each retunes
-context window, prices, and Read Cache staleness thresholds. Opus 4.7/4.8 and Sonnet 4.6 are all
-1M context; Haiku 4.5 is 200K. (`opus-4.7-1m` / `opus-4.8-1m` still work as back-compat aliases —
+**Q: Can I use this with Fable 5.1 / Opus 5 / Sonnet 5 / Haiku / Opus 4.x?**
+A: Yes — and you normally don't have to tell it: the budget hook reads the session's real
+model id from the transcript. `/cco-budget model fable-5.1` / `opus-5` / `sonnet-5` /
+`sonnet-4.6` / `opus-4.8` / `haiku-4.5` sets only the fallback. Each key carries its own window,
+prices and cache-read rate (Fable 5.1 reads at 0.025×). Everything from Sonnet 4.6 up is 1M
+context; Haiku 4.5 is 200K. (`opus-4.7-1m` / `opus-4.8-1m` still work as back-compat aliases —
 1M is standard now, so there's no surcharge.)
 
 **Q: Does Prompt Coach call any LLM?**

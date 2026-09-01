@@ -21,7 +21,7 @@ import {
   formatTokens, loadConfig, getModelCost, getEffectiveBudget,
   displayPath, loadJSON, saveJSON, ensureDataDirs, loadBudgetConfig,
   estimateTokens, isMainModule, getCalibrationFactor, normalizeModelId,
-  CACHE_WRITE_MULT, CACHE_READ_MULT
+  getCacheRates
 } from './utils.js';
 import { emitNotice } from './notices.js';
 import { readRealUsage } from './transcript-usage.js';
@@ -131,6 +131,8 @@ export function selectWarnings(usagePercent, warnAt = [], warningsSent = []) {
  * The cache TTL is 5 minutes; re-warming re-bills the whole context at the
  * cache-write rate. Below 20K of context the loss is pennies, so stay quiet.
  */
+export function cacheTtlMinutes(ttl) { return ttl === '1h' ? 60 : 5; }
+
 export function shouldWarnCacheBreak({ lastEventAt, realContextTokens, now, minGapMin = 5, minTokens = 20_000 }) {
   if (!lastEventAt) return false;
   if ((realContextTokens || 0) < minTokens) return false;
@@ -264,6 +266,7 @@ async function main() {
   // The session's REAL model (from the transcript) — window and pricing follow
   // it automatically, whatever /model the user picked (fable, opus, haiku…).
   if (real && real.model) state.model = real.model;
+  if (real && real.cacheTtl) state.cacheTtl = real.cacheTtl;
   // Remember where the transcript lives so the dashboard (a plain CLI with no
   // hook event) can compute full-session cache economics on demand.
   if (event.transcript_path) state.transcriptPath = event.transcript_path;
@@ -272,25 +275,30 @@ async function main() {
   const effectiveBudget = getEffectiveBudget(config, state.model);
 
   // ── Cache-break guard ──────────────────────────────────────────────────────
-  // The prompt cache lives 5 minutes. A longer pause with a warm context means
-  // the whole cached prefix was just re-billed at the 1.25× write rate instead
-  // of 0.1× reads — the single biggest avoidable dollar leak. We can't stop a
-  // break that already happened, but naming its real cost teaches the habit:
-  // batch pauses, /compact (or finish) before stepping away.
+  // The prompt cache lives 5 minutes (1 hour on sessions Claude Code puts on
+  // the 1h TTL — read from the transcript). A longer pause with a warm context
+  // means the whole cached prefix was just re-billed at the write rate (1.25×,
+  // or 2× for 1h entries) instead of cheap reads — the single biggest avoidable
+  // dollar leak. We can't stop a break that already happened, but naming its
+  // real cost teaches the habit: batch pauses, /compact (or finish) before
+  // stepping away.
   const nowMs = Date.now();
+  const ttl = state.cacheTtl === '1h' ? '1h' : '5m';
   if (shouldWarnCacheBreak({
     lastEventAt: state.lastEventAt,
     realContextTokens: state.realContextTokens,
     now: nowMs,
+    minGapMin: cacheTtlMinutes(ttl),
   })) {
     const gapMin = (nowMs - state.lastEventAt) / 60_000;
     const rate = getModelCost(sessionModel).input / 1e6;
-    const lost = state.realContextTokens * rate * (CACHE_WRITE_MULT - CACHE_READ_MULT);
+    const { read, write } = getCacheRates(sessionModel, ttl);
+    const lost = state.realContextTokens * rate * (write - read);
     state.cacheBreaks = (state.cacheBreaks || 0) + 1;
     emitNotice(sessionId, {
       kind: `budget:cachebreak:${state.cacheBreaks}`,
       text:
-        `[context-budget] ~${Math.round(gapMin)} min pause — the prompt cache (5-min TTL) went cold; ` +
+        `[context-budget] ~${Math.round(gapMin)} min pause — the prompt cache (${ttl === '1h' ? '1-hour' : '5-min'} TTL) went cold; ` +
         `re-warming ${formatTokens(state.realContextTokens)} of context costs ~$${lost.toFixed(2)} extra. ` +
         `Batch pauses: finish the task first, or /compact before a long break.`,
     });

@@ -52,44 +52,52 @@ export const TASKS_FILE = join(DATA_DIR, 'tasks.json');
 export const TOOL_COSTS_FILE = join(DATA_DIR, 'tool-costs.json');
 
 // ── Model costs ($/M tokens — input/output) — platform.claude.com/docs pricing ─
-// Current lineup (Opus 4.8 era). Output costs included for accurate ROI.
-//   • Opus 4.7 / 4.8 — $5/$25, full 1M context window at standard price
+// Current lineup (Claude 5 era). Output costs included for accurate ROI.
+//   • Fable 5.1 / Fable 5 — $10/$50, 1M window. Fable 5.1 bills cache READS at
+//     $0.25/M (0.025× — a quarter of everyone else's 0.1×), so it carries its
+//     own `cacheRead` multiplier. Mythos 5.x is the same tier and price.
+//   • Opus 5 / 4.8 / 4.7 — $5/$25, full 1M context window at standard price
 //     (there is NO long-context premium; the old "1M tier surcharge" is gone).
-//   • Sonnet 4.6 — $3/$15, 1M context window.
+//   • Sonnet 5 — $2/$10, 1M.  Sonnet 4.6 — $3/$15, 1M.
 //   • Haiku 4.5 — $1/$5, 200K context window.
+// `cacheRead` (optional) overrides CACHE_READ_MULT for that model.
 export const MODEL_COSTS = {
   'haiku':         { input: 1,  output: 5,  contextWindow:   200_000 },
   'haiku-4.5':     { input: 1,  output: 5,  contextWindow:   200_000 },
   'sonnet':        { input: 3,  output: 15, contextWindow: 1_000_000 },
   'sonnet-4.6':    { input: 3,  output: 15, contextWindow: 1_000_000 },
+  'sonnet-5':      { input: 2,  output: 10, contextWindow: 1_000_000 },
   'opus':          { input: 5,  output: 25, contextWindow: 1_000_000 },
   'opus-4.7':      { input: 5,  output: 25, contextWindow: 1_000_000 },
   'opus-4.8':      { input: 5,  output: 25, contextWindow: 1_000_000 },
+  'opus-5':        { input: 5,  output: 25, contextWindow: 1_000_000 },
   // Back-compat aliases — these used to carry a fictional 1M surcharge; the 1M
   // window is now standard, so they map to the standard Opus price.
   'opus-4.7-1m':   { input: 5,  output: 25, contextWindow: 1_000_000 },
   'opus-4.8-1m':   { input: 5,  output: 25, contextWindow: 1_000_000 },
   'opus-extended': { input: 5,  output: 25, contextWindow: 1_000_000 },
-  // Claude 5 family (Fable/Mythos tier above Opus). Pricing not yet published —
-  // priced at the Opus tier until Anthropic announces; window matches Opus 1M.
-  'fable':         { input: 5,  output: 25, contextWindow: 1_000_000 },
-  'fable-5':       { input: 5,  output: 25, contextWindow: 1_000_000 },
-  'sonnet-5':      { input: 3,  output: 15, contextWindow: 1_000_000 },
+  // Fable / Mythos tier (above Opus). `fable` = the newest Fable (5.1).
+  'fable':         { input: 10, output: 50, contextWindow: 1_000_000, cacheRead: 0.025 },
+  'fable-5.1':     { input: 10, output: 50, contextWindow: 1_000_000, cacheRead: 0.025 },
+  'fable-5':       { input: 10, output: 50, contextWindow: 1_000_000 },
 };
 
 /**
- * Map a raw session model id from the transcript (e.g. "claude-fable-5",
- * "claude-opus-4-8", "claude-haiku-4-5-20251001", possibly with a "[1m]"
+ * Map a raw session model id from the transcript (e.g. "claude-fable-5-1",
+ * "claude-opus-5", "claude-haiku-4-5-20251001", possibly with a "[1m]"
  * suffix) to a MODEL_COSTS key. Null when unrecognized — callers fall back
  * to config.model.
  */
 export function normalizeModelId(raw) {
   if (!raw || typeof raw !== 'string') return null;
   const id = raw.toLowerCase().replace(/\[1m\]$/, '');
-  if (id.includes('fable') || id.includes('mythos')) return 'fable';
+  if (id.includes('fable') || id.includes('mythos')) {
+    return /(fable|mythos)[-_.]?5[-.]1\b/.test(id) ? 'fable-5.1' : 'fable-5';
+  }
   if (id.includes('haiku')) return 'haiku';
-  if (id.includes('sonnet')) return id.includes('sonnet-5') ? 'sonnet-5' : 'sonnet';
+  if (id.includes('sonnet')) return /sonnet[-_.]?5\b/.test(id) ? 'sonnet-5' : 'sonnet';
   if (id.includes('opus')) {
+    if (/opus[-_.]?5\b/.test(id)) return 'opus-5';
     if (id.includes('4-8') || id.includes('4.8')) return 'opus-4.8';
     if (id.includes('4-7') || id.includes('4.7')) return 'opus-4.7';
     return 'opus';
@@ -107,25 +115,46 @@ export function getModelCost(model) {
 }
 
 // ── Prompt-cache pricing ─────────────────────────────────────────────────────
-// Cache reads bill at 10% of the input price; 5-minute cache writes at 125%.
+// Cache reads bill at 10% of the input price (2.5% on Fable 5.1); cache writes
+// at 125% for the 5-minute TTL and 200% for the 1-hour TTL Claude Code uses on
+// most sessions today (`usage.cache_creation.ephemeral_1h_input_tokens`).
 // Real Claude Code sessions are dominated by cache reads, so pricing every
 // input token at the full rate overstates cost by up to ~10×.
 export const CACHE_READ_MULT = 0.1;
 export const CACHE_WRITE_MULT = 1.25;
+export const CACHE_WRITE_1H_MULT = 2;
+
+/**
+ * Cache multipliers for a model + TTL: { read, write }. `ttl` is '5m' | '1h'.
+ * Both the cache-break cost (write − read, per re-warmed token) and the
+ * session bill depend on these, so every caller reads them from here.
+ */
+export function getCacheRates(model, ttl = '5m') {
+  const c = getModelCost(model);
+  return {
+    read: typeof c.cacheRead === 'number' ? c.cacheRead : CACHE_READ_MULT,
+    write: ttl === '1h' ? CACHE_WRITE_1H_MULT : CACHE_WRITE_MULT,
+  };
+}
 
 /**
  * Dollar cost of a session given exact usage totals from the transcript.
- * `totals` = { input, cacheRead, cacheCreation, output } (tokens).
+ * `totals` = { input, cacheRead, cacheCreation, cacheCreation1h?, output }
+ * (tokens; `cacheCreation1h` is the 1-hour-TTL share of `cacheCreation`).
  * Returns { real, naive, cacheSavings } — `naive` prices all input-side tokens
  * at the full input rate (what the cost would be without prompt caching).
  */
 export function computeCacheAwareCost(totals, model) {
   const c = getModelCost(model);
   const inRate = c.input / 1e6;
+  const { read } = getCacheRates(model);
+  const write1h = Math.min(totals.cacheCreation1h || 0, totals.cacheCreation || 0);
+  const write5m = (totals.cacheCreation || 0) - write1h;
   const real =
     (totals.input || 0) * inRate +
-    (totals.cacheRead || 0) * inRate * CACHE_READ_MULT +
-    (totals.cacheCreation || 0) * inRate * CACHE_WRITE_MULT +
+    (totals.cacheRead || 0) * inRate * read +
+    write5m * inRate * CACHE_WRITE_MULT +
+    write1h * inRate * CACHE_WRITE_1H_MULT +
     (totals.output || 0) * (c.output / 1e6);
   const naive =
     ((totals.input || 0) + (totals.cacheRead || 0) + (totals.cacheCreation || 0)) * inRate +
@@ -298,7 +327,7 @@ const DEFAULT_CONFIG = {
   budgetTokens: 200000,        // 200K — sane working default even on 1M-window models
   warnAt: [50, 70, 85, 95],
   autoCompactAt: 90,
-  model: 'opus-4.8',
+  model: 'opus-5',
   bigFileDigest: true,         // on first full read of a very large file, show its
   bigFileThreshold: 1500,      // map once (≈14K+ tokens) so Claude reads targeted
 };

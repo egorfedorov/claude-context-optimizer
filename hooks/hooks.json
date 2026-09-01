@@ -64,7 +64,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\""
+            "command": "payload=$(cat); test -f \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\" && printf '%s' \"$payload\" | node \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\"; test -f \"${CLAUDE_PLUGIN_ROOT}/src/tasks.js\" && printf '%s' \"$payload\" | node \"${CLAUDE_PLUGIN_ROOT}/src/tasks.js\" rehydrate; exit 0"
           }
         ]
       }

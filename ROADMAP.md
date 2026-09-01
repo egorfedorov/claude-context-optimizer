@@ -25,7 +25,9 @@ must make a number more true, a waste more visible, or a fix more automatic.
       measured over 6.3K real files, per extension, config-overridable (#35)
 - [ ] **Exact token counting** for estimates via a local BPE approximation
       (self-calibration + per-language chars/line narrow the gap; kill it entirely)
-- [ ] **Per-model cache TTL awareness** (1h beta cache pricing) in economics
+- [x] **Per-model cache TTL awareness** — shipped in v4.10.0: 1-hour cache
+      writes billed at 2×, break guard waits an hour on 1h sessions, Fable 5.1
+      reads at 0.025×
 - [x] **Self-learning tool costs** — shipped in v4.9.0: per-tool EMA from
       observed result sizes replaces the hardcoded MCP/Agent guesses (#38)
 - [ ] **Subagent economics**: split main-loop vs agent token spend in `/cco`
