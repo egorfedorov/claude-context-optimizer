@@ -1809,7 +1809,7 @@ describe('transcript model detection', () => {
 });
 
 describe('renderSummary savings headline', () => {
-  it('leads with total $ saved and % of would-have-cost', async () => {
+  it('credits CCO only with its own savings, not the prompt cache', async () => {
     const { renderSummary } = await import('../src/dashboard.js');
     const d = {
       hasData: true, saved: 1_000_000, used: 50_000, overhead: 0,
@@ -1818,8 +1818,10 @@ describe('renderSummary savings headline', () => {
       cacheEcon: { hitPct: 90, savings: 5, breaks: 0, breakTokens: 0, breakCost: 0, naive: 20 },
     };
     const out = renderSummary(d);
-    // read-cache 1M tokens × $5/M = $5, plus $5 cache savings = $10 of a $20 would-have-cost
-    assert.match(out, /★ CCO saved \$10\.00 this session — 50% of what it would have cost\./);
+    // read-cache 1M tokens × $5/M = $5 of a $15 would-have-cost; the $5 prompt-cache
+    // saving belongs to Claude Code and is reported on its own line
+    assert.match(out, /★ CCO saved \$5\.00 this session — 33% of what it would have cost\./);
+    assert.match(out, /Prompt cache: 90% hit rate saved \$5\.00/);
   });
 });
 
@@ -2016,10 +2018,20 @@ describe('tracker: session aggregation', () => {
   it('counts a read-once-never-edited file as pure waste', () => {
     const r = aggregateSessionFiles({
       '/p/waste.ts': { estTokens: 1000, reads: 1, edits: 0, wasEdited: false },
+      '/p/fix.ts': { estTokens: 0, reads: 0, edits: 1, wasEdited: true },
     });
     assert.equal(r.sessionTokensTotal, 1000);
     assert.equal(r.sessionTokensWasted, 1000);
     assert.equal(r.perFile['/p/waste.ts'].wasted, true);
+  });
+
+  it('never counts reads as waste in a read-only session (reading is the work)', () => {
+    const r = aggregateSessionFiles({
+      '/p/a.ts': { estTokens: 1000, reads: 1, edits: 0, wasEdited: false },
+      '/p/b.ts': { estTokens: 1000, reads: 3, edits: 0, wasEdited: false, lines: 500 },
+    });
+    assert.equal(r.sessionTokensWasted, 0);
+    assert.equal(r.perFile['/p/a.ts'].wasted, false);
   });
 
   it('treats a deliberate re-read as useful, not waste', () => {
@@ -2037,6 +2049,7 @@ describe('tracker: session aggregation', () => {
     // re-read credit — thrashing, not research. Every read was paid for.
     const r = aggregateSessionFiles({
       '/p/thrash.ts': { estTokens: 1000, reads: 3, edits: 0, wasEdited: false, lines: 500 },
+      '/p/fix.ts': { estTokens: 0, reads: 0, edits: 1, wasEdited: true },
     });
     assert.equal(r.sessionTokensTotal, 3000);
     assert.equal(r.sessionTokensWasted, 3000, 'all 3 reads were paid for');
@@ -2840,3 +2853,42 @@ describe('v4.11 data hygiene', () => {
   });
 });
 
+
+// ── v4.12: dedupe per message, per-model & fast-mode pricing ────────────────
+
+describe('v4.12 session economics', () => {
+  const row = (id, model, u) => JSON.stringify({ message: { id, model, usage: { input_tokens: 0, output_tokens: 0, ...u } } });
+
+  it('counts a message once even though Claude Code writes it per content block', async () => {
+    const u = { cache_read_input_tokens: 50_000, cache_creation_input_tokens: 1_000, output_tokens: 200 };
+    const e = parseEconomicsFromLines([
+      row('msg_1', 'claude-opus-5-5', u), row('msg_1', 'claude-opus-5-5', u), row('msg_1', 'claude-opus-5-5', u),
+      row('msg_2', 'claude-opus-5-5', u),
+    ]);
+    assert.equal(e.turns, 2);
+    assert.equal(e.totals.cacheRead, 100_000);
+    assert.equal(e.totals.output, 400);
+  });
+
+  it('prices each model segment at its own rate and flags the switch break', async () => {
+    const { computeSessionCost } = await import('../src/utils.js');
+    const e = parseEconomicsFromLines([
+      row('a', 'claude-opus-5-5', { cache_creation_input_tokens: 100_000 }),
+      row('b', 'claude-opus-5-5', { cache_read_input_tokens: 100_000 }),
+      row('c', 'claude-haiku-4-5-20251001', { cache_creation_input_tokens: 100_000 }),
+    ]);
+    assert.deepEqual(e.segments.map(s => s.model).sort(), ['haiku', 'opus-5.5']);
+    assert.equal(e.breaks.length, 1);
+    assert.equal(e.breaks[0].modelSwitch, true);
+    // opus-5.5: 100K×$4×1.25 + 100K×$4×0.05 = 0.5 + 0.02; haiku: 100K×$1×1.25 = 0.125
+    const c = computeSessionCost(e, 'opus-5.5');
+    assert.ok(Math.abs(c.real - 0.645) < 1e-9, `got ${c.real}`);
+  });
+
+  it('bills fast-mode turns at 2×', async () => {
+    const { computeSessionCost, computeCacheAwareCost } = await import('../src/utils.js');
+    const e = parseEconomicsFromLines([row('f', 'claude-opus-5-5', { input_tokens: 1_000_000, speed: 'fast' })]);
+    assert.equal(e.segments[0].speed, 'fast');
+    assert.equal(computeSessionCost(e, 'opus-5.5').real, 2 * computeCacheAwareCost(e.totals, 'opus-5.5').real);
+  });
+});

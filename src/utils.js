@@ -173,6 +173,29 @@ export function computeCacheAwareCost(totals, model) {
   return { real, naive, cacheSavings: Math.max(0, naive - real) };
 }
 
+// Fast mode (`usage.speed: "fast"`, Opus only) bills every token type at 2×
+// the standard rate: Opus 5.5 $8/$40, Opus 5 $10/$50.
+export const FAST_MODE_MULT = 2;
+
+/**
+ * Price a whole session from parseEconomicsFromLines output: each
+ * { model, speed } segment at its own rates, so /model switches and fast mode
+ * are billed correctly. Segments with an unrecognized model use `fallbackModel`.
+ */
+export function computeSessionCost(econ, fallbackModel) {
+  const segs = (econ && econ.segments && econ.segments.length)
+    ? econ.segments : [{ model: null, speed: 'standard', totals: (econ && econ.totals) || {} }];
+  const sum = { real: 0, naive: 0, cacheSavings: 0 };
+  for (const s of segs) {
+    const c = computeCacheAwareCost(s.totals, s.model || fallbackModel);
+    const mult = s.speed === 'fast' ? FAST_MODE_MULT : 1;
+    sum.real += c.real * mult;
+    sum.naive += c.naive * mult;
+    sum.cacheSavings += c.cacheSavings * mult;
+  }
+  return sum;
+}
+
 export function getModelContextWindow(model) {
   return getModelCost(model).contextWindow;
 }

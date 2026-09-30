@@ -23,7 +23,7 @@ import { existsSync, readFileSync } from 'fs';
 import {
   SESSIONS_DIR, BUDGET_STATE_DIR, READ_CACHE_DIR, PROMPTS_DIR,
   loadJSON, loadConfig, getEffectiveBudget, getModelCost, formatTokens, displayPath,
-  getLatestSessionId, isMainModule, computeCacheAwareCost, getCacheRates,
+  getLatestSessionId, isMainModule, computeSessionCost, getCacheRates,
   updateCalibrationFromSession, getSessionModel, normalizeModelId,
 } from './utils.js';
 import { loadTasks, getActiveTask, taskSpend, tasksForProject } from './tasks.js';
@@ -70,7 +70,7 @@ export function gather(sessionId) {
     ? readTranscriptEconomics(budget.transcriptPath) : null;
   let dollars, cacheEcon = null;
   if (econ) {
-    const costs = computeCacheAwareCost(econ.totals, model);
+    const costs = computeSessionCost(econ, model);
     dollars = costs.real;
     const inputSide = econ.totals.input + econ.totals.cacheRead + econ.totals.cacheCreation;
     const breakTokens = econ.breaks.reduce((s, b) => s + b.lostTokens, 0);
@@ -81,6 +81,8 @@ export function gather(sessionId) {
       savings: costs.cacheSavings,
       naive: costs.naive,
       breaks: econ.breaks.length,
+      modelSwitchBreaks: econ.breaks.filter(b => b.modelSwitch).length,
+      fast: econ.segments.some(s => s.speed === 'fast'),
       breakTokens,
       // A break re-writes cached tokens at the write rate instead of re-reading.
       breakCost: (breakTokens / 1e6) * cost.input * (rates.write - rates.read),
@@ -241,12 +243,11 @@ export function renderSummary(d) {
   if (!d.hasData || (d.saved === 0 && d.used === 0)) return '';
   const L = [];
   L.push('  ── CCO session summary ───────────────────────────────────────');
-  // Headline: everything CCO + prompt caching saved, as % of what the session
-  // WOULD have cost without them. The one number people remember.
+  // Headline: what CCO itself saved (deduped/blocked reads), as % of what the
+  // session would have cost without it. Prompt-cache savings come from Claude
+  // Code and the API, not from CCO — they get their own line below.
   {
-    const readCacheDollars = (d.saved / 1e6) * d.cost.input;
-    const cacheDollars = d.cacheEcon ? d.cacheEcon.savings : 0;
-    const totalSaved = readCacheDollars + cacheDollars;
+    const totalSaved = (d.saved / 1e6) * d.cost.input;
     const wouldHaveCost = d.dollars + totalSaved;
     if (totalSaved >= 0.01 && wouldHaveCost > 0) {
       const pct = Math.round((totalSaved / wouldHaveCost) * 100);
@@ -265,9 +266,12 @@ export function renderSummary(d) {
     const c = d.cacheEcon;
     L.push(`  Prompt cache: ${c.hitPct}% hit rate saved $${c.savings.toFixed(2)} vs uncached pricing.`);
     if (c.breaks > 0) {
-      L.push(`  ⚠ Cache broke ${c.breaks}x (${formatTokens(c.breakTokens)} re-written, ~$${c.breakCost.toFixed(2)} extra).` +
-        ` Common causes: >5 min pauses, editing CLAUDE.md mid-session, switching models.`);
+      const why = c.modelSwitchBreaks > 0
+        ? ` ${c.modelSwitchBreaks} came from switching /model — caches are per model; pick one per task or start a new session.`
+        : ` Common causes: >${c.ttl === '1h' ? '1 hour' : '5 min'} pauses, editing CLAUDE.md mid-session, switching models.`;
+      L.push(`  ⚠ Cache broke ${c.breaks}x (${formatTokens(c.breakTokens)} re-written, ~$${c.breakCost.toFixed(2)} extra).` + why);
     }
+    if (c.fast) L.push('  Fast mode ran this session — those turns bill at 2× (included above).');
   }
   if (d.reclaimable > 3000) {
     L.push(`  Tip: ~${formatTokens(d.reclaimable)} of cold context is still loaded — /compact before next task.`);

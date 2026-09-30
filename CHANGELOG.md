@@ -1,5 +1,46 @@
 # Changelog
 
+## 4.12.0 — 2026-09-30
+
+Honest numbers. Three places where `/cco` and the session summary reported
+more than was true.
+
+### Session cost was counted ~2× (transcript duplicates)
+
+Claude Code writes one transcript line per content block (thinking, text, each
+tool call) and repeats the message's full `usage` on every one. The economics
+parser summed lines, so a turn with three blocks was billed three times. On the
+session this release was built in: 247 "turns" and **$17.43** before, 114 turns
+and **$7.72** after. Usage is now counted once per `message.id`.
+
+The same duplicates produced **phantom cache breaks**: the first copy set the
+cached prefix, and the next copies of the same turn read "less than half" of it.
+The "2 breaks (−$0.69)" shown on a fresh session were not real.
+
+### Per-model and fast-mode pricing
+
+Usage is grouped by `{ model, speed }` and each segment priced at its own rate
+(`computeSessionCost`), so sessions that switch `/model` are no longer billed
+entirely at the last model's price, and `usage.speed: "fast"` turns bill at 2×
+(Opus 5.5 fast = $8/$40). A cache break that coincides with a model switch is
+flagged, and `/cco` says so: caches are per model. The generic break hint now
+names the session's real TTL (1 hour, not 5 minutes).
+
+### "CCO saved $X" no longer claims the prompt cache
+
+The session-summary headline added Claude Code's own prompt-cache savings to
+what CCO saved (read dedup/blocking) — $87 "saved by CCO" on a session where
+CCO's part was near zero. The headline is now CCO's savings only; the prompt
+cache keeps its own line.
+
+### "Wasted" reads in read-only sessions
+
+A file read and never edited counted as waste. In a session that edits nothing
+(explain, review, Q&A), reading *is* the work, so those sessions no longer
+record any waste. (Raised by a reader: "reading a file and not subsequently
+editing it doesn't necessarily mean it had no value.")
+
+
 ## 4.11.0 — 2026-09-30
 
 ### Opus 5.5 and Sonnet 5.5
