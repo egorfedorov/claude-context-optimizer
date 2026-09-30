@@ -41,6 +41,20 @@ At $4/M input tokens (Opus 5.5) — $10/M on Fable 5.1 — a developer spending 
 
 ---
 
+## What's new in v4.12 — honest numbers
+
+- **Session cost was counted ~2×.** Claude Code repeats a message's `usage` on
+  every content block it writes to the transcript; CCO summed them. Now each
+  message counts once ($17.43 → $7.72 on a real session). This also removes
+  phantom "cache breaks" on the first turn.
+- **Per-model and fast-mode pricing.** Sessions that switch `/model` are priced
+  per segment, fast-mode turns at 2×, and a cache break caused by a model switch
+  is named as such.
+- **"CCO saved $X" is CCO's savings only.** It used to include Claude Code's own
+  prompt-cache savings, which CCO doesn't cause.
+- **Read-only sessions record no waste.** When nothing is edited (review,
+  explain, Q&A), reading is the work.
+
 ## What's new in v4.11 — Opus 5.5 & Sonnet 5.5, and a plugin that cleans up after itself
 
 **Opus 5.5 was billed as Opus 5.** Sessions on `claude-opus-5-5` matched the

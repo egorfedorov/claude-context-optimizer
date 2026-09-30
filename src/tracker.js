@@ -367,6 +367,10 @@ export function aggregateSessionFiles(files) {
   let sessionTokensWasted = 0;
   const perFile = {};
   const editedFiles = [];
+  // "Read but never edited" is only a waste signal when the session changed
+  // something. In a read-only session (explain, review, Q&A) reading IS the
+  // work, so nothing there counts as waste.
+  const readOnlySession = !Object.values(files || {}).some(f => f.wasEdited || (f.edits || 0) > 0);
 
   for (const [filePath, fileData] of Object.entries(files || {})) {
     const tokensUsed = fileData.estTokens * fileData.reads;
@@ -374,7 +378,7 @@ export function aggregateSessionFiles(files) {
 
     const usefulness = computeUsefulness(fileData);
     const isUseful = usefulness > 0;
-    const wasted = !isUseful && fileData.reads >= 1;
+    const wasted = !readOnlySession && !isUseful && fileData.reads >= 1;
     if (wasted) sessionTokensWasted += tokensUsed;
 
     perFile[filePath] = { tokensUsed, usefulness, isUseful, wasted };

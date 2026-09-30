@@ -1,6 +1,6 @@
 {
   "name": "claude-context-optimizer",
-  "version": "4.11.0",
+  "version": "4.12.0",
   "description": "Cuts wasted context in Claude Code and shows what each session really costs. Model-aware for the Claude 5 lineup (Opus 5.5, Sonnet 5.5, Fable 5.1) with 1-hour-cache pricing and cache-break warnings; read dedup and file digests; auto .contextignore; a ru/en prompt coach; task state that survives /compact; and a one-screen /cco control center. Runs locally, no network calls.",
   "type": "module",
   "main": "src/tracker.js",
