@@ -3,7 +3,10 @@ name: cco-templates
 description: Manage context templates for common task types
 license: MIT
 argument-hint: "[list | create <name> | apply <name> | delete <name>]"
-allowed-tools: [Bash, Read, Write, Glob]
+allowed-tools:
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js:*)"
+  - Read
+  - Glob
 ---
 
 # Context Templates
@@ -15,10 +18,7 @@ Templates are stored in `~/.claude-context-optimizer/templates/`.
 Parse $ARGUMENTS:
 
 ## `list` (or no arguments)
-Show all available templates:
-```bash
-ls ~/.claude-context-optimizer/templates/*.json 2>/dev/null
-```
+Show all available templates: Glob `~/.claude-context-optimizer/templates/*.json`.
 For each template, show its name, description, and file list.
 
 ## `create <name>`
@@ -28,10 +28,10 @@ Help the user create a new template. Ask them:
 
 Also suggest files based on historical tracking data:
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js suggest "$(pwd)"
+node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js suggest
 ```
 
-Save the template as `~/.claude-context-optimizer/templates/<name>.json` with format:
+Save (the user approves the write) the template as `~/.claude-context-optimizer/templates/<name>.json` with format:
 ```json
 {
   "name": "template-name",

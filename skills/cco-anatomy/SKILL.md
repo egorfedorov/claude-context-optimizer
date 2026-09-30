@@ -2,7 +2,9 @@
 name: cco-anatomy
 description: Generate a compact project map so Claude understands the codebase without opening every file
 license: MIT
-allowed-tools: [Bash, Read]
+allowed-tools:
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/anatomy.js:*)"
+  - Read
 ---
 
 # Project Anatomy Generator

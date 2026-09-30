@@ -3,7 +3,8 @@ name: cco-export
 description: Export context report as Markdown or HTML
 license: MIT
 argument-hint: "[md|html] (default: md)"
-allowed-tools: [Bash]
+allowed-tools:
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/export.js:*)"
 ---
 
 # Export Context Report

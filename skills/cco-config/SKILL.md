@@ -3,7 +3,8 @@ name: cco-config
 description: View and tune CCO's behavior thresholds — re-read warnings, cache staleness, prompt-coach length bands, and the /cco-pack budget cap
 license: MIT
 argument-hint: "[show | get <key> | set <key> <value> | reset [key]]"
-allowed-tools: [Bash]
+allowed-tools:
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/config.js:*)"
 ---
 
 # CCO Config — tune how aggressive the optimizer is
@@ -20,7 +21,7 @@ Parse $ARGUMENTS:
 ## `show` (or no arguments)
 
 ```bash
-node src/config.js
+node ${CLAUDE_PLUGIN_ROOT}/src/config.js
 ```
 
 Print the table as-is. `*` marks values the user set; `!` marks a stored value
@@ -31,13 +32,13 @@ doing what the user thinks.
 ## `get <key>`
 
 ```bash
-node src/config.js get <key>
+node ${CLAUDE_PLUGIN_ROOT}/src/config.js get <key>
 ```
 
 ## `set <key> <value>`
 
 ```bash
-node src/config.js set <key> <value>
+node ${CLAUDE_PLUGIN_ROOT}/src/config.js set <key> <value>
 ```
 
 Exits non-zero with the valid range on a bad value or unknown key — relay that
@@ -48,8 +49,8 @@ from the key name alone.
 ## `reset [key]`
 
 ```bash
-node src/config.js reset <key>    # one key
-node src/config.js reset          # everything back to defaults
+node ${CLAUDE_PLUGIN_ROOT}/src/config.js reset <key>    # one key
+node ${CLAUDE_PLUGIN_ROOT}/src/config.js reset          # everything back to defaults
 ```
 
 Resetting everything discards all the user's tuning — confirm first unless they

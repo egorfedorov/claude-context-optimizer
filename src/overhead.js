@@ -232,24 +232,21 @@ export function buildReport(cwd, transcriptArg) {
 // we can name the servers that took up space and were never called — and print
 // the exact `claude mcp remove` for each.
 
-/** All configured MCP servers with the scope they're defined in. Pure-ish. */
-export function collectConfiguredMcpServers(cwd, home = homedir()) {
+/** Configured MCP servers with their scope. User/local servers live in
+ *  ~/.claude.json next to account data, so we never read it: the skill passes
+ *  the server names the session actually has (`--servers a,b`) and we only
+ *  read the project's own ./.mcp.json. Pure-ish. */
+export function collectConfiguredMcpServers(cwd, names = []) {
   const out = [];
   const seen = new Set();
   const add = (name, scope) => {
-    const key = `${name}`;
-    if (!seen.has(key)) { seen.add(key); out.push({ name, scope }); }
+    if (!seen.has(name)) { seen.add(name); out.push({ name, scope }); }
   };
-  try {
-    const cfg = JSON.parse(readFileSync(join(home, '.claude.json'), 'utf-8'));
-    for (const name of Object.keys(cfg.mcpServers || {})) add(name, 'user');
-    const proj = (cfg.projects || {})[cwd];
-    for (const name of Object.keys((proj && proj.mcpServers) || {})) add(name, 'local');
-  } catch { /* no global config */ }
   try {
     const mcp = JSON.parse(readFileSync(join(cwd, '.mcp.json'), 'utf-8'));
     for (const name of Object.keys(mcp.mcpServers || {})) add(name, 'project');
   } catch { /* no project .mcp.json */ }
+  for (const name of names) if (/^[\w.@:-]+$/.test(name)) add(name, '');
   return out;
 }
 
@@ -303,8 +300,8 @@ export function haveMcpEvidence(usage, sessions) {
   return sessions >= 5 && totalCalls > 0;
 }
 
-export function buildMcpReport(cwd, now = Date.now()) {
-  const configured = collectConfiguredMcpServers(cwd);
+export function buildMcpReport(cwd, now = Date.now(), names = []) {
+  const configured = collectConfiguredMcpServers(cwd, names);
   const { usage, sessions, oldestMs } = aggregateMcpUsage();
   const { used, unused } = splitMcpByUsage(configured, usage);
   const observedDays = oldestMs ? Math.max(1, Math.round((now - oldestMs) / 86400_000)) : 0;
@@ -314,25 +311,25 @@ export function buildMcpReport(cwd, now = Date.now()) {
   L.push(`  MCP SERVER USAGE — ${observedDays ? `last ${observedDays} day(s) observed` : 'no tracked sessions yet'}`);
   L.push('  ' + '─'.repeat(60));
   if (!configured.length) {
-    L.push('  No MCP servers configured (checked ~/.claude.json and ./.mcp.json).');
+    L.push('  No MCP servers configured (checked --servers and ./.mcp.json).');
     return L.join('\n');
   }
   L.push(`  ${configured.length} server(s) configured · evidence from ${sessions} tracked session(s)`);
   L.push('');
   for (const s of used) {
-    L.push(`    ✔ ${s.name.padEnd(28)} ${String(s.calls).padStart(6)} calls   (${s.scope})`);
+    L.push(`    ✔ ${s.name.padEnd(28)} ${String(s.calls).padStart(6)} calls   (${s.scope || 'session'})`);
   }
   const evidence = haveMcpEvidence(usage, sessions);
   for (const s of unused) {
     L.push(evidence
-      ? `    ✖ ${s.name.padEnd(28)}      0 calls   (${s.scope}) — schemas still load every session`
-      : `    ? ${s.name.padEnd(28)}   not observed  (${s.scope}) — no data yet, not a verdict`);
+      ? `    ✖ ${s.name.padEnd(28)}      0 calls   (${s.scope || 'session'}) — schemas still load every session`
+      : `    ? ${s.name.padEnd(28)}   not observed  (${s.scope || 'session'}) — no data yet, not a verdict`);
   }
   if (unused.length && evidence) {
     L.push('');
     L.push('  Fix — remove what you never call (each removal repays in EVERY session):');
     for (const s of unused) {
-      L.push(`    claude mcp remove "${s.name}" -s ${s.scope}`);
+      L.push(`    claude mcp remove "${s.name}"${s.scope ? ` -s ${s.scope}` : ''}`);
     }
     L.push('  (re-add any time with `claude mcp add`)');
   } else if (unused.length) {
@@ -353,7 +350,9 @@ export function buildMcpReport(cwd, now = Date.now()) {
 function main() {
   const arg = process.argv[2];
   if (arg === 'mcp') {
-    console.log(buildMcpReport(process.cwd()));
+    const i = process.argv.indexOf('--servers');
+    const names = i > 0 ? (process.argv[i + 1] || '').split(',').map(n => n.trim()).filter(Boolean) : [];
+    console.log(buildMcpReport(process.cwd(), Date.now(), names));
     return;
   }
   console.log(buildReport(process.cwd(), arg));

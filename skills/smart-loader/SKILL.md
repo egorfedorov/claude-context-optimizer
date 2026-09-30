@@ -18,10 +18,8 @@ When a user starts a new task or asks to work on something, check if there are h
 
 ## How to Use
 
-1. Check for existing templates matching the task type:
-```bash
-ls ~/.claude-context-optimizer/templates/ 2>/dev/null
-```
+1. Check for existing templates matching the task type: Glob
+   `~/.claude-context-optimizer/templates/*.json`.
 
 2. Check historical patterns for the current directory:
 ```bash

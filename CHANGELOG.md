@@ -1,5 +1,23 @@
 # Changelog
 
+## 4.12.1 — 2026-09-30
+
+Directory review fixes. Nothing changes in what the plugin measures.
+
+- **No broad shell pre-approval.** Every skill's `allowed-tools` named plain
+  `Bash`, which pre-approved any command. Each skill now pre-approves only its
+  own scripts, e.g. `Bash(node ${CLAUDE_PLUGIN_ROOT}/src/roi.js:*)`. The steps
+  that used `cat`/`ls`/`du`/`find`/`node -e` now use Read/Glob or a plugin script
+  (new `tracker.js prune`). `/cco-config`, `/cco-patterns` and `/cco-tools`
+  called `node src/...` relative to the project and failed outside the plugin
+  dir; they use `${CLAUDE_PLUGIN_ROOT}` now.
+- **No pre-approved writes.** `/cco-budget` and `/cco-templates` dropped `Write`
+  from `allowed-tools`; saving config or a template asks the user.
+- **`~/.claude.json` is no longer read.** It holds account data next to the MCP
+  config. `/cco-overhead mcp` now takes server names from the session
+  (`--servers a,b`) plus the project's `./.mcp.json`. Removal commands for
+  session-supplied servers omit `-s <scope>`.
+
 ## 4.12.0 — 2026-09-30
 
 Honest numbers. Three places where `/cco` and the session summary reported

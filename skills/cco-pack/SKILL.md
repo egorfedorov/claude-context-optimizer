@@ -2,7 +2,9 @@
 name: cco-pack
 description: Build an optimal context pack for the user's task — ranked file list with offset/limit suggestions, based on git state, mentioned paths, and historical patterns
 license: MIT
-allowed-tools: [Bash, Read]
+allowed-tools:
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/smart-pack.js:*)"
+  - Read
 ---
 
 # Smart Context Pack

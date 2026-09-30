@@ -955,6 +955,11 @@ async function main() {
     return;
   }
 
+  if (action === 'prune') {
+    console.log(`removed ${pruneOldData({ force: true })} files`);
+    return;
+  }
+
   if (action === 'suggest') {
     const cwd = process.argv[3] || process.cwd();
     console.log(JSON.stringify(generateSuggestions(cwd), null, 2));

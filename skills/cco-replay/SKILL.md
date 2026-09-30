@@ -3,7 +3,8 @@ name: cco-replay
 description: Show recent session summaries for quick context recovery
 license: MIT
 argument-hint: "[N] (number of sessions to show, default 5)"
-allowed-tools: [Bash]
+allowed-tools:
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/replay.js:*)"
 ---
 
 # Session Replay

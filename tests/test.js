@@ -2892,3 +2892,24 @@ describe('v4.12 session economics', () => {
     assert.equal(computeSessionCost(e, 'opus-5.5').real, 2 * computeCacheAwareCost(e.totals, 'opus-5.5').real);
   });
 });
+
+// ── v4.12.1: directory policy — no broad shell pre-approval, no ~/.claude.json ─
+describe('directory policy', () => {
+  it('every skill scopes Bash to a plugin script and never pre-approves Write', async () => {
+    const { readdirSync, readFileSync } = await import('fs');
+    for (const dir of readdirSync('skills').filter(d => !d.startsWith('.'))) {
+      const fm = readFileSync(join('skills', dir, 'SKILL.md'), 'utf-8').split('\n---')[0];
+      for (const t of fm.match(/^\s+- .+$/gm) || []) {
+        assert.ok(!/^\s+- (Bash|Write)\s*$/.test(t), `${dir}: unscoped ${t.trim()}`);
+        if (t.includes('Bash(')) assert.match(t, /Bash\(node \$\{CLAUDE_PLUGIN_ROOT\}\/src\/[\w-]+\.js[^*/]*(:\*)?\)/, dir);
+      }
+      assert.ok(!/allowed-tools: \[/.test(fm), `${dir}: flow-style allowed-tools`);
+    }
+  });
+
+  it('MCP audit takes server names from args, not ~/.claude.json', async () => {
+    const { collectConfiguredMcpServers } = await import('../src/overhead.js');
+    const got = collectConfiguredMcpServers('/nonexistent', ['stake', 'bad name;rm']);
+    assert.deepEqual(got, [{ name: 'stake', scope: '' }]);
+  });
+});

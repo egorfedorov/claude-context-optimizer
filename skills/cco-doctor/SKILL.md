@@ -2,7 +2,9 @@
 name: cco-doctor
 description: Health check for the context-optimizer plugin install — verifies versions, hooks, data dir, model config, and reports any issues
 license: MIT
-allowed-tools: [Bash, Read]
+allowed-tools:
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/doctor.js:*)"
+  - Read
 ---
 
 # CCO Doctor

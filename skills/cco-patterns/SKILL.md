@@ -3,7 +3,9 @@ name: cco-patterns
 description: Share learned file patterns across a team — export an anonymized digest of what's usually waste/useful/co-edited, and import a teammate's so a fresh clone benefits day one
 license: MIT
 argument-hint: "[export [--out <file>] | import <file> | show]"
-allowed-tools: [Bash, Read]
+allowed-tools:
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/patterns-share.js:*)"
+  - Read
 ---
 
 # CCO Patterns — share what the project has learned
@@ -20,7 +22,7 @@ Parse $ARGUMENTS:
 ## `export`
 
 ```bash
-node src/patterns-share.js export
+node ${CLAUDE_PLUGIN_ROOT}/src/patterns-share.js export
 ```
 
 Writes `.cco/patterns.digest.json` in the project (override with `--out`).
@@ -37,7 +39,7 @@ point: teammates get it on clone.
 ## `import <file>`
 
 ```bash
-node src/patterns-share.js import .cco/patterns.digest.json
+node ${CLAUDE_PLUGIN_ROOT}/src/patterns-share.js import .cco/patterns.digest.json
 ```
 
 Merges into the current project's patterns. **Imported data is stored as a
@@ -55,7 +57,7 @@ with absolute paths or traversal segments is rejected, not sanitized.
 ## `show`
 
 ```bash
-node src/patterns-share.js show
+node ${CLAUDE_PLUGIN_ROOT}/src/patterns-share.js show
 ```
 
 Lists what was imported for this project and how each file is labelled.

@@ -2,7 +2,10 @@
 name: cco-report
 description: Show detailed token ROI report across all tracked sessions
 license: MIT
-allowed-tools: [Bash, Read]
+allowed-tools:
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/report.js:*)"
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js:*)"
+  - Read
 ---
 
 # Context Token ROI Report
@@ -23,7 +26,7 @@ Present the full report to the user. After showing it, provide actionable insigh
 
 Also run:
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js suggest "$(pwd)"
+node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js suggest
 ```
 
 And present the smart suggestions (files to preload, files to avoid) for the current project directory.

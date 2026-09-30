@@ -3,7 +3,8 @@ name: cco-budget
 description: Configure token budget limits, auto-compact settings, and view current budget status (model-aware — Claude 5 lineup, Opus 5.5 default fallback, full 1M context at standard price)
 license: MIT
 argument-hint: "[status | set <tokens> | model <haiku-4.5|sonnet-4.6|sonnet-5|sonnet-5.5|opus-4.7|opus-4.8|opus-5|opus-5.5|fable-5|fable-5.1> | auto <on|off>]"
-allowed-tools: [Bash, Read, Write]
+allowed-tools:
+  - Read
 ---
 
 # Context Budget Manager
@@ -16,17 +17,14 @@ Everything from Sonnet 4.6 up is 1M; Haiku 4.5 is 200K.
 Parse $ARGUMENTS:
 
 ## `status` (or no arguments)
-Show current budget config + auto-compact settings:
-```bash
-cat ~/.claude-context-optimizer/config.json 2>/dev/null
-echo "---"
-cat ~/.claude-context-optimizer/budget-config.json 2>/dev/null
-```
+Show current budget config + auto-compact settings: Read
+`~/.claude-context-optimizer/config.json` and
+`~/.claude-context-optimizer/budget-config.json` (either may be missing).
 If no config exists, show defaults (200K working budget on a 1M window, `opus-5.5` fallback model, warn at 50/70/85/95%).
 
 ## `set <tokens>`
 Update the budget limit. Parse the token count (`200K`, `1M`, `500000` all OK).
-Update `~/.claude-context-optimizer/config.json`:
+Update `~/.claude-context-optimizer/config.json` (the user approves the write):
 ```json
 {
   "budgetTokens": <parsed_number>,
