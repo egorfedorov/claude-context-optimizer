@@ -377,7 +377,7 @@ describe('anatomy logic', () => {
 
   describe('shouldSkip', () => {
     it('skips binary/media files', () => {
-      assert.equal(shouldSkip('logo.png'), true);
+      assert.equal(shouldSkip('photo.jpeg'), true);
       assert.equal(shouldSkip('font.woff2'), true);
       assert.equal(shouldSkip('video.mp4'), true);
     });
@@ -2485,7 +2485,7 @@ describe('smart-pack: candidate merge', () => {
   it('drops files nothing should ever read', async () => {
     const { mergeCandidates } = await import('../src/smart-pack.js');
     const items = mergeCandidates({
-      mentioned: ['/p/logo.png', '/p/bundle.min.js', '/p/real.js'],
+      mentioned: ['/p/photo.jpeg', '/p/bundle.min.js', '/p/real.js'],
       historic: [{ file: '/p/package-lock.json', confidence: 1, edits: 9, sessions: 9 }],
     });
     assert.deepEqual(items.map(i => i.file), ['/p/real.js']);
