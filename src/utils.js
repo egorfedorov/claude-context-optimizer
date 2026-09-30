@@ -5,7 +5,7 @@
  * usefulness scoring, JSON I/O, file classification, and config management.
  */
 
-import { readFileSync, writeFileSync, renameSync, mkdirSync, rmdirSync, existsSync, statSync, realpathSync, readdirSync, unlinkSync, utimesSync } from 'fs';
+import { readFileSync, writeFileSync, renameSync, mkdirSync, rmdirSync, existsSync, statSync, realpathSync, readdirSync, unlinkSync } from 'fs';
 import { join, basename, extname, dirname } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
@@ -756,9 +756,10 @@ const PRUNE_MARKER = join(DATA_DIR, '.last-prune');
  * day unless `force`. Returns the number of files removed.
  */
 export function pruneOldData({ now = Date.now(), force = false, dataDir = DATA_DIR, marker = PRUNE_MARKER } = {}) {
-  try {
-    if (!force && existsSync(marker) && now - statSync(marker).mtimeMs < 86_400_000) return 0;
-  } catch { /* unreadable marker → prune */ }
+  // The marker holds the last prune time; read it, never stat-then-write it.
+  let last = 0;
+  try { last = Number(readFileSync(marker, 'utf-8')) || 0; } catch { /* first run */ }
+  if (!force && now - last < 86_400_000) return 0;
   let removed = 0;
   for (const [dir, days] of Object.entries(RETENTION_DAYS)) {
     const full = join(dataDir, dir);
@@ -772,10 +773,7 @@ export function pruneOldData({ now = Date.now(), force = false, dataDir = DATA_D
       } catch { /* raced with another session — skip */ }
     }
   }
-  try {
-    if (existsSync(marker)) utimesSync(marker, new Date(now), new Date(now));
-    else writeFileSync(marker, '');
-  } catch { /* best effort */ }
+  try { writeFileSync(marker, String(now)); } catch { /* best effort */ }
   return removed;
 }
 
