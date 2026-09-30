@@ -48,7 +48,7 @@ export function gather(sessionId) {
   // Prefer the model the SESSION actually runs on (detected by the budget hook
   // from the transcript) over the static config value.
   const rawSessionModel = getSessionModel(sessionId);
-  const model = normalizeModelId(rawSessionModel) || config.model || 'opus-5';
+  const model = normalizeModelId(rawSessionModel) || config.model || 'opus-5.5';
   const cost = getModelCost(model);
   const effectiveBudget = getEffectiveBudget(config, rawSessionModel);
 

@@ -214,7 +214,7 @@ function main() {
   const rest = process.argv.slice(3).join(' ').trim();
   const project = process.env.CCO_PROJECT || process.cwd();
   const sessionId = getLatestSessionId();
-  const model = (loadConfig().model) || 'opus-5';
+  const model = (loadConfig().model) || 'opus-5.5';
   const tokensNow = getSessionTokenTotal(sessionId);
   const stamp = new Date().toISOString();
   let state = loadTasks();

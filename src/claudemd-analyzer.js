@@ -222,7 +222,7 @@ function formatReport(analysis) {
 
     output += `\n  ${'─'.repeat(62)}\n`;
     output += `  POTENTIAL SAVINGS: ~${formatTokens(analysis.totalSavings)} tokens\n`;
-    output += `  That's ~$${((analysis.totalSavings / 1000000) * MODEL_INPUT_COST.opus).toFixed(4)}/session on Opus\n`;
+    output += `  That's ~$${((analysis.totalSavings / 1000000) * MODEL_INPUT_COST['opus-5.5']).toFixed(4)}/session on Opus 5.5\n`;
   }
 
   output += '\n';

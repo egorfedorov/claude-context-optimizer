@@ -27,13 +27,15 @@ function getProjectPatterns(patterns, projectRoot) {
   return patterns.projects[key] || { fileFrequency: {}, wastedReads: {}, coOccurrence: {} };
 }
 
-function findProjectForPath(patterns, filePath) {
-  for (const key of Object.keys(patterns.projects)) {
-    if (key !== '_global' && filePath.startsWith(key)) {
-      return key;
-    }
+// Deepest matching root wins: with both `repo` and `repo/games/x` tracked, a
+// file under games/x must get games/x's waste history, not the parent's.
+export function findProjectForPath(patterns, filePath) {
+  let best = null;
+  for (const key of Object.keys(patterns.projects || {})) {
+    if (key === '_global') continue;
+    if ((filePath === key || filePath.startsWith(key + '/')) && (!best || key.length > best.length)) best = key;
   }
-  return null;
+  return best;
 }
 
 // ── .contextignore suggestions (close the loop: observation → rule) ─────────

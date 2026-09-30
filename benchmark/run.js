@@ -9,7 +9,7 @@
  * Usage: node benchmark/run.js
  */
 
-import { estimateTokens, TOKEN_RATIOS } from '../src/utils.js';
+import { estimateTokens, TOKEN_RATIOS, getModelCost, getCacheRates } from '../src/utils.js';
 import { parseFileStructure, formatDigest } from '../src/file-digest.js';
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
@@ -201,18 +201,21 @@ function scenario_typicalSession() {
 
 // ── Dollar-leak scenarios (v4.5 guards) ──────────────────────────────────────
 // These are priced, not token-counted: a cache break doesn't add tokens to the
-// context, it re-bills the SAME tokens at the 1.25× write rate instead of the
-// 0.1× cached-read rate. The guard's value = breaks it teaches you to avoid.
+// context, it re-bills the SAME tokens at the cache-write rate instead of the
+// cached-read rate. Priced from the plugin's own table for the default model
+// on Claude Code's 1h TTL. The guard's value = breaks it teaches you to avoid.
 
-const INPUT_PRICE_PER_M = 5; // Opus/Fable tier
+const BENCH_MODEL = 'opus-5.5';
+const INPUT_PRICE_PER_M = getModelCost(BENCH_MODEL).input;
+const RATES = getCacheRates(BENCH_MODEL, '1h');
 
 function scenario_cacheBreak(contextTokens, breaksPerDay) {
-  const cachedCost = (contextTokens * 0.1 * INPUT_PRICE_PER_M) / 1e6;
-  const rewriteCost = (contextTokens * 1.25 * INPUT_PRICE_PER_M) / 1e6;
+  const cachedCost = (contextTokens * RATES.read * INPUT_PRICE_PER_M) / 1e6;
+  const rewriteCost = (contextTokens * RATES.write * INPUT_PRICE_PER_M) / 1e6;
   const perBreak = rewriteCost - cachedCost;
   return {
     name: `Cache break avoided (${Math.round(contextTokens / 1000)}K ctx)`,
-    description: `A >5-min pause re-bills ${Math.round(contextTokens / 1000)}K cached tokens at 1.25× instead of 0.1×`,
+    description: `A >1h pause re-bills ${Math.round(contextTokens / 1000)}K cached tokens at ${RATES.write}× instead of ${RATES.read}×`,
     perBreakDollars: perBreak,
     perDayDollars: perBreak * breaksPerDay,
     breaksPerDay,
@@ -284,7 +287,7 @@ function runBenchmarks() {
     scenario_cacheBreak(150_000, 3),
     scenario_cacheBreak(400_000, 3),
   ];
-  console.log('  Dollar leaks the v4.5 cache-break guard names live ($5/M input):');
+  console.log(`  Dollar leaks the cache-break guard names live (${BENCH_MODEL}, $${INPUT_PRICE_PER_M}/M input, 1h cache):`);
   for (const b of breakScenarios) {
     console.log(
       `    ${b.name.padEnd(34)} $${b.perBreakDollars.toFixed(2)}/break` +

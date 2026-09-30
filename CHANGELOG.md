@@ -1,5 +1,46 @@
 # Changelog
 
+## 4.11.0 — 2026-09-30
+
+### Opus 5.5 and Sonnet 5.5
+
+`claude-opus-5-5` matched the `opus-5` regex (`5\b` before `-5`) and was billed
+at $5/$25 with 0.1× cache reads. Opus 5.5 is $4/$20 and reads cache at $0.20/M
+(0.05×); on a cache-read-heavy session that overstated spend by ~50%.
+`claude-sonnet-5-5` was labelled `sonnet-5` (same price).
+
+| key | $/M in / out | cache read | window |
+|---|---|---|---|
+| `opus-5.5` (new default fallback) | **4 / 20** | **0.05×** | 1M |
+| `sonnet-5.5` | 2 / 10 | 0.1× | 1M |
+
+- `CURRENT_MODELS` (Haiku 4.5, Sonnet 5.5, Opus 5.5, Fable 5.1) drives the ROI,
+  digest and `/cco-report` comparisons instead of the old generic
+  `haiku`/`sonnet`/`opus` rows (Sonnet 4.6 prices) and 17 aliases.
+- Export and the CLAUDE.md analyzer price at Opus 5.5.
+- The benchmark prices cache breaks from the plugin's own table (Opus 5.5, 1h
+  TTL: 2× write vs 0.05× read) instead of a hardcoded $5 and 5-minute rates.
+- `/cco-doctor` warns when the configured fallback model isn't current.
+
+### Data retention
+
+Six per-session folders grew forever (~96MB, 7K+ files after a few months).
+`pruneOldData()` runs at most once a day on SessionStart: 90 days for
+`sessions/`, `summaries/`, `prompts/`; 14 days for `budget/`, `read-cache/`,
+`notices/`. `/cco-clean --prune` runs it on demand. `prunePatterns()` now drops
+projects idle for 180 days (patterns.json held 162 projects ≈ 10MB, parsed on
+every Read by the shield).
+
+### Fixes
+
+- Context shield: `findProjectForPath` returned the first prefix match, so a
+  file in `repo/games/x` got `repo`'s waste history, and `/rx` matched `/r`.
+  Now the deepest root on a `/` boundary wins.
+- ROI and digest tables: model column widened for "Sonnet 5.5".
+- README Privacy section now lists everything stored and run (prompt previews,
+  transcript usage numbers, local `git`).
+
+
 ## 4.10.0 — 2026-09-02
 
 Three things: the price table catches up with the Claude 5 lineup, the cache

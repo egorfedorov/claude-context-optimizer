@@ -80,7 +80,7 @@ export function deriveRoiInputs(sessions) {
 }
 
 export function buildROITable(avgWastePercent, avgTokensPerSession, sessionsPerDay) {
-  const models = ['haiku', 'sonnet', 'opus'];
+  const models = ['haiku-4.5', 'sonnet-5.5', 'opus-5.5'];
   const rows = [];
 
   for (const model of models) {
@@ -92,7 +92,7 @@ export function buildROITable(avgWastePercent, avgTokensPerSession, sessionsPerD
     const monthlySavings = dailySavings * 30;
 
     rows.push({
-      model: model.charAt(0).toUpperCase() + model.slice(1),
+      model: (model.charAt(0).toUpperCase() + model.slice(1)).replace('-', ' '),
       pricePerM: `$${cost}`,
       savingsPerSession: `$${savingsPerSession.toFixed(2)}`,
       dailySavings: `$${dailySavings.toFixed(2)}`,
@@ -135,12 +135,12 @@ function formatROIReport(sessions, sessionsPerDay) {
   // ROI table
   lines.push('  ── Monthly Savings by Model ─────────────────────────────────');
   lines.push('');
-  lines.push('  Model     $/M tok   Per session   Per day    Per month   Per year');
-  lines.push('  ───────   ───────   ───────────   ────────   ─────────   ────────');
+  lines.push('  Model        $/M tok   Per session   Per day    Per month   Per year');
+  lines.push('  ──────────   ───────   ───────────   ────────   ─────────   ────────');
 
   const table = buildROITable(wastePercent, avgTokens, sessionsPerDay);
   for (const row of table) {
-    const m = row.model.padEnd(9);
+    const m = row.model.padEnd(12);
     const p = row.pricePerM.padEnd(9);
     const s = row.savingsPerSession.padEnd(13);
     const d = row.dailySavings.padEnd(10);
@@ -159,7 +159,7 @@ function formatROIReport(sessions, sessionsPerDay) {
   lines.push('');
 
   // Team ROI
-  lines.push('  ── Team ROI (10 developers, Opus) ───────────────────────────');
+  lines.push('  ── Team ROI (10 developers, Opus 5.5) ───────────────────────');
   const teamMonthly = parseFloat(table[2].monthlySavings.replace('$', '')) * 10;
   const teamYearly = teamMonthly * 12;
   lines.push(`  Monthly: $${teamMonthly.toFixed(0)}`);

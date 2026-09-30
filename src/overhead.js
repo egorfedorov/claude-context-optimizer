@@ -177,7 +177,7 @@ export function buildReport(cwd, transcriptArg) {
   }
 
   // Price at the model the latest session actually ran on; config is the fallback.
-  const model = normalizeModelId(baselines[0].model) || config.model || 'opus-5';
+  const model = normalizeModelId(baselines[0].model) || config.model || 'opus-5.5';
   const cost = getModelCost(model);
   const latest = baselines[0].baseline;
   const avg = Math.round(baselines.reduce((s, b) => s + b.baseline, 0) / baselines.length);

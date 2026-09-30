@@ -3,11 +3,14 @@
   "owner": {
     "name": "Egor Fedorov"
   },
+  "metadata": {
+    "description": "Context and cost tooling for Claude Code: claude-context-optimizer."
+  },
   "plugins": [
     {
       "name": "claude-context-optimizer",
-      "description": "Claude 5-aware context optimization (Fable 5.1 / Opus 5 / Sonnet 5 pricing, 1h-cache-aware real costs & cache-break detection), SKILL.state-style task state that survives /compact, session baseline audit (/cco-overhead), auto .contextignore, self-calibrating estimates, delegation advisor, ru/en prompt coach, per-language token estimation, tunable thresholds via /cco-config, self-learning tool costs, team pattern sharing",
-      "version": "4.10.0",
+      "description": "Cuts wasted context in Claude Code and shows what each session really costs. Model-aware for the Claude 5 lineup (Opus 5.5, Sonnet 5.5, Fable 5.1) with 1-hour-cache pricing and cache-break warnings; read dedup and file digests; auto .contextignore; a ru/en prompt coach; task state that survives /compact; and a one-screen /cco control center. Runs locally, no network calls.",
+      "version": "4.11.0",
       "source": "./"
     }
   ]

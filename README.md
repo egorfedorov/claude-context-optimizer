@@ -4,7 +4,7 @@
 
 <p align="center">
   <strong>Stop burning tokens on weak prompts and redundant reads.</strong><br/>
-  <sub>Model-aware for the whole Claude lineup — Fable 5.1, Opus 5, Sonnet 5, Haiku — detected per session, zero config.</sub>
+  <sub>Model-aware for the whole Claude lineup — Opus 5.5, Sonnet 5.5, Fable 5.1, Haiku — detected per session, zero config.</sub>
 </p>
 
 <p align="center">
@@ -29,7 +29,7 @@ The average Claude Code session **wastes 30-50% of tokens** on files that are re
 - A README you glanced at once? **2,400 tokens burned.**
 - That `package.json` Claude reads "just in case"? **120 tokens, every time.**
 
-At $5/M input tokens (Opus 5) — $10/M on Fable 5.1 — a developer spending $100/month is lighting **$30-50 on fire** on irrelevant context.
+At $4/M input tokens (Opus 5.5) — $10/M on Fable 5.1 — a developer spending $100/month is lighting **$30-50 on fire** on irrelevant context.
 
 ## The Solution
 
@@ -40,6 +40,30 @@ At $5/M input tokens (Opus 5) — $10/M on Fable 5.1 — a developer spending $1
 </p>
 
 ---
+
+## What's new in v4.11 — Opus 5.5 & Sonnet 5.5, and a plugin that cleans up after itself
+
+**Opus 5.5 was billed as Opus 5.** Sessions on `claude-opus-5-5` matched the
+`opus-5` row: $5/$25 and 0.1× cache reads. Opus 5.5 is **$4/$20** and reads its
+cache at **$0.20/M (0.05×)**, so a real Opus 5.5 session showed **~50% more
+spend than it cost** ($4.60 vs $3.06 on the session this release was built in).
+Opus 5.5 and Sonnet 5.5 now have their own rows, and `opus-5.5` is the default
+fallback. ROI, digest, export and `/cco-report` compare the current lineup
+(Haiku 4.5 · Sonnet 5.5 · Opus 5.5 · Fable 5.1) instead of 17 aliases.
+
+**Data retention.** One file per session landed in six folders under
+`~/.claude-context-optimizer/` and was never removed (~96MB after a few months).
+Once a day at session start, per-session files older than 90 days and
+live-session state older than 14 days are pruned; aggregated stats and learned
+patterns stay. Projects untouched for 180 days drop out of `patterns.json`.
+Run it now with `/cco-clean --prune`.
+
+**Shield picks the right project.** With nested projects (`repo` and
+`repo/games/x`), the Read shield used the first prefix match, which was often
+the parent, and `/rx` matched `/r`. It now takes the deepest root on a `/`
+boundary.
+
+**`/cco-doctor`** flags a stale fallback model in your config (e.g. `opus-4.8`).
 
 ## What's new in v4.10 — Claude 5 prices, the 1-hour cache, and task state that survives /compact
 
@@ -904,8 +928,11 @@ claude-context-optimizer/
 
 This plugin:
 
-- **Tracks only file paths and line counts** — never file contents
-- **Stores everything locally** in `~/.claude-context-optimizer/`
+- **Tracks file paths and line counts** — never file contents
+- **Keeps a 200-character preview of each prompt** (with its grade) so `/cco-coach` can show trends
+- **Reads token-usage numbers** from Claude Code's own session transcript to price the session
+- **Runs `git` locally** for `/cco-git`, `/cco-pack` and `/cco-anatomy`; nothing else is executed
+- **Stores everything locally** in `~/.claude-context-optimizer/`, pruned automatically (90 days for session history, 14 for live-session state)
 - **Sends zero telemetry** — no network calls, no analytics, no tracking
 - **Can be fully wiped** with `/cco-clean --reset-all`
 
@@ -921,11 +948,11 @@ A: No. Hook scripts run asynchronously and typically complete in <10ms.
 **Q: How accurate are the token estimates?**
 A: They use a ~4 tokens/line heuristic. Not exact, but consistent across sessions for reliable trends.
 
-**Q: Can I use this with Fable 5.1 / Opus 5 / Sonnet 5 / Haiku / Opus 4.x?**
+**Q: Can I use this with Opus 5.5 / Sonnet 5.5 / Fable 5.1 / Opus 5 / Sonnet 5 / Haiku / Opus 4.x?**
 A: Yes — and you normally don't have to tell it: the budget hook reads the session's real
-model id from the transcript. `/cco-budget model fable-5.1` / `opus-5` / `sonnet-5` /
-`sonnet-4.6` / `opus-4.8` / `haiku-4.5` sets only the fallback. Each key carries its own window,
-prices and cache-read rate (Fable 5.1 reads at 0.025×). Everything from Sonnet 4.6 up is 1M
+model id from the transcript. `/cco-budget model opus-5.5` / `sonnet-5.5` / `fable-5.1` /
+`opus-5` / `sonnet-5` / `opus-4.8` / `haiku-4.5` sets only the fallback. Each key carries its own
+window, prices and cache-read rate (Fable 5.1 reads at 0.025×, Opus 5.5 at 0.05×). Everything from Sonnet 4.6 up is 1M
 context; Haiku 4.5 is 200K. (`opus-4.7-1m` / `opus-4.8-1m` still work as back-compat aliases —
 1M is standard now, so there's no surcharge.)
 
