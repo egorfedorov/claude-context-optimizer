@@ -2,7 +2,9 @@
 name: cco-coach
 description: Analyze the user's last prompt for clarity, scope and specificity — give a quality score and concrete suggestions to make the next prompt produce better results
 license: MIT
-allowed-tools: [Bash, Read]
+allowed-tools:
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/prompt-coach.js:*)"
+  - Read
 ---
 
 # Prompt Coach

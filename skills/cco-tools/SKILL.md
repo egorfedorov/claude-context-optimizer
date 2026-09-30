@@ -3,7 +3,8 @@ name: cco-tools
 description: Show what tools actually cost in tokens — learned per-tool averages from observed results, replacing the hardcoded MCP/Agent guesses
 license: MIT
 argument-hint: "[show | reset]"
-allowed-tools: [Bash]
+allowed-tools:
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/tool-costs.js:*)"
 ---
 
 # CCO Tools — what your tools really cost
@@ -21,7 +22,7 @@ Run from the plugin root:
 ## `show` (or no arguments)
 
 ```bash
-node src/tool-costs.js
+node ${CLAUDE_PLUGIN_ROOT}/src/tool-costs.js
 ```
 
 Prints the learned table: calls, average, worst case, and cumulative total per
@@ -41,7 +42,7 @@ never called*; this shows what the called ones actually cost.
 ## `reset`
 
 ```bash
-node src/tool-costs.js reset
+node ${CLAUDE_PLUGIN_ROOT}/src/tool-costs.js reset
 ```
 
 Clears the learned table and returns every tool to its built-in constant.

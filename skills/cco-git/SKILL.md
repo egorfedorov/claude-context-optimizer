@@ -2,7 +2,10 @@
 name: cco-git
 description: Show git-aware context suggestions for current working directory
 license: MIT
-allowed-tools: [Bash, Read, Glob]
+allowed-tools:
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/git-context.js:*)"
+  - Read
+  - Glob
 ---
 
 # Git-Aware Context Suggestions

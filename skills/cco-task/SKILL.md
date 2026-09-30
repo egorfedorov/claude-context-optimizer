@@ -3,7 +3,8 @@ name: cco-task
 description: Organize work by task, track tokens/cost per task, and keep a small patchable execution state that is re-injected after /compact (SKILL.state-style) — start a task, patch its state, list tasks, or mark the active one done. Pairs with /cco-pack to load minimal context per task.
 license: MIT
 argument-hint: "[add \"<name>\" | patch '<json>' | state | list | done [note]]"
-allowed-tools: [Bash]
+allowed-tools:
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/tasks.js:*)"
 ---
 
 # Tasks — per-task context, cost, and execution state

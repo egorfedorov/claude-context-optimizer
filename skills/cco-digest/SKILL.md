@@ -3,7 +3,8 @@ name: cco-digest
 description: Show weekly/daily efficiency digest with score and trends
 license: MIT
 argument-hint: "[7|14|30] (days, default 7)"
-allowed-tools: [Bash]
+allowed-tools:
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/digest.js:*)"
 ---
 
 # Context Efficiency Digest

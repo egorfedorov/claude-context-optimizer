@@ -2,7 +2,9 @@
 name: cco-overhead
 description: Audit the fixed context overhead every session starts with — system prompt, MCP tools, agents, CLAUDE.md, memory — measured from real transcript usage
 license: MIT
-allowed-tools: [Bash, Read]
+allowed-tools:
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/overhead.js:*)"
+  - Read
 ---
 
 # Session Baseline Overhead Audit
@@ -34,8 +36,12 @@ per-server verdicts and the EXACT removal command for servers that were never
 called:
 
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/src/overhead.js mcp
+node ${CLAUDE_PLUGIN_ROOT}/src/overhead.js mcp --servers <name1>,<name2>
 ```
+
+Pass the MCP server names from your own tool list (`mcp__<server>__*`, one entry
+per server). The script never reads `~/.claude.json` — it holds account data —
+so it only knows the servers you pass plus the project's `./.mcp.json`.
 
 Only if the report actually prints `claude mcp remove ...` commands, OFFER to
 run them for the user (each removal repays in every future session; `claude mcp
