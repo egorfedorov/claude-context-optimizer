@@ -20,7 +20,7 @@ import { execSync } from 'child_process';
 import {
   DATA_DIR, PATTERNS_FILE, GLOBAL_STATS_FILE, CONFIG_FILE,
   loadConfig, getEffectiveBudget, getModelContextWindow, formatTokens,
-  getPluginVersion
+  getPluginVersion, CURRENT_MODELS
 } from './utils.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -106,7 +106,7 @@ check('patterns.json size', () => {
   if (!existsSync(PATTERNS_FILE)) return { warn: 'no patterns yet (no sessions tracked)' };
   const size = statSync(PATTERNS_FILE).size;
   if (size > 5 * 1024 * 1024) {
-    return { warn: `patterns.json is ${(size / 1024 / 1024).toFixed(1)}MB — consider /cco-clean` };
+    return { warn: `patterns.json is ${(size / 1024 / 1024).toFixed(1)}MB — old per-session data is auto-pruned daily; /cco-clean --prune to run it now` };
   }
   return `${(size / 1024).toFixed(1)} KB`;
 });
@@ -122,6 +122,9 @@ check('user config', () => {
   const budget = getEffectiveBudget(cfg);
   const window = getModelContextWindow(cfg.model);
   if (budget > window) return `budget ${formatTokens(budget)} exceeds model window ${formatTokens(window)}`;
+  if (!CURRENT_MODELS.includes(cfg.model)) {
+    return { warn: `fallback model=${cfg.model} is not current — /cco-budget model opus-5.5 (live sessions still auto-detect their real model)` };
+  }
   return `model=${cfg.model}, budget=${formatTokens(budget)}, window=${formatTokens(window)}`;
 });
 

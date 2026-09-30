@@ -1,8 +1,8 @@
 ---
 name: cco-budget
-description: Configure token budget limits, auto-compact settings, and view current budget status (model-aware — Claude 5 lineup, Opus 5 default fallback, full 1M context at standard price)
+description: Configure token budget limits, auto-compact settings, and view current budget status (model-aware — Claude 5 lineup, Opus 5.5 default fallback, full 1M context at standard price)
 license: MIT
-argument-hint: "[status | set <tokens> | model <haiku-4.5|sonnet-4.6|sonnet-5|opus-4.7|opus-4.8|opus-5|fable-5|fable-5.1> | auto <on|off>]"
+argument-hint: "[status | set <tokens> | model <haiku-4.5|sonnet-4.6|sonnet-5|sonnet-5.5|opus-4.7|opus-4.8|opus-5|opus-5.5|fable-5|fable-5.1> | auto <on|off>]"
 allowed-tools: [Bash, Read, Write]
 ---
 
@@ -22,7 +22,7 @@ cat ~/.claude-context-optimizer/config.json 2>/dev/null
 echo "---"
 cat ~/.claude-context-optimizer/budget-config.json 2>/dev/null
 ```
-If no config exists, show defaults (200K working budget on a 1M window, `opus-5` fallback model, warn at 50/70/85/95%).
+If no config exists, show defaults (200K working budget on a 1M window, `opus-5.5` fallback model, warn at 50/70/85/95%).
 
 ## `set <tokens>`
 Update the budget limit. Parse the token count (`200K`, `1M`, `500000` all OK).
@@ -32,7 +32,7 @@ Update `~/.claude-context-optimizer/config.json`:
   "budgetTokens": <parsed_number>,
   "warnAt": [50, 70, 85, 95],
   "autoCompactAt": 90,
-  "model": "opus-5"
+  "model": "opus-5.5"
 }
 ```
 If `budgetTokens` exceeds the chosen model's context window, warn the user.
@@ -43,8 +43,10 @@ has no model id yet). Supported keys:
 - `haiku-4.5` (alias `haiku`) — $1/$5 per M, 200K
 - `sonnet-4.6` (alias `sonnet`) — $3/$15 per M, **1M**
 - `sonnet-5` — $2/$10 per M, **1M**
+- `sonnet-5.5` — $2/$10 per M, **1M**
 - `opus-4.7` / `opus-4.8` — $5/$25 per M, **1M**
-- `opus-5` (alias `opus`, **default**) — $5/$25 per M, **1M**
+- `opus-5` (alias `opus`) — $5/$25 per M, **1M**
+- `opus-5.5` (**default**) — $4/$20 per M, **1M**, cache reads at 0.05×
 - `fable-5` — $10/$50 per M, **1M**
 - `fable-5.1` (alias `fable`) — $10/$50 per M, **1M**, cache reads at 0.025× (vs 0.1× elsewhere)
 

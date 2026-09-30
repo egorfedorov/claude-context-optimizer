@@ -144,8 +144,8 @@ export function buildHtml(stats, date) {
     .sort((a, b) => b[1].tokens - a[1].tokens)
     .slice(0, 8);
 
-  const totalCostOpus = (stats.totalTokensTracked / 1000000) * MODEL_INPUT_COST.opus;
-  const wastedCostOpus = (stats.estimatedTokensSaved / 1000000) * MODEL_INPUT_COST.opus;
+  const totalCostOpus = (stats.totalTokensTracked / 1000000) * MODEL_INPUT_COST['opus-5.5'];
+  const wastedCostOpus = (stats.estimatedTokensSaved / 1000000) * MODEL_INPUT_COST['opus-5.5'];
 
   let html = `<!DOCTYPE html>
 <html lang="en">
@@ -209,7 +209,7 @@ export function buildHtml(stats, date) {
     <div class="card">
       <div class="label">Total Tokens</div>
       <div class="value">${formatTokens(stats.totalTokensTracked)}</div>
-      <div class="sub">~$${totalCostOpus.toFixed(2)} on Opus</div>
+      <div class="sub">~$${totalCostOpus.toFixed(2)} on Opus 5.5</div>
     </div>
     <div class="card accent">
       <div class="label">Waste</div>

@@ -17,7 +17,8 @@ import {
   estimateTokens, formatTokens, displayPath, computeUsefulness, computeConfidence,
   getDonationMessage, loadJSON, saveJSON, ensureDataDirs,
   shouldIgnoreForTracking, getFileLines, getProjectRoot, isMainModule,
-  acquireFileLock, getThresholds
+  acquireFileLock, getThresholds,
+  pruneOldData,
 } from './utils.js';
 import { importedVerdict } from './patterns-share.js';
 import { emitNotice } from './notices.js';
@@ -309,7 +310,16 @@ export function updateExploreStreak(session, toolName, tokensAdded = 0) {
 
 // ── Data pruning ────────────────────────────────────────────────────────────
 
-function prunePatterns(patterns) {
+export function prunePatterns(patterns, now = Date.now()) {
+  // Drop projects untouched for 180 days — every project ever opened used to
+  // stay forever (162 of them ≈ 10MB, parsed on every Read by the shield).
+  const staleBefore = now - 180 * 86_400_000;
+  for (const [key, proj] of Object.entries(patterns.projects)) {
+    const seen = Object.values(proj.fileFrequency || {}).map(f => Date.parse(f.lastSeen || '') || 0);
+    const last = seen.length ? Math.max(...seen) : 0;
+    if (!seen.length && !Object.keys(proj.wastedReads || {}).length) delete patterns.projects[key];
+    else if (last && last < staleBefore) delete patterns.projects[key];
+  }
   for (const [, proj] of Object.entries(patterns.projects)) {
     // Cap co-occurrence entries per file to top 20
     for (const [file, related] of Object.entries(proj.coOccurrence || {})) {
@@ -1038,6 +1048,7 @@ async function main() {
     }
 
     case 'SessionStart': {
+      try { pruneOldData(); } catch { /* retention is housekeeping — never block */ }
       // ── CLAUDE.md size nudge ──
       // Memory files load into EVERY prompt of every session — the most
       // expensive place for bloat. Community guidance: keep under 200 lines.

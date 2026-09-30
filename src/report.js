@@ -10,7 +10,7 @@ import { existsSync, readdirSync } from 'fs';
 import { join, basename } from 'path';
 import {
   SESSIONS_DIR, GLOBAL_STATS_FILE,
-  formatTokens, loadJSON, loadConfig, MODEL_INPUT_COST
+  formatTokens, loadJSON, loadConfig, MODEL_INPUT_COST, CURRENT_MODELS
 } from './utils.js';
 
 function generateFullReport() {
@@ -42,13 +42,14 @@ function generateFullReport() {
     Math.round((stats.estimatedTokensSaved / stats.totalTokensTracked) * 100) : 0;
   report += `  Overall waste ratio:        ${overallWaste}%\n`;
 
-  const primaryModel = config.model || 'opus';
+  const primaryModel = config.model || 'opus-5.5';
   const primaryCost = (stats.estimatedTokensSaved / 1000000) * (MODEL_INPUT_COST[primaryModel] || MODEL_INPUT_COST.opus);
   if (stats.estimatedTokensSaved > 5000) {
     report += `  Est. $ saveable (${primaryModel}):   $${primaryCost.toFixed(2)}\n`;
-    for (const [model, rate] of Object.entries(MODEL_INPUT_COST)) {
+    // Current lineup only — MODEL_INPUT_COST also holds aliases and retired rows.
+    for (const model of CURRENT_MODELS) {
       if (model !== primaryModel) {
-        const cost = (stats.estimatedTokensSaved / 1000000) * rate;
+        const cost = (stats.estimatedTokensSaved / 1000000) * MODEL_INPUT_COST[model];
         report += `  Est. $ saveable (${model}):   $${cost.toFixed(2)}\n`;
       }
     }

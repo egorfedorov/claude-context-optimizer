@@ -150,12 +150,12 @@ function generateDigest(days) {
 
   output += `\n  EST. COST\n`;
   output += `  ${'─'.repeat(54)}\n`;
-  output += `  Model      Total       Wasted      Saveable\n`;
-  for (const model of ['haiku', 'sonnet', 'opus']) {
+  output += `  Model       Total       Wasted      Saveable\n`;
+  for (const model of ['haiku-4.5', 'sonnet-5.5', 'opus-5.5']) {
     const rate = MODEL_INPUT_COST[model];
     const total = (efficiency.stats.totalTokens / 1000000) * rate;
     const wasted = (efficiency.stats.wastedTokens / 1000000) * rate;
-    output += `  ${(model.charAt(0).toUpperCase() + model.slice(1)).padEnd(10)} $${total.toFixed(3).padStart(7)}    $${wasted.toFixed(3).padStart(7)}    $${wasted.toFixed(3).padStart(7)}\n`;
+    output += `  ${(model.charAt(0).toUpperCase() + model.slice(1)).replace('-', ' ').padEnd(11)} $${total.toFixed(3).padStart(7)}    $${wasted.toFixed(3).padStart(7)}    $${wasted.toFixed(3).padStart(7)}\n`;
   }
 
   if (sessions.length > 1) {

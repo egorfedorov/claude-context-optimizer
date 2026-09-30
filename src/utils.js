@@ -5,7 +5,7 @@
  * usefulness scoring, JSON I/O, file classification, and config management.
  */
 
-import { readFileSync, writeFileSync, renameSync, mkdirSync, rmdirSync, existsSync, statSync, realpathSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, renameSync, mkdirSync, rmdirSync, existsSync, statSync, realpathSync, readdirSync, unlinkSync, utimesSync } from 'fs';
 import { join, basename, extname, dirname } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
@@ -56,9 +56,10 @@ export const TOOL_COSTS_FILE = join(DATA_DIR, 'tool-costs.json');
 //   • Fable 5.1 / Fable 5 — $10/$50, 1M window. Fable 5.1 bills cache READS at
 //     $0.25/M (0.025× — a quarter of everyone else's 0.1×), so it carries its
 //     own `cacheRead` multiplier. Mythos 5.x is the same tier and price.
+//   • Opus 5.5 — $4/$20, 1M. Cache reads $0.20/M = 0.05× its input price.
 //   • Opus 5 / 4.8 / 4.7 — $5/$25, full 1M context window at standard price
 //     (there is NO long-context premium; the old "1M tier surcharge" is gone).
-//   • Sonnet 5 — $2/$10, 1M.  Sonnet 4.6 — $3/$15, 1M.
+//   • Sonnet 5.5 / Sonnet 5 — $2/$10, 1M.  Sonnet 4.6 — $3/$15, 1M.
 //   • Haiku 4.5 — $1/$5, 200K context window.
 // `cacheRead` (optional) overrides CACHE_READ_MULT for that model.
 export const MODEL_COSTS = {
@@ -67,10 +68,12 @@ export const MODEL_COSTS = {
   'sonnet':        { input: 3,  output: 15, contextWindow: 1_000_000 },
   'sonnet-4.6':    { input: 3,  output: 15, contextWindow: 1_000_000 },
   'sonnet-5':      { input: 2,  output: 10, contextWindow: 1_000_000 },
+  'sonnet-5.5':    { input: 2,  output: 10, contextWindow: 1_000_000 },
   'opus':          { input: 5,  output: 25, contextWindow: 1_000_000 },
   'opus-4.7':      { input: 5,  output: 25, contextWindow: 1_000_000 },
   'opus-4.8':      { input: 5,  output: 25, contextWindow: 1_000_000 },
   'opus-5':        { input: 5,  output: 25, contextWindow: 1_000_000 },
+  'opus-5.5':      { input: 4,  output: 20, contextWindow: 1_000_000, cacheRead: 0.05 },
   // Back-compat aliases — these used to carry a fictional 1M surcharge; the 1M
   // window is now standard, so they map to the standard Opus price.
   'opus-4.7-1m':   { input: 5,  output: 25, contextWindow: 1_000_000 },
@@ -81,6 +84,10 @@ export const MODEL_COSTS = {
   'fable-5.1':     { input: 10, output: 50, contextWindow: 1_000_000, cacheRead: 0.025 },
   'fable-5':       { input: 10, output: 50, contextWindow: 1_000_000 },
 };
+
+// The current generation — what ROI/report tables compare and what doctor
+// treats as up to date. Everything else in MODEL_COSTS is an alias or older.
+export const CURRENT_MODELS = ['haiku-4.5', 'sonnet-5.5', 'opus-5.5', 'fable-5.1'];
 
 /**
  * Map a raw session model id from the transcript (e.g. "claude-fable-5-1",
@@ -95,8 +102,12 @@ export function normalizeModelId(raw) {
     return /(fable|mythos)[-_.]?5[-.]1\b/.test(id) ? 'fable-5.1' : 'fable-5';
   }
   if (id.includes('haiku')) return 'haiku';
-  if (id.includes('sonnet')) return /sonnet[-_.]?5\b/.test(id) ? 'sonnet-5' : 'sonnet';
+  if (id.includes('sonnet')) {
+    if (/sonnet[-_.]?5[-.]5\b/.test(id)) return 'sonnet-5.5';
+    return /sonnet[-_.]?5\b/.test(id) ? 'sonnet-5' : 'sonnet';
+  }
   if (id.includes('opus')) {
+    if (/opus[-_.]?5[-.]5\b/.test(id)) return 'opus-5.5';
     if (/opus[-_.]?5\b/.test(id)) return 'opus-5';
     if (id.includes('4-8') || id.includes('4.8')) return 'opus-4.8';
     if (id.includes('4-7') || id.includes('4.7')) return 'opus-4.7';
@@ -115,7 +126,7 @@ export function getModelCost(model) {
 }
 
 // ── Prompt-cache pricing ─────────────────────────────────────────────────────
-// Cache reads bill at 10% of the input price (2.5% on Fable 5.1); cache writes
+// Cache reads bill at 10% of the input price (2.5% on Fable 5.1, 5% on Opus 5.5); cache writes
 // at 125% for the 5-minute TTL and 200% for the 1-hour TTL Claude Code uses on
 // most sessions today (`usage.cache_creation.ephemeral_1h_input_tokens`).
 // Real Claude Code sessions are dominated by cache reads, so pricing every
@@ -327,7 +338,7 @@ const DEFAULT_CONFIG = {
   budgetTokens: 200000,        // 200K — sane working default even on 1M-window models
   warnAt: [50, 70, 85, 95],
   autoCompactAt: 90,
-  model: 'opus-5',
+  model: 'opus-5.5',
   bigFileDigest: true,         // on first full read of a very large file, show its
   bigFileThreshold: 1500,      // map once (≈14K+ tokens) so Claude reads targeted
 };
@@ -726,6 +737,46 @@ export function acquireFileLock(name, { retries = 40, delayMs = 15, staleMs = 50
     }
   }
   return () => {}; // could not acquire — proceed unlocked (best-effort)
+}
+
+// ── Retention ────────────────────────────────────────────────────────────────
+// One file per session lands in each of these dirs, forever — ~80MB after a few
+// months of daily use. Aggregates (global-stats.json, patterns.json) already
+// hold what's learned, so per-session files only need to outlive the windows
+// that read them: history/ROI (30 days) and coach trends. Live-session state
+// (budget, read cache, notices) is dead the moment the session ends.
+export const RETENTION_DAYS = {
+  sessions: 90, summaries: 90, prompts: 90,
+  budget: 14, 'read-cache': 14, notices: 14,
+};
+const PRUNE_MARKER = join(DATA_DIR, '.last-prune');
+
+/**
+ * Delete per-session files older than RETENTION_DAYS. Runs at most once a
+ * day unless `force`. Returns the number of files removed.
+ */
+export function pruneOldData({ now = Date.now(), force = false, dataDir = DATA_DIR, marker = PRUNE_MARKER } = {}) {
+  try {
+    if (!force && existsSync(marker) && now - statSync(marker).mtimeMs < 86_400_000) return 0;
+  } catch { /* unreadable marker → prune */ }
+  let removed = 0;
+  for (const [dir, days] of Object.entries(RETENTION_DAYS)) {
+    const full = join(dataDir, dir);
+    if (!existsSync(full)) continue;
+    const cutoff = now - days * 86_400_000;
+    for (const f of readdirSync(full)) {
+      const fp = join(full, f);
+      try {
+        const st = statSync(fp);
+        if (st.isFile() && st.mtimeMs < cutoff) { unlinkSync(fp); removed++; }
+      } catch { /* raced with another session — skip */ }
+    }
+  }
+  try {
+    if (existsSync(marker)) utimesSync(marker, new Date(now), new Date(now));
+    else writeFileSync(marker, '');
+  } catch { /* best effort */ }
+  return removed;
 }
 
 // ── Data directory initialization ────────────────────────────────────────────

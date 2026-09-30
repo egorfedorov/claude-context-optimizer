@@ -1,72 +1,72 @@
 {
-  "timestamp": "2026-07-06T01:59:15.576Z",
+  "timestamp": "2026-09-30T00:56:12.801Z",
   "version": "1.0.0",
   "totalSavingsPercent": 63,
-  "totalTokensWithout": 95514,
-  "totalTokensWith": 35459,
+  "totalTokensWithout": 105861,
+  "totalTokensWith": 39178,
   "scenarios": [
     {
       "name": "Read Cache Dedup",
       "description": "Second read of same file → file digest instead of full content",
-      "withoutCCO": 9082,
-      "withCCO": 4571,
+      "withoutCCO": 10120,
+      "withCCO": 5090,
       "savingsPercent": 50
     },
     {
       "name": "Read Cache (5x reads)",
       "description": "File read 5 times in a session",
-      "withoutCCO": 22705,
-      "withCCO": 4661,
-      "savingsPercent": 79
+      "withoutCCO": 25300,
+      "withCCO": 5180,
+      "savingsPercent": 80
     },
     {
       "name": "File Digest vs Full Read",
       "description": "Navigational digest (~landmarks) vs full file content",
-      "withoutCCO": 4541,
+      "withoutCCO": 5060,
       "withCCO": 30,
       "savingsPercent": 99
     },
     {
       "name": "Read Cache Dedup",
       "description": "Second read of same file → file digest instead of full content",
-      "withoutCCO": 12076,
-      "withCCO": 6140,
+      "withoutCCO": 13456,
+      "withCCO": 6830,
       "savingsPercent": 49
     },
     {
       "name": "Contextignore Block",
       "description": "Lockfile/generated file blocked entirely by .contextignore",
-      "withoutCCO": 8827,
+      "withoutCCO": 9835,
       "withCCO": 0,
       "savingsPercent": 100
     },
     {
       "name": "File Digest vs Full Read",
       "description": "Navigational digest (~landmarks) vs full file content",
-      "withoutCCO": 3117,
+      "withoutCCO": 3206,
       "withCCO": 13,
       "savingsPercent": 100
     },
     {
       "name": "Typical Session (10 files, 45 min)",
       "description": "Realistic coding session with mixed reads/edits across 10 files",
-      "withoutCCO": 35166,
-      "withCCO": 20044,
+      "withoutCCO": 38884,
+      "withCCO": 22035,
       "savingsPercent": 43
     }
   ],
   "cacheBreakEconomics": [
     {
       "name": "Cache break avoided (150K ctx)",
-      "description": "A >5-min pause re-bills 150K cached tokens at 1.25× instead of 0.1×",
-      "perBreakDollars": 0.86,
-      "perDayDollars": 2.59
+      "description": "A >1h pause re-bills 150K cached tokens at 2× instead of 0.05×",
+      "perBreakDollars": 1.17,
+      "perDayDollars": 3.51
     },
     {
       "name": "Cache break avoided (400K ctx)",
-      "description": "A >5-min pause re-bills 400K cached tokens at 1.25× instead of 0.1×",
-      "perBreakDollars": 2.3,
-      "perDayDollars": 6.9
+      "description": "A >1h pause re-bills 400K cached tokens at 2× instead of 0.05×",
+      "perBreakDollars": 3.12,
+      "perDayDollars": 9.36
     }
   ]
 }

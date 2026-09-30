@@ -2664,8 +2664,24 @@ describe('v4.10 model lineup', () => {
     assert.equal(normModel('claude-sonnet-4-6'), 'sonnet');
   });
 
+  it('opus-5.5 is $4/$20 with 0.05× cache reads; sonnet-5.5 is $2/$10', () => {
+    assert.deepEqual([getModelCost('opus-5.5').input, getModelCost('opus-5.5').output], [4, 20]);
+    assert.equal(getCacheRates('opus-5.5').read, 0.05, 'reads at $0.20/M on a $4 input');
+    assert.deepEqual([getModelCost('sonnet-5.5').input, getModelCost('sonnet-5.5').output], [2, 10]);
+    assert.equal(getModelContextWindow('opus-5.5'), 1_000_000);
+    assert.equal(getModelContextWindow('sonnet-5.5'), 1_000_000);
+  });
+
+  it('maps 5.5 session ids to their own rows, not the 5.0 ones', () => {
+    assert.equal(normModel('claude-opus-5-5'), 'opus-5.5');
+    assert.equal(normModel('claude-opus-5-5[1m]'), 'opus-5.5');
+    assert.equal(normModel('claude-sonnet-5-5'), 'sonnet-5.5');
+    assert.equal(normModel('claude-opus-5'), 'opus-5');
+    assert.equal(normModel('claude-sonnet-5'), 'sonnet-5');
+  });
+
   it('every model without an override reads cache at 10%', () => {
-    for (const m of ['opus-5', 'opus-4.8', 'sonnet-5', 'haiku-4.5']) {
+    for (const m of ['opus-5', 'opus-4.8', 'sonnet-5.5', 'sonnet-5', 'haiku-4.5']) {
       assert.equal(getCacheRates(m).read, 0.1, m);
     }
   });
@@ -2773,3 +2789,54 @@ describe('v4.10 task execution state (SKILL.state)', () => {
     assert.equal(shouldRehydrate(undefined), false);
   });
 });
+
+// ── v4.11: retention, stale projects, nested project lookup ────────────────
+
+describe('v4.11 data hygiene', () => {
+  it('findProjectForPath picks the deepest root and respects path boundaries', async () => {
+    const { findProjectForPath } = await import('../src/context-shield.js');
+    const p = { projects: { '/r': {}, '/r/games/x': {}, '/rx': {}, _global: {} } };
+    assert.equal(findProjectForPath(p, '/r/games/x/a.js'), '/r/games/x');
+    assert.equal(findProjectForPath(p, '/r/b.js'), '/r');
+    assert.equal(findProjectForPath(p, '/rx/c.js'), '/rx', 'not /r — needs a / boundary');
+    assert.equal(findProjectForPath(p, '/other/d.js'), null);
+  });
+
+  it('prunePatterns drops projects idle for 180+ days and keeps active ones', async () => {
+    const { prunePatterns } = await import('../src/tracker.js');
+    const now = Date.parse('2026-09-30T00:00:00Z');
+    const old = new Date(now - 200 * 86_400_000).toISOString();
+    const fresh = new Date(now - 5 * 86_400_000).toISOString();
+    const p = { projects: {
+      '/old': { fileFrequency: { '/old/a': { sessions: 1, lastSeen: old } }, wastedReads: {}, coOccurrence: {} },
+      '/new': { fileFrequency: { '/new/a': { sessions: 1, lastSeen: fresh } }, wastedReads: {}, coOccurrence: {} },
+      '/empty': { fileFrequency: {}, wastedReads: {}, coOccurrence: {} },
+    } };
+    prunePatterns(p, now);
+    assert.deepEqual(Object.keys(p.projects), ['/new']);
+  });
+
+  it('pruneOldData removes only files past retention, then throttles for a day', async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, utimesSync, existsSync } = await import('fs');
+    const { tmpdir } = await import('os');
+    const { pruneOldData } = await import('../src/utils.js');
+    const dir = mkdtempSync(join(tmpdir(), 'cco-prune-'));
+    const now = Date.now();
+    const mk = (sub, name, ageDays) => {
+      mkdirSync(join(dir, sub), { recursive: true });
+      const f = join(dir, sub, name); writeFileSync(f, '{}');
+      const t = new Date(now - ageDays * 86_400_000); utimesSync(f, t, t);
+      return f;
+    };
+    const oldSession = mk('sessions', 'a.json', 100);
+    const keptSession = mk('sessions', 'b.json', 30);
+    const oldBudget = mk('budget', 'c.json', 20);
+    const marker = join(dir, '.last-prune');
+    assert.equal(pruneOldData({ now, dataDir: dir, marker }), 2);
+    assert.ok(!existsSync(oldSession) && !existsSync(oldBudget) && existsSync(keptSession));
+    mk('budget', 'd.json', 20);
+    assert.equal(pruneOldData({ now, dataDir: dir, marker }), 0, 'throttled within 24h');
+    assert.equal(pruneOldData({ now, dataDir: dir, marker, force: true }), 1);
+  });
+});
+
