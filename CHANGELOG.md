@@ -1,5 +1,23 @@
 # Changelog
 
+## 4.21.0 — 2026-10-17
+
+**The plugin is renamed to `context-optimizer`.** Claude Code 2.1.302 rejects
+third-party plugin names that start with `claude-`, `anthropic-` or
+`cc-plugin-`, so `claude plugin validate` failed on `claude-context-optimizer`
+for both the plugin and its marketplaces. Installing still worked, but the
+plugin could not pass a directory review.
+
+- To upgrade an existing install, uninstall once and install again. A plugin's
+  id comes from its name, so `plugin update` can't cross the rename:
+  `claude plugin uninstall claude-context-optimizer@cco`, then
+  `claude plugin install context-optimizer@cco` (or `@egorfedorov-plugins`).
+- Kept as they were: the commands (`/cco`, `/cco-*`), the data directory
+  `~/.claude-context-optimizer/`, the repository URL and the npm package name.
+- `sync-version --check` (in CI) and `/cco-doctor` reject a reserved plugin
+  name. `sync-version` now finds marketplace entries by plugin name rather
+  than npm name, and warns when the external marketplace has no entry for it.
+
 ## 4.20.0 — 2026-10-17
 
 The hooks now do what the README says they do. Most of CCO's advice never

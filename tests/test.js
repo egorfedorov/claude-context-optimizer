@@ -3145,3 +3145,26 @@ describe('skill listing cost', () => {
     assert.deepEqual(listed, ['cco-anatomy', 'cco-git', 'cco-pack', 'cco-task', 'smart-loader']);
   });
 });
+
+describe('plugin name', () => {
+  it("mirrors Claude Code's reserved-name rule", async () => {
+    const { reservedPluginNameReason: why } = await import('../src/utils.js');
+    for (const bad of ['claude-context-optimizer', 'claude', 'claude-code', 'anthropic-tools', 'cc-plugin-x', 'my-official-claude', 'anthropic-official']) {
+      assert.ok(why(bad), `${bad} should be rejected`);
+    }
+    for (const ok of ['context-optimizer', 'cco', 'official-tools', 'my-claude-helper']) {
+      assert.equal(why(ok), null, `${ok} should pass`);
+    }
+  });
+
+  it('ships under a name Claude Code accepts, the same in both manifests', async () => {
+    const { reservedPluginNameReason: why } = await import('../src/utils.js');
+    const { readFileSync: rf } = await import('fs');
+    const { fileURLToPath } = await import('url');
+    const root = fileURLToPath(new URL('..', import.meta.url));
+    const plugin = JSON.parse(rf(join(root, '.claude-plugin', 'plugin.json'), 'utf-8'));
+    const market = JSON.parse(rf(join(root, '.claude-plugin', 'marketplace.json'), 'utf-8'));
+    assert.equal(why(plugin.name), null);
+    assert.deepEqual(market.plugins.map(p => p.name), [plugin.name]);
+  });
+});

@@ -18,6 +18,7 @@
  */
 
 import { readFileSync, writeFileSync } from 'fs';
+import { reservedPluginNameReason } from '../src/utils.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -51,11 +52,19 @@ if (plugin.version !== pkg.version || plugin.description !== pkg.description) {
   });
 }
 
+// The plugin's id is plugin.json's name, not package.json's (the npm name
+// keeps its history). Claude Code rejects names that pass for Anthropic's.
+const reserved = reservedPluginNameReason(plugin.name);
+if (reserved) {
+  console.error(`✗ plugin.json name "${plugin.name}" is rejected by \`claude plugin validate\`: ${reserved}`);
+  process.exitCode = 1;
+}
+
 // marketplace.json
 const marketPath = join(ROOT, '.claude-plugin', 'marketplace.json');
 const market = JSON.parse(readFileSync(marketPath, 'utf-8'));
 for (const p of market.plugins || []) {
-  if (p.name !== pkg.name) continue;
+  if (p.name !== plugin.name) continue;
   if (p.version !== pkg.version || p.description !== pkg.description) {
     reconcile('marketplace.json', p.version, () => {
       p.version = pkg.version;
@@ -103,12 +112,14 @@ async function fetchExtVersion() {
 
 try {
   const { data, stale } = await fetchExtVersion();
-  const ext = data.plugins?.find(p => p.name === pkg.name);
+  const ext = data.plugins?.find(p => p.name === plugin.name);
   if (ext && ext.version !== pkg.version) {
     console.log(`⚠ ${EXT} still lists v${ext.version} — bump its .claude-plugin/marketplace.json to v${pkg.version}`);
     if (stale) console.log('  (read via the CDN, which can serve a stale copy — confirm with `gh api` before believing it)');
   } else if (ext) {
     console.log(`✓ ${EXT} marketplace in sync: v${ext.version}`);
+  } else {
+    console.log(`⚠ ${EXT} has no "${plugin.name}" entry — add or rename it in .claude-plugin/marketplace.json`);
   }
 } catch {
   console.log(`? could not check ${EXT} (offline?) — verify its marketplace.json manually`);

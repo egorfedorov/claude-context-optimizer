@@ -41,6 +41,15 @@ At $4/M input tokens (Opus 5.5) — $10/M on Fable 5.1 — a developer spending 
 
 ---
 
+## What's new in v4.21 — a name Claude Code accepts
+
+The plugin is now **`context-optimizer`**. Claude Code 2.1.302 rejects
+third-party names that start with `claude-` (`claude plugin validate` fails),
+so `claude-context-optimizer` could not pass review. Commands, data and
+behavior are unchanged. Already installed? See
+[Upgrading from 4.20 or earlier](#upgrading-from-420-or-earlier-the-plugin-was-renamed).
+CI and `/cco-doctor` now check the name against the same rule.
+
 ## What's new in v4.20 — the hooks really work
 
 - **Advice reaches someone now.** Claude Code ignores a hook's stderr when it
@@ -688,7 +697,7 @@ The plugin learns from your behavior. When you start a new task, it silently sug
 
 ## All Commands
 
-When installed as a plugin, commands are namespaced: `/claude-context-optimizer:cco`. With `--plugin-dir`, they're also available as `/cco`.
+When installed as a plugin, commands are namespaced: `/context-optimizer:cco`. With `--plugin-dir`, they're also available as `/cco`.
 
 | Command | Description |
 |---------|-------------|
@@ -753,7 +762,7 @@ one-off experiment without changing config.
 
 ```bash
 claude plugin marketplace add egorfedorov/claude-context-optimizer
-claude plugin install claude-context-optimizer@cco
+claude plugin install context-optimizer@cco
 ```
 
 Then restart Claude Code. This installs the plugin from its self-contained
@@ -793,10 +802,27 @@ Installs skills globally to `~/.agents/skills/` and symlinks them to Claude Code
 ### Updating
 
 ```bash
-claude plugin update claude-context-optimizer@cco
+claude plugin marketplace update cco
+claude plugin update context-optimizer@cco
 ```
 
 Then restart Claude Code to apply the update.
+
+### Upgrading from 4.20 or earlier: the plugin was renamed
+
+Until 4.20 the plugin was called `claude-context-optimizer`. Claude Code no
+longer accepts third-party plugin names that start with `claude-`, so from
+4.21 it is `context-optimizer`. A plugin's id comes from its name, so
+`plugin update` can't cross the rename. Reinstall it once:
+
+```bash
+claude plugin uninstall claude-context-optimizer@cco   # or @egorfedorov-plugins
+claude plugin marketplace update cco                   # or egorfedorov-plugins
+claude plugin install context-optimizer@cco            # or @egorfedorov-plugins
+```
+
+Your history stays where it was, in `~/.claude-context-optimizer/`. The
+commands are unchanged (`/cco`, `/cco-report`, …).
 
 ### Requirements
 
