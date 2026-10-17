@@ -64,7 +64,23 @@ test('counts the cache down between turns, and /cco-meter hides it', async ($, o
   await clock.advance(13 * 60_000)
   expect(lines.at(-1)).toBe('CCO · ctx 142K/1M 14% · $3.10 · 5h 63% · cache 47m')
 
-  const off = await $.command.run({ command: 'cco-meter' })
+  const off = await $.command.run({ command: 'cco-meter', args: '' })
   expect(off.text).toContain('off')
   expect(lines.at(-1)).toBeUndefined()
+})
+
+test('/cco-meter on and off say what they mean; bare /cco-meter toggles', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  mock.store(on)
+  on('session.usage', () => ({ value: usage }))
+  on('ui.status', () => ({ value: undefined }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/p', surface: 'terminal', isInteractive: true })
+
+  expect((await $.command.run({ command: 'cco-meter', args: 'on' })).text).toBe('Live meter on.')
+  expect((await $.command.run({ command: 'cco-meter', args: 'on' })).text).toBe('Live meter on.')
+  expect((await $.command.run({ command: 'cco-meter', args: 'off' })).text).toContain('off')
+  expect((await $.command.run({ command: 'cco-meter', args: 'OFF ' })).text).toContain('off')
+  expect((await $.command.run({ command: 'cco-meter', args: '' })).text).toBe('Live meter on.')
 })

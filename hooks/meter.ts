@@ -51,6 +51,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'cco-meter',
       description: 'Context Optimizer: show or hide the live cost and context line',
+      argumentHint: '[on|off]',
       immediate: true,
     })
     await refresh($, m)
@@ -59,8 +60,10 @@ export const register: Register = on => {
     return result
   })
 
+  // `/cco-meter on` and `/cco-meter off` say what they mean; bare `/cco-meter` toggles.
   on('command.run', { command: 'cco-meter' }, async ($, e) => {
-    m.isOff = !m.isOff
+    const arg = (e.args ?? '').trim().toLowerCase()
+    m.isOff = arg === 'off' ? true : arg === 'on' ? false : !m.isOff
     await $.store.set(OFF_KEY, m.isOff)
     await refresh($, m)
     return { text: m.isOff ? 'Live meter off. /cco-meter turns it back on.' : 'Live meter on.' }
