@@ -28,7 +28,7 @@ In Claude Code, one dim line under the prompt, updated after every reply and
 every minute:
 
 ```text
-CCO · ctx 142K/1M 14% · $3.10 · 5h 63% · 7d 41% · cache 47m
+context-optimizer: ctx 142K/1M 14% · $3.10 · 5h 63% · 7d 41% · cache 47m
 ```
 
 - **ctx**: how much context the last reply was answered over, of the model's

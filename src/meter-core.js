@@ -84,7 +84,8 @@ export function meterLine(usage, cacheLeft = null) {
   }
   if (cacheLeft === 0) parts.push('cache cold');
   else if (cacheLeft != null) parts.push(`cache ${cacheLeft}m`);
-  return `CCO · ${parts.join(' · ')}`;
+  // Claude Code already prefixes the line with the plugin's name.
+  return parts.join(' · ');
 }
 
 function resetTime(iso) {

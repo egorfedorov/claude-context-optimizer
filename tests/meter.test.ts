@@ -24,11 +24,11 @@ test('pins the meter after each reply, and a new reply restarts the cache clock'
   on('turn.complete', () => ({ text: 'ok' }))
 
   await $.turn.complete(turn)
-  expect(lines.at(-1)).toBe('CCO · ctx 142K/1M 14% · $3.10 · 5h 63% · cache 60m')
+  expect(lines.at(-1)).toBe('ctx 142K/1M 14% · $3.10 · 5h 63% · cache 60m')
 
   await clock.advance(13 * 60_000)
   await $.turn.complete({ ...turn, turnId: 't2' })
-  expect(lines.at(-1)).toBe('CCO · ctx 142K/1M 14% · $3.10 · 5h 63% · cache 60m')
+  expect(lines.at(-1)).toBe('ctx 142K/1M 14% · $3.10 · 5h 63% · cache 60m')
 })
 
 test("a subagent's turn leaves the meter alone", async ($, on) => {
@@ -62,7 +62,7 @@ test('counts the cache down between turns, and /cco-meter hides it', async ($, o
   await $.session.start({ cwd: '/p', surface: 'terminal', isInteractive: true })
   await $.turn.complete(turn)
   await clock.advance(13 * 60_000)
-  expect(lines.at(-1)).toBe('CCO · ctx 142K/1M 14% · $3.10 · 5h 63% · cache 47m')
+  expect(lines.at(-1)).toBe('ctx 142K/1M 14% · $3.10 · 5h 63% · cache 47m')
 
   const off = await $.command.run({ command: 'cco-meter', args: '' })
   expect(off.text).toContain('off')
