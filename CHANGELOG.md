@@ -19,6 +19,9 @@ more. The directory held 4.22.0 to 4.23.1 for a reviewer over exactly that.
 - **The HTML report is one offline file.** `/cco-export html` drew its charts
   with a script from a CDN; they are inline SVG now, and the page has no
   script at all. Donation addresses are plain selectable text.
+- `/cco-task` stores a project under its real path, so the task restored
+  after `/compact` is found even when the project path goes through a
+  symlink (macOS temp dirs, a symlinked checkout).
 - Tests fail if code reads the environment, if anything in `src/` makes a
   network request, or if a subagent gets a web tool.
 

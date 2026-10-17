@@ -3115,12 +3115,16 @@ describe('hooks end-to-end (sh -c, hooks.json commands)', async () => {
     assert.equal(fire('SessionStart', { source: 'resume' }), null, 'a resumed conversation still has it');
   });
 
-  it('restores the active task after compaction', () => {
+  it('restores the active task after compaction, through a symlinked path', async () => {
+    const { symlinkSync } = await import('fs');
     const { fire, project, env } = sandbox();
     const tasks = join(ROOT, 'src', 'tasks.js');
     spawnSync(process.execPath, [tasks, 'add', 'migrate auth'], { env, cwd: project });
     spawnSync(process.execPath, [tasks, 'patch', '{"step":3}'], { env, cwd: project });
-    const out = fire('SessionStart', { source: 'compact' });
+    // The task CLI sees the real path; Claude Code may report a symlink to it.
+    const link = `${project}-link`;
+    symlinkSync(project, link);
+    const out = fire('SessionStart', { source: 'compact', cwd: link });
     assert.match(out.hookSpecificOutput.additionalContext, /migrate auth/);
     assert.match(out.hookSpecificOutput.additionalContext, /"step":3/);
   });
