@@ -113,14 +113,14 @@ check('hooks work end-to-end (sh -c)', () => {
   try {
     const hook = join(ROOT, 'src', 'hook.js');
     const run = (extra = {}) => {
-      const r = spawnSync('/bin/sh', ['-c', `node "${hook}"`], {
+      const r = spawnSync('/bin/sh', ['-c', `"${process.execPath}" "${hook}"`], {
         input: JSON.stringify({
           hook_event_name: 'PreToolUse', session_id: 'doctor', tool_name: 'Read',
           tool_input: { file_path: join(ROOT, 'src', 'utils.js') }, cwd: ROOT, ...extra,
         }),
-        // A throwaway HOME and PATH (to find node) only — nothing else from
-        // the user's environment reaches the child process.
-        env: { PATH: process.env.PATH, HOME: home, USERPROFILE: home },
+        // Node by absolute path and a throwaway HOME: nothing from the
+        // user's environment reaches the child process.
+        env: { HOME: home, USERPROFILE: home },
         encoding: 'utf-8', timeout: 10_000,
       });
       if (r.status !== 0) throw new Error(`hook exited ${r.status}: ${(r.stderr || '').trim().slice(0, 120)}`);

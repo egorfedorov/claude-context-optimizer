@@ -743,11 +743,12 @@ export const DONATION_ADDRESSES = {
   sol: '8ctK8nt3CBkPZGfWQXX8TsnqUYUy4JAbT1EMhr8rsQxm',
 };
 
-/** Suppress donation banner in machine-consumed outputs. */
+/**
+ * Suppress the donation banner and the prompt coach: `"quiet": true` in
+ * config.json. The plugin reads no environment variables.
+ */
 export function isQuietMode() {
-  return process.env.CCO_QUIET === '1' ||
-         process.env.CCO_QUIET === 'true' ||
-         process.env.CI === 'true';
+  return loadJSON(CONFIG_FILE)?.quiet === true;
 }
 
 export function getDonationMessage() {

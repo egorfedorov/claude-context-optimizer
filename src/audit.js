@@ -36,7 +36,7 @@ import {
 import { projectTranscriptDir } from './overhead.js';
 
 const MAX_FILE_BYTES = 256 * 1024 * 1024;
-const EXPLORE_TOOLS = new Set(['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch']);
+const EXPLORE_TOOLS = new Set(['Read', 'Grep', 'Glob']);
 const BASH_READ = /^\s*(cat|sed|head|tail|nl|less|more)\b/;
 
 // ── Pure analysis (exported for tests) ──────────────────────────────────────
@@ -303,7 +303,7 @@ export function renderAudit(a, { days, compactAt }) {
   L.push('  BIGGER LEVERS (estimates on these sessions)');
   const levers = [
     [a.compactSaved, `Compact at ${formatTokens(compactAt)} instead of letting context grow`, '/compact when the budget warning fires'],
-    [a.delegateSaved, 'Delegate exploration (Read/Grep/web) to Haiku subagents', 'context-optimizer:scout, /cco-orchestrate'],
+    [a.delegateSaved, 'Delegate exploration (Read/Grep) to Haiku subagents', 'context-optimizer:scout, /cco-orchestrate'],
     [a.per10kOverhead, 'Every 10K less of fixed overhead (MCP tools, CLAUDE.md, skills)', '/cco-overhead'],
   ].sort((x, y) => y[0] - x[0]);
   for (const [v, what, how] of levers) {

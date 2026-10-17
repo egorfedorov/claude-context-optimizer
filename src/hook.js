@@ -75,23 +75,18 @@ export async function renderRecap(recap) {
 // The cheapest token is one the main model never reads. The plugin ships two
 // Haiku subagents (agents/scout.md, agents/runner.md); this tells the main
 // model, once per conversation, when to use them. Off with
-// `"orchestrate": false` in ~/.claude-context-optimizer/config.json or
-// CCO_ORCHESTRATE=0.
+// `"orchestrate": false` in ~/.claude-context-optimizer/config.json.
 
 export const COST_POLICY =
   '[context-optimizer] Token policy for this session: hand reading-heavy work — exploring several files, ' +
-  'wide searches, web docs — to the `context-optimizer:scout` subagent, and long-output commands — test ' +
+  'wide searches — to the `context-optimizer:scout` subagent, and long-output commands — test ' +
   'suites, builds — to `context-optimizer:runner`. Both run on Haiku 5.5 (~40× cheaper than Opus) and return ' +
   'only a short summary, so this context stays small. Do a single known file or one grep yourself, and keep ' +
   'edits and design decisions here.';
 
-/**
- * The policy text for a SessionStart, or '' (off, or already in context).
- * `optOut` is the value of CCO_ORCHESTRATE — the one variable read, never the
- * whole environment.
- */
-export function costPolicy(source, cfg = {}, optOut = '') {
-  if (optOut === '0' || cfg.orchestrate === false) return '';
+/** The policy text for a SessionStart, or '' (off, or already in context). */
+export function costPolicy(source, cfg = {}) {
+  if (cfg.orchestrate === false) return '';
   // A resumed or forked conversation still carries the earlier copy.
   if (source === 'resume' || source === 'fork') return '';
   return COST_POLICY;
@@ -177,7 +172,7 @@ export async function dispatch(event) {
       case 'SessionStart': {
         await safely(async () => (await import('./tracker.js')).trackEvent(event));
         context.push(await safely(async () => (await import('./tasks.js')).rehydrateText(event)));
-        const policy = costPolicy(event.source, loadConfig(), process.env.CCO_ORCHESTRATE);
+        const policy = costPolicy(event.source, loadConfig());
         if (policy) {
           context.push(policy);
           // It enters Claude's context, so it counts against NET savings.

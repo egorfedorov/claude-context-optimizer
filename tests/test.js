@@ -2574,12 +2574,31 @@ describe('export: untrusted names never become markup', () => {
     assert.ok(html.includes('&lt;img src=x onerror'), 'name should survive, escaped');
   });
 
-  it('a project name cannot break out of the chart <script> block', async () => {
+  it('a hostile project name is escaped in the project chart', async () => {
     const { buildHtml } = await import('../src/export.js');
     const html = buildHtml(hostileStats, '2026-08-01');
-    // JSON.stringify alone does NOT escape </script>; this is the whole point.
-    assert.ok(!html.includes('</script><script>alert(1)'), 'script block was closed early');
-    assert.ok(html.includes('\\u003c/script>'), 'the name should be there, neutralized');
+    assert.ok(!html.includes('<script>alert(1)'), 'raw tag reached the document');
+    assert.ok(html.includes('&lt;/script&gt;&lt;script&gt;alert(1)'), 'the name should be there, escaped');
+  });
+
+  it('the HTML report is self-contained: no scripts, nothing loaded from the network', async () => {
+    const { buildHtml } = await import('../src/export.js');
+    const html = buildHtml(hostileStats, '2026-08-01');
+    assert.doesNotMatch(html, /<script\b/i);
+    assert.doesNotMatch(html, /\bsrc=["']?https?:/i);
+    assert.doesNotMatch(html, /<[^>]*\son(click|load|error)=/i);
+    assert.match(html, /<svg viewBox/);
+  });
+
+  it('svgChart draws one series and escapes its labels', async () => {
+    const { svgChart } = await import('../src/export.js');
+    assert.match(svgChart([], []), /No sessions yet/);
+    const line = svgChart([10, 50, 30], ['<a>', 'b', 'c'], { max: 100, suffix: '%' });
+    assert.match(line, /<polyline points="[\d., ]+"/);
+    assert.match(line, />100%</);
+    assert.ok(line.includes('&lt;a&gt;') && !line.includes('<a>'));
+    const bars = svgChart([1, 2], ['x', 'y'], { type: 'bar' });
+    assert.equal((bars.match(/<rect /g) || []).length, 2);
   });
 
   it('keeps hostile names from breaking the markdown table', async () => {
@@ -2598,12 +2617,11 @@ describe('export: untrusted names never become markup', () => {
     assert.equal(escapeMarkdownCell('plain.js'), 'plain.js');
   });
 
-  it('escapeHtml and jsonForScript handle empty input without throwing', async () => {
-    const { escapeHtml, jsonForScript } = await import('../src/export.js');
+  it('escapeHtml handles empty input without throwing', async () => {
+    const { escapeHtml } = await import('../src/export.js');
     assert.equal(escapeHtml(undefined), '');
     assert.equal(escapeHtml(null), '');
     assert.equal(escapeHtml('a & b'), 'a &amp; b');
-    assert.equal(jsonForScript([]), '[]');
   });
 });
 
@@ -2942,7 +2960,13 @@ describe('hooks end-to-end (sh -c, hooks.json commands)', async () => {
   const { fileURLToPath } = await import('url');
   const ROOT = fileURLToPath(new URL('..', import.meta.url));
   const HOOKS = JSON.parse(rf(join(ROOT, 'hooks', 'hooks.json'), 'utf-8')).hooks;
-  const commandFor = (event) => HOOKS[event][0].hooks[0].command;
+  // The command exactly as hooks.json has it, except that `node` is this
+  // test's own Node by absolute path, so the child needs no PATH.
+  const commandFor = (event) => {
+    const cmd = HOOKS[event][0].hooks[0].command;
+    assert.match(cmd, /; node "\$\{CLAUDE_PLUGIN_ROOT\}\/src\/hook\.js"$/);
+    return cmd.replace(/; node "/, `; "${process.execPath}" "`);
+  };
 
   const sandbox = () => {
     const home = mkdtempSync(join(tmpdir(), 'cco-e2e-'));
@@ -2952,9 +2976,8 @@ describe('hooks end-to-end (sh -c, hooks.json commands)', async () => {
     wf(file, Array.from({ length: 60 }, (_, i) =>
       i % 20 === 0 ? `export function part${i / 20}() {` : i % 20 === 19 ? '}' : `  const v${i} = ${i};`,
     ).join('\n') + '\n');
-    // Only what the hooks need: PATH to find node, a throwaway HOME. CI and
-    // CCO_QUIET stay out (quiet mode would mute the prompt coach).
-    const env = { PATH: process.env.PATH, HOME: home, USERPROFILE: home, CLAUDE_PLUGIN_ROOT: ROOT };
+    // Only what the hooks need: a throwaway HOME and the plugin root.
+    const env = { HOME: home, USERPROFILE: home, CLAUDE_PLUGIN_ROOT: ROOT };
     const fire = (event, fields = {}, root = ROOT) => {
       const r = spawnSync('/bin/sh', ['-c', commandFor(event)], {
         input: JSON.stringify({ hook_event_name: event, session_id: 'e2e', cwd: project, ...fields }),
@@ -3092,12 +3115,16 @@ describe('hooks end-to-end (sh -c, hooks.json commands)', async () => {
     assert.equal(fire('SessionStart', { source: 'resume' }), null, 'a resumed conversation still has it');
   });
 
-  it('restores the active task after compaction', () => {
+  it('restores the active task after compaction, through a symlinked path', async () => {
+    const { symlinkSync } = await import('fs');
     const { fire, project, env } = sandbox();
     const tasks = join(ROOT, 'src', 'tasks.js');
-    spawnSync(process.execPath, [tasks, 'add', 'migrate auth'], { env: { ...env, CCO_PROJECT: project } });
-    spawnSync(process.execPath, [tasks, 'patch', '{"step":3}'], { env: { ...env, CCO_PROJECT: project } });
-    const out = fire('SessionStart', { source: 'compact' });
+    spawnSync(process.execPath, [tasks, 'add', 'migrate auth'], { env, cwd: project });
+    spawnSync(process.execPath, [tasks, 'patch', '{"step":3}'], { env, cwd: project });
+    // The task CLI sees the real path; Claude Code may report a symlink to it.
+    const link = `${project}-link`;
+    symlinkSync(project, link);
+    const out = fire('SessionStart', { source: 'compact', cwd: link });
     assert.match(out.hookSpecificOutput.additionalContext, /migrate auth/);
     assert.match(out.hookSpecificOutput.additionalContext, /"step":3/);
   });
@@ -3308,7 +3335,6 @@ describe('cost policy', async () => {
   it('is on by default and can be turned off', () => {
     assert.equal(costPolicy('startup'), COST_POLICY);
     assert.equal(costPolicy('startup', { orchestrate: false }), '');
-    assert.equal(costPolicy('startup', {}, '0'), '');
     assert.equal(costPolicy('fork'), '');
   });
   it('stays short', () => {
@@ -3334,19 +3360,39 @@ describe('Haiku agents', async () => {
   });
 });
 
-describe('no environment forwarding', () => {
-  // The directory's security scan held v4.22.0 for "Update adds credential
-  // forward". Code reads named CCO_* variables only and never passes the whole
-  // environment on, to a function, a child process or anywhere else.
-  it('no source passes process.env as a whole', async () => {
+describe('no environment reads, no network', () => {
+  // The directory holds a version that reads a credential from the user's
+  // environment and could send it somewhere. The plugin reads no environment
+  // variable at all (settings live in config.json), and nothing it ships
+  // fetches or loads anything from the network.
+  const shipped = async () => {
     const { readdirSync, readFileSync: rf } = await import('fs');
     const { fileURLToPath } = await import('url');
     const root = fileURLToPath(new URL('..', import.meta.url));
-    const files = ['src', 'scripts', 'tests', 'benchmark'].flatMap(d =>
-      readdirSync(join(root, d)).filter(f => f.endsWith('.js')).map(f => join(root, d, f)));
-    for (const f of files) {
-      const code = rf(f, 'utf-8').replace(/\/\/.*$/gm, '');
-      assert.doesNotMatch(code, /\.\.\.process\.env\b|process\.env\s*[,)]/, f);
+    return ['src', 'scripts', 'tests', 'benchmark'].flatMap(d =>
+      readdirSync(join(root, d)).filter(f => f.endsWith('.js')).map(f => [join(root, d, f), rf(join(root, d, f), 'utf-8')]));
+  };
+
+  it('no code reads the environment', async () => {
+    for (const [f, code] of await shipped()) {
+      assert.doesNotMatch(code.replace(/\/\/.*$/gm, ''), /process\.env\b/, f);
+    }
+  });
+
+  it('no runtime code makes a network request', async () => {
+    // scripts/sync-version.js, a maintainer's release check, reads the public
+    // marketplace file from GitHub; nothing a user runs touches the network.
+    for (const [f, code] of (await shipped()).filter(([f]) => /[\\/]src[\\/]/.test(f))) {
+      assert.doesNotMatch(code, /\bfetch\(|from ['"](node:)?(https?|net|dgram)['"]|XMLHttpRequest|WebSocket\(/, f);
+    }
+  });
+
+  it('no subagent has a web tool', async () => {
+    const { readdirSync, readFileSync: rf } = await import('fs');
+    const { fileURLToPath } = await import('url');
+    const dir = fileURLToPath(new URL('../agents', import.meta.url));
+    for (const f of readdirSync(dir)) {
+      assert.doesNotMatch(rf(join(dir, f), 'utf-8'), /^tools:.*\bWeb(Fetch|Search)\b/m, f);
     }
   });
 });

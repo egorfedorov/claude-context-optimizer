@@ -84,5 +84,3 @@ were explicit ("reset all", "вернуть всё по умолчанию").
   more repeat reads get blocked.
 - **Working on a 1M-context model with long prompts?** Raise
   `promptTooLongWords`; the default band is tuned for shorter asks.
-- `CCO_STALE_TIME_MS` in the environment still overrides `staleTimeMs`, for a
-  one-off experiment without changing config.

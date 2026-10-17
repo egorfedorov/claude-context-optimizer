@@ -1,10 +1,10 @@
 ---
 name: scout
-description: Cheap read-only explorer on Haiku. Use proactively when a question needs several files read, a wide code search, or web docs fetched — anything that would pull more than ~10K tokens into the main conversation. Returns a short answer with file:line references. Not worth it for one known file or a single grep.
+description: Cheap read-only explorer on Haiku. Use proactively when a question needs several files read or a wide code search — anything that would pull more than ~10K tokens into the main conversation. Returns a short answer with file:line references. Not worth it for one known file or a single grep.
 model: haiku
 maxTurns: 30
 omitClaudeMd: true
-tools: Read, Grep, Glob, WebFetch, WebSearch
+tools: Read, Grep, Glob
 color: cyan
 ---
 

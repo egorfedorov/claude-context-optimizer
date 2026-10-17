@@ -60,6 +60,10 @@ when one gets long), **`token-check`** (how big a file or conversation is in
 tokens and how to cut it) and **`sharpen-prompt`**. Skills that need Claude
 Code now say so instead of failing.
 
+4.23.2 keeps everything on your machine and makes that easy to check: no
+environment variables are read, `scout` reads only the project, and the HTML
+report is one offline file.
+
 ## What's new in v4.22 — the orchestrator, and an audit that tells the truth
 
 We checked whether CCO really saves anything, on real sessions, and the answer
@@ -71,7 +75,7 @@ changed the plugin.
   which read dedup removes, were close to zero in the sessions we measured.
 - **The orchestrator.** The plugin now ships two subagents that run on
   **Haiku 5.5, about 40× cheaper per token than Opus 5.5**. `scout` does
-  read-only exploration (files, searches, web docs) and `runner` runs tests and
+  read-only exploration (files and searches) and `runner` runs tests and
   builds. Only their short answer enters the main context. Claude delegates to
   them on its own; `/cco-orchestrate <task>` runs a whole task that way.
   Checked live: a scout lookup ran on `claude-haiku-5-5` for $0.005.
@@ -771,14 +775,15 @@ When installed as a plugin, commands are namespaced: `/context-optimizer:cco`. W
 
 | Agent | Model | Use |
 |-------|-------|-----|
-| `context-optimizer:scout` | Haiku 5.5 | Read-only exploration: several files, wide searches, web docs. Returns a short answer with `path:line`. |
+| `context-optimizer:scout` | Haiku 5.5 | Read-only exploration of the project: several files, wide searches. Read, Grep and Glob only. Returns a short answer with `path:line`. |
 | `context-optimizer:runner` | Haiku 5.5 | Test suites, builds, linters. Returns pass/fail and the failing items only. |
 | `context-optimizer:context-analyzer` | inherits | Analyzes CCO's own usage data. |
 
 Claude picks the Haiku agents on its own from their descriptions, and a
 one-paragraph policy at session start tells it when (about 90 tokens, once per
 conversation). Turn the policy off with `"orchestrate": false` in
-`~/.claude-context-optimizer/config.json` or `CCO_ORCHESTRATE=0`.
+`~/.claude-context-optimizer/config.json`. In the same file, `"quiet": true`
+hides the donation line and the prompt coach.
 
 ### Tunable thresholds (`/cco-config`)
 
@@ -807,9 +812,6 @@ can never make a hook behave wildly.
 /cco-config set staleTimeMs 300000   # Read Cache re-allows after 5 min, not 10
 /cco-config reset staleTimeMs        # back to the default
 ```
-
-`CCO_STALE_TIME_MS` in the environment still overrides `staleTimeMs`, for a
-one-off experiment without changing config.
 
 ---
 
@@ -1057,8 +1059,9 @@ This plugin:
 - **Runs `git` locally** for `/cco-git`, `/cco-pack` and `/cco-anatomy`; nothing else is executed
 - **Stores everything locally** in `~/.claude-context-optimizer/`, pruned automatically (90 days for session history, 14 for live-session state)
 - **Sends zero telemetry** — the plugin's own code makes no network calls, no analytics, no tracking
-- **Never touches credentials** — it reads only its own `CCO_*` settings variables, and never passes your environment on to another process or anywhere else
-- **Ships two subagents** (`scout`, `runner`) that Claude can call. They use Claude Code's own tools under your permission settings: `scout` may use WebFetch/WebSearch when asked to read web docs, and `runner` runs the commands it is given through Bash
+- **Reads no environment variables** — every setting lives in `~/.claude-context-optimizer/config.json`
+- **Ships two subagents** (`scout`, `runner`) that Claude can call. They use Claude Code's own tools under your permission settings: `scout` only reads and searches the project (Read, Grep, Glob), and `runner` runs the commands it is given through Bash
+- **`/cco-export html` writes one offline file** — charts are inline SVG, with no scripts and nothing loaded from the web
 - **Can be fully wiped** with `/cco-clean --reset-all`
 
 Your data never leaves your machine. Period.

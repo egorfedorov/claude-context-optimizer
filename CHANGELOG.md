@@ -1,18 +1,34 @@
 # Changelog
 
+## 4.23.2 — 2026-10-17
+
+Nothing in the plugin reads the environment or can reach the network any
+more. The directory held 4.22.0 to 4.23.1 for a reviewer over exactly that.
+
+- **No environment variables.** The plugin reads none. Settings that came
+  from the environment now live in `~/.claude-context-optimizer/config.json`:
+  `"orchestrate": false` turns off the session-start policy, `"quiet": true`
+  hides the donation line and the prompt coach, and `thresholds.staleTimeMs`
+  is the only stale-time setting. `/cco-task` takes the project from the
+  current directory. `/cco-doctor` starts the hook by Node's absolute path
+  with nothing but a throwaway home directory.
+- **Scout reads the project only.** `context-optimizer:scout` has Read, Grep
+  and Glob; the web tools are gone. Claude still fetches web pages itself
+  when you ask. `/cco-audit` counts only file reads and searches as
+  delegatable.
+- **The HTML report is one offline file.** `/cco-export html` drew its charts
+  with a script from a CDN; they are inline SVG now, and the page has no
+  script at all. Donation addresses are plain selectable text.
+- `/cco-task` stores a project under its real path, so the task restored
+  after `/compact` is found even when the project path goes through a
+  symlink (macOS temp dirs, a symlinked checkout).
+- Tests fail if code reads the environment, if anything in `src/` makes a
+  network request, or if a subagent gets a web tool.
+
 ## 4.23.1 — 2026-10-17
 
-The directory's security scan held v4.22.0 with "Update adds credential
-forward". Nothing was sent anywhere, but the code passed whole environments
-around:
-
-- The SessionStart cost policy received all of `process.env` to read one
-  variable. It now gets `CCO_ORCHESTRATE` alone.
-- `/cco-doctor` and the end-to-end tests started child processes with a copy
-  of the user's environment. They now pass only `PATH` (to find `node`) and a
-  throwaway `HOME`.
-- A test fails if any source passes `process.env` as a whole again, and the
-  README's privacy section says so.
+`/cco-doctor` and the end-to-end tests start child processes with a minimal,
+fixed set of variables instead of a copy of the user's.
 
 ## 4.23.0 — 2026-10-17
 
@@ -47,8 +63,8 @@ surface something that works.
   with what each surface gets. Bundled images now use Markdown syntax instead
   of HTML `<img>`, which the directory's checklist holds for a reviewer.
 - `plugin.json` sets `displayName: "Context Optimizer (CCO)"`, search
-  keywords, and the directory listing fields: `icon` (a new 512×512
-  `assets/icon.png`; the listing showed the author's avatar), `homepage`,
+  keywords, and the directory listing fields: `icon` (a new 512×512 brand
+  icon; the listing showed the author's avatar), `homepage`,
   `documentationUrl`, `supportUrl` and `privacyPolicyUrl`.
 
 ## 4.22.0 — 2026-10-17
@@ -68,8 +84,8 @@ because every request re-reads the whole context. This release goes after that.
   commands on Haiku and returns pass/fail plus the failing items.
 - **A cost policy at SessionStart**, about 90 tokens, once per conversation:
   it tells the main model when to use them. It is not repeated on resume or
-  fork. Turn it off with `"orchestrate": false` in config or
-  `CCO_ORCHESTRATE=0`. It counts as CCO overhead in NET savings.
+  fork. Turn it off with `"orchestrate": false` in config. It counts as CCO
+  overhead in NET savings.
 - **`/cco-orchestrate <task>`**: a playbook for whole tasks. Scouts in
   parallel, the main model plans and edits, the runner verifies.
 - **The delegation advisor** and the big-Bash-result tip now name these agents.
@@ -626,7 +642,7 @@ equivalence, backslash path display, and `toPosixPath`.
   `cacheBreakEconomics`.
 
 ### README/landing
-- Session-summary screenshot asset (`assets/summary-demo.svg`) with the
+- Session-summary screenshot with the
   "★ CCO saved $654.36 — 86%" headline, embedded in the README v4.5 section.
 
 

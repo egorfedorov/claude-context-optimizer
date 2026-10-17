@@ -22,7 +22,7 @@
  * wrap it with disk access.
  */
 
-import { readFileSync } from 'fs';
+import { readFileSync, realpathSync } from 'fs';
 import {
   TASKS_FILE, loadJSON, saveJSON, ensureDataDirs, isMainModule,
   formatTokens, getModelCost, loadConfig, getLatestSessionId, getSessionTokenTotal
@@ -185,13 +185,21 @@ export function saveTasks(state) {
 }
 
 /**
+ * The key a project's tasks are stored under: its real path, so a symlinked
+ * path (macOS /var -> /private/var) and the shell's cwd name the same project.
+ */
+export function projectKey(dir) {
+  try { return realpathSync(dir); } catch { return dir; }
+}
+
+/**
  * SessionStart: the bounded task-state block for Claude's context, only after
  * a compact, resume or fork — a fresh session should not inherit an old task by
  * surprise. '' when there is nothing to restore.
  */
 export function rehydrateText(event, fallbackProject = process.cwd()) {
   if (!shouldRehydrate(event.source)) return '';
-  return renderRehydration(getActiveTask(loadTasks(), { project: event.cwd || fallbackProject })) || '';
+  return renderRehydration(getActiveTask(loadTasks(), { project: projectKey(event.cwd || fallbackProject) })) || '';
 }
 
 // ── CLI (used by the cco-task skill) ───────────────────────────────────────────
@@ -223,7 +231,7 @@ function printTasks(state, project, model) {
 function main() {
   const action = process.argv[2] || 'list';
   const rest = process.argv.slice(3).join(' ').trim();
-  const project = process.env.CCO_PROJECT || process.cwd();
+  const project = projectKey(process.cwd());
   const sessionId = getLatestSessionId();
   const model = (loadConfig().model) || 'opus-5.5';
   const tokensNow = getSessionTokenTotal(sessionId);
