@@ -10,6 +10,8 @@ allowed-tools:
 
 # CCO Config — tune how aggressive the optimizer is
 
+> **Needs Claude Code** (or Cowork on your computer): this runs the plugin's local scripts. If `node` or `${CLAUDE_PLUGIN_ROOT}` isn't available, as in claude.ai chat, don't try to run anything. Say so in one line and offer the `fresh-start` or `token-check` skill instead.
+
 CCO's behavior knobs used to be magic numbers spread across four modules.
 This surfaces them, range-validated, in `~/.claude-context-optimizer/config.json`
 under `thresholds`.

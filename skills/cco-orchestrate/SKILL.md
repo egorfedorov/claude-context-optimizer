@@ -8,6 +8,8 @@ argument-hint: "<task>"
 
 # Orchestrate: $ARGUMENTS
 
+> **Needs Claude Code or Cowork**: the `scout` and `runner` subagents don't load in claude.ai chat. There, do the task directly and suggest `fresh-start` when the conversation gets long.
+
 Do this task as an orchestrator. The aim is the same result at a fraction of
 the cost: in a long session, every token in this conversation is re-read on
 each later request, while a subagent's reading is discarded when it returns.

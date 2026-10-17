@@ -1,23 +1,24 @@
-<p align="center">
-  <img src="assets/logo.svg" alt="claude-context-optimizer" width="600"/>
-</p>
+# Context Optimizer (CCO)
 
-<p align="center">
-  <strong>Cut what Claude Code sessions cost: Haiku does the reading, the expensive model decides.</strong><br/>
-  <sub>Haiku 5.5 subagents, read dedup, budget and cache-break warnings, and an audit of your own transcripts. Model-aware for Opus 5.5, Sonnet 5.5, Fable 5.1 and Haiku 5.5.</sub>
-</p>
+**Spend less of your Claude usage on re-reading.** Every message re-sends the
+whole conversation, so long chats and long coding sessions get expensive and
+forgetful. context-optimizer keeps the context small and shows you where the
+tokens went. It does something useful on every surface:
 
-<p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/claude--code-plugin-blue?style=flat-square&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJ3aGl0ZSI+PHBhdGggZD0iTTEyIDJMMiA3bDEwIDUgMTAtNS0xMC01ek0yIDE3bDEwIDUgMTAtNS0xMC01LTEwIDV6TTIgMTJsMTAgNSAxMC01Ii8+PC9zdmc+" alt="Claude Code Plugin"/></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"/></a>
-  <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen?style=flat-square" alt="Node 18+"/>
-  <img src="https://img.shields.io/badge/zero%20config-yes-blueviolet?style=flat-square" alt="Zero Config"/>
-  <img src="https://img.shields.io/badge/telemetry-none-critical?style=flat-square" alt="No Telemetry"/>
-</p>
+| Where | What you get |
+|---|---|
+| **claude.ai chat** | `fresh-start` writes a compact handoff so you can continue in a new chat; `token-check` sizes files and conversations and says how to cut them; `sharpen-prompt` turns a vague request into a precise one |
+| **Cowork** | the same skills, plus the `scout` and `runner` subagents that run on Haiku 5.5, about 40× cheaper than Opus |
+| **Claude Code** | everything: Haiku subagents, read dedup with file maps, budget and cache-break warnings, task state across `/compact`, the `/cco` control center and `/cco-audit`, an audit of your own transcripts |
 
-<p align="center">
-  <a href="https://github.com/hesreallyhim/awesome-claude-code"><img src="https://awesome.re/mentioned-badge.svg" alt="Mentioned in Awesome Claude Code"/></a>
-</p>
+Runs locally, open source (MIT), no telemetry.
+
+![context-optimizer](assets/logo.svg)
+
+[![Claude Code plugin](https://img.shields.io/badge/claude--code-plugin-blue?style=flat-square)](#installation)
+[![MIT License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+![No Telemetry](https://img.shields.io/badge/telemetry-none-critical?style=flat-square)
+[![Mentioned in Awesome Claude Code](https://awesome.re/mentioned-badge.svg)](https://github.com/hesreallyhim/awesome-claude-code)
 
 ---
 
@@ -46,11 +47,18 @@ the numbers:
 - **Hooks** skip unchanged re-reads, warn before the budget runs out or the
   cache goes cold, and keep task state across `/compact`.
 
-<p align="center">
-  <img src="assets/how-it-works.svg" alt="How it works" width="700"/>
-</p>
+![How it works](assets/how-it-works.svg)
 
 ---
+
+## What's new in v4.23 — useful in chat and Cowork, not just Claude Code
+
+Most installs come from claude.ai chat and Cowork, where plugins load their
+skills but not their hooks or local scripts. Three new skills work
+everywhere: **`fresh-start`** (a handoff to continue in a new conversation
+when one gets long), **`token-check`** (how big a file or conversation is in
+tokens and how to cut it) and **`sharpen-prompt`**. Skills that need Claude
+Code now say so instead of failing.
 
 ## What's new in v4.22 — the orchestrator, and an audit that tells the truth
 
@@ -285,10 +293,9 @@ doesn't regress. 183 tests, green on Node 18/20/22.
 
 ## What's new in v4.5 — model auto-detection & the dollar leaks
 
-<p align="center">
-  <img src="assets/summary-demo.svg" alt="CCO session summary — real numbers from a real session" width="700"/>
-  <br/><sub>A real session's end-of-day summary. Measured, not marketing.</sub>
-</p>
+![CCO session summary — real numbers from a real session](assets/summary-demo.svg)
+
+*A real session's end-of-day summary. Measured, not marketing.*
 
 The session's REAL model now drives everything, and the three biggest
 avoidable dollar leaks get caught live:
@@ -683,25 +690,19 @@ multiplier), waste/cold files, last prompt grade, the active task's cost, and re
 actions (what to drop → `/compact`, what to `/cco-pack`). Drill into the per-file heatmap —
 green = useful, red = waste — for detail.
 
-<p align="center">
-  <img src="assets/heatmap-demo.svg" alt="Context Control Center" width="700"/>
-</p>
+![Context Control Center](assets/heatmap-demo.svg)
 
 ### Token ROI Report — full analytics across sessions
 
 Run `/cco-report` for a comprehensive dashboard: total tokens, waste ratio, cost estimates, trends, and actionable recommendations.
 
-<p align="center">
-  <img src="assets/dashboard-demo.svg" alt="Token ROI Report" width="700"/>
-</p>
+![Token ROI Report](assets/dashboard-demo.svg)
 
 ### Efficiency Score — gamified optimization
 
 Run `/cco-digest` for a weekly efficiency grade (S/A/B/C/D/F) with breakdown by precision, edit ratio, search accuracy, and focus.
 
-<p align="center">
-  <img src="assets/efficiency-score.svg" alt="Efficiency Score" width="700"/>
-</p>
+![Efficiency Score](assets/efficiency-score.svg)
 
 ### Token Budget — never overspend
 
@@ -740,6 +741,9 @@ When installed as a plugin, commands are namespaced: `/context-optimizer:cco`. W
 | Command | Description |
 |---------|-------------|
 | `/cco` | **Context Control Center** — one screen: budget, $ spent, tokens saved, waste, prompt grade, active task, actions |
+| `fresh-start` | **NEW, every surface** — compact handoff to continue in a new conversation when one gets long |
+| `token-check` | **NEW, every surface** — how many tokens a file or conversation takes and how to cut it |
+| `sharpen-prompt` | **NEW, every surface** — rewrite a vague request into a precise prompt |
 | `/cco-audit [--days N]` | **NEW** — honest savings audit from your own transcripts: where the money went, what CCO saved, which lever saves more |
 | `/cco-orchestrate <task>` | **NEW** — do a task as an orchestrator: Haiku scouts read and run tests, the main model plans and edits |
 | `/cco-task [add\|list\|done]` | **NEW** — organize work by task; tracks tokens + $ per task |

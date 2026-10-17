@@ -12,6 +12,8 @@ allowed-tools:
 
 # Context Templates
 
+> **Needs Claude Code** (or Cowork on your computer): this runs the plugin's local scripts. If `node` or `${CLAUDE_PLUGIN_ROOT}` isn't available, as in claude.ai chat, don't try to run anything. Say so in one line and offer the `fresh-start` or `token-check` skill instead.
+
 Context templates are pre-defined sets of files to read for common task types, saving time and tokens by loading only what's needed.
 
 Templates are stored in `~/.claude-context-optimizer/templates/`.

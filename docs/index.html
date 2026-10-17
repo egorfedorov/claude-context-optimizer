@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>context-optimizer — cut what Claude Code sessions cost</title>
-<meta name="description" content="A Claude Code plugin that keeps the expensive model's context small: Haiku 5.5 subagents do the reading and test runs, read dedup skips unchanged files, and /cco-audit shows from your own transcripts where the money went.">
+<meta name="description" content="A Claude plugin that spends less of your usage on re-reading: fresh-start handoffs and token checks in chat; Haiku 5.5 subagents, read dedup and /cco-audit in Claude Code.">
 <meta property="og:title" content="context-optimizer — cut what Claude Code sessions cost">
 <meta property="og:description" content="Haiku subagents do the reading for 1/40 of the price. /cco-audit shows where your money actually goes. Local, open source, no telemetry.">
 <meta property="og:type" content="website">
@@ -220,6 +220,7 @@
     <div class="nav-links">
       <a href="#money">Where it goes</a>
       <a href="#orchestrator">Orchestrator</a>
+      <a href="#surfaces">Chat &amp; Cowork</a>
       <a href="#audit">Audit</a>
       <a href="#install">Install</a>
       <a class="gh" href="https://github.com/egorfedorov/claude-context-optimizer">GitHub ↗</a>
@@ -230,7 +231,7 @@
 <header class="hero">
   <div class="wrap hero-grid">
     <div>
-      <span class="eyebrow"><b>v4.22.0 &middot;</b> Claude Code plugin &middot; MIT &middot; no telemetry</span>
+      <span class="eyebrow"><b>v4.23.0 &middot;</b> Claude Code plugin &middot; MIT &middot; no telemetry</span>
       <h1>In a long session, most of the bill is <em>re&#8209;reading</em>.</h1>
       <p class="lede">Every request re-reads the whole context. <strong>context-optimizer keeps it small:</strong> Haiku&nbsp;5.5 subagents do the reading and the test runs for 1/40 of the price, and <code>/cco-audit</code> shows from your own transcripts where the money actually went.</p>
       <div class="cta">
@@ -330,6 +331,31 @@
           <div class="point"><span class="n">4</span><div><h3>Or ask for it outright</h3><p><code>/cco-orchestrate &lt;task&gt;</code> runs a whole task this way.</p></div></div>
         </div>
         <p class="proof">Checked live in Claude Code 2.1.302: the scout ran on <b>claude-haiku-5-5</b>, did one Grep and a 25-line Read, and found <code>readEnd</code> at <code>src/read-cache.js:212</code>. The whole session cost <b>$0.005</b>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="surfaces">
+  <div class="wrap">
+    <div class="label">Works where you work</div>
+    <h2>Chat, Cowork and Claude Code each get something useful.</h2>
+    <p class="sub">Most installs come from claude.ai chat, where a plugin loads its skills but not hooks or local scripts. So the plugin ships skills that work everywhere, and the heavy machinery where it can run.</p>
+    <div class="grid-3">
+      <div class="card">
+        <div class="stat green">Chat</div>
+        <h3>claude.ai, desktop and mobile</h3>
+        <p><code>fresh-start</code> writes a compact handoff when a conversation gets long, so you continue in a new one instead of re-sending everything. <code>token-check</code> sizes files and chats; <code>sharpen-prompt</code> tightens a request.</p>
+      </div>
+      <div class="card">
+        <div class="stat blue">Cowork</div>
+        <h3>Desktop tasks</h3>
+        <p>The same skills, plus the <code>scout</code> and <code>runner</code> subagents on Haiku 5.5 for reading and checks.</p>
+      </div>
+      <div class="card">
+        <div class="stat accent">Code</div>
+        <h3>Claude Code</h3>
+        <p>Everything: Haiku subagents, read dedup with file maps, budget and cache-break warnings, task state across <code>/compact</code>, <code>/cco</code> and <code>/cco-audit</code>.</p>
       </div>
     </div>
   </div>

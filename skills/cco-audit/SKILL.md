@@ -10,6 +10,8 @@ allowed-tools:
 
 # Savings audit
 
+> **Needs Claude Code** (or Cowork on your computer): this runs the plugin's local scripts. If `node` or `${CLAUDE_PLUGIN_ROOT}` isn't available, as in claude.ai chat, don't try to run anything. Say so in one line and offer the `fresh-start` or `token-check` skill instead.
+
 Answer "does this plugin actually save me anything?" from ground truth: the
 session transcripts Claude Code keeps in `~/.claude/projects/`. Nothing leaves
 the machine; the script only prints totals.
