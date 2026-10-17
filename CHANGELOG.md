@@ -1,5 +1,20 @@
 # Changelog
 
+## 5.0.1 — 2026-10-17
+
+Fixes from the first live run of 5.0.0.
+
+- **`/cco-meter on` and `/cco-meter off` do what they say.** The command
+  ignored its argument and toggled, so `/cco-meter on` turned a showing line
+  off. A bare `/cco-meter` still toggles.
+- **The line no longer says its name twice.** Claude Code already prefixes it
+  with `context-optimizer:`, so it now reads
+  `context-optimizer: ctx 73K/1M 7% · $0.19 · 5h 0% · 7d 94% · cache 60m`.
+- **`/cco` shows the real session from the first message.** The board learned
+  where the transcript was only after the first tool call, so early on it
+  showed 0 tokens, $0 and the default model while the line showed the real
+  figures. Each prompt now records the transcript and its latest usage.
+
 ## 5.0.0 — 2026-10-17
 
 The directory showed 870 installs and 61 active users. Most installs come from

@@ -3115,6 +3115,21 @@ describe('hooks end-to-end (sh -c, hooks.json commands)', async () => {
     assert.equal(fire('SessionStart', { source: 'resume' }), null, 'a resumed conversation still has it');
   });
 
+  it('gives /cco the real session numbers from the first prompt on', () => {
+    const { fire, home, project, env } = sandbox();
+    const transcript = join(project, 'session.jsonl');
+    wf(transcript, JSON.stringify({ type: 'assistant', message: { model: 'claude-sonnet-5-5', usage: {
+      input_tokens: 3_000, cache_read_input_tokens: 70_000, cache_creation_input_tokens: 0, output_tokens: 400,
+    } } }) + '\n');
+    fire('UserPromptSubmit', { prompt: 'how much has this session cost so far?', transcript_path: transcript });
+    const state = JSON.parse(rf(join(home, '.claude-context-optimizer', 'budget', 'e2e.json'), 'utf-8'));
+    assert.equal(state.transcriptPath, transcript);
+    assert.equal(state.realContextTokens, 73_000);
+    const board = spawnSync(process.execPath, [join(ROOT, 'src', 'dashboard.js'), 'board', 'e2e'], { env, encoding: 'utf-8' }).stdout;
+    assert.match(board, /sonnet-5\.5/);
+    assert.doesNotMatch(board, /opus-5\.5/);
+  });
+
   it('restores the active task after compaction, through a symlinked path', async () => {
     const { symlinkSync } = await import('fs');
     const { fire, project, env } = sandbox();
@@ -3446,8 +3461,8 @@ describe('live meter (v5)', async () => {
   });
 
   it('fits context, cost, limits and cache in one line', () => {
-    assert.equal(meterLine(usage(), 47), 'CCO · ctx 142K/1M 14% · $3.10 · 5h 63% · 7d 41% · cache 47m');
-    assert.equal(meterLine(usage({ rateLimits: [], cost: undefined }), 0), 'CCO · ctx 142K/1M 14% · cache cold');
+    assert.equal(meterLine(usage(), 47), 'ctx 142K/1M 14% · $3.10 · 5h 63% · 7d 41% · cache 47m');
+    assert.equal(meterLine(usage({ rateLimits: [], cost: undefined }), 0), 'ctx 142K/1M 14% · cache cold');
   });
 
   it('formats token counts compactly', () => {

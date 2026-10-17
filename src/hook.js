@@ -160,6 +160,7 @@ export async function dispatch(event) {
 
       case 'UserPromptSubmit': {
         context.push(await safely(async () => (await import('./prompt-coach.js')).coachPrompt(event)));
+        await safely(async () => (await import('./budget.js')).noteSession(event));
         break;
       }
 

@@ -196,6 +196,22 @@ async function main() {
  * PostToolUse: account the call against the session budget and raise the
  * warnings it crosses. Speaks only through the notice ledger; never exits.
  */
+/**
+ * UserPromptSubmit: note where the transcript is and what it says so far, so
+ * `/cco` shows the session's real context, model and cost before the first
+ * tool call books anything.
+ */
+export function noteSession(event) {
+  if (!event.transcript_path) return;
+  const state = loadBudgetState(event.session_id || 'unknown');
+  state.transcriptPath = event.transcript_path;
+  const real = readRealUsage(event.transcript_path);
+  if (real && real.contextTokens > 0) state.realContextTokens = real.contextTokens;
+  if (real && real.model) state.model = real.model;
+  if (real && real.cacheTtl) state.cacheTtl = real.cacheTtl;
+  saveBudgetState(state);
+}
+
 export function budgetEvent(event) {
   const toolName = event.tool_name || '';
   const toolInput = event.tool_input || {};
