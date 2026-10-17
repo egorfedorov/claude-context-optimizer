@@ -14,7 +14,7 @@
  */
 
 import { openSync, readSync, fstatSync, closeSync } from 'fs';
-import { normalizeModelId } from './utils.js';
+import { normalizeModelId, getModelCost } from './utils.js';
 
 /** '1h' when the usage record carries any 1-hour cache write, else '5m'. */
 export function cacheTtlOf(u) {
@@ -106,8 +106,12 @@ export function parseEconomicsFromLines(lines) {
     };
     const key = normalizeModelId(model);
     const speed = u.speed === 'fast' ? 'fast' : 'standard';
-    const segKey = `${key}|${speed}`;
-    if (!segments.has(segKey)) segments.set(segKey, { model: key, speed, totals: zero() });
+    // Some models (Haiku 5.5) bill a whole request at a higher rate once its
+    // prompt passes a threshold, so those requests get their own segment.
+    const lp = key && getModelCost(key).longPrompt;
+    const long = !!(lp && add.input + add.cacheRead + add.cacheCreation > lp.over);
+    const segKey = `${key}|${speed}|${long ? 'long' : ''}`;
+    if (!segments.has(segKey)) segments.set(segKey, { model: key, speed, long, totals: zero() });
     const seg = segments.get(segKey).totals;
     for (const k of Object.keys(add)) { totals[k] += add[k]; seg[k] += add[k]; }
     turns++;

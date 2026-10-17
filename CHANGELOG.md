@@ -1,5 +1,58 @@
 # Changelog
 
+## 4.22.0 — 2026-10-17
+
+We checked, on real transcripts, whether CCO saves anything. Read dedup works,
+but in the sessions we measured Claude almost never re-read an unchanged file.
+The money was elsewhere: ~60% of a long Opus session's cost is cache reads,
+because every request re-reads the whole context. This release goes after that.
+
+### Orchestrator: Haiku subagents
+
+- **`agents/scout.md`** (`context-optimizer:scout`): a read-only explorer
+  (Read, Grep, Glob, WebFetch, WebSearch) on `model: haiku` with
+  `omitClaudeMd: true`. It answers in under 250 words with `path:line`
+  evidence, so only the answer enters the main context.
+- **`agents/runner.md`** (`context-optimizer:runner`): runs test, build and lint
+  commands on Haiku and returns pass/fail plus the failing items.
+- **A cost policy at SessionStart**, about 90 tokens, once per conversation:
+  it tells the main model when to use them. It is not repeated on resume or
+  fork. Turn it off with `"orchestrate": false` in config or
+  `CCO_ORCHESTRATE=0`. It counts as CCO overhead in NET savings.
+- **`/cco-orchestrate <task>`**: a playbook for whole tasks. Scouts in
+  parallel, the main model plans and edits, the runner verifies.
+- **The delegation advisor** and the big-Bash-result tip now name these agents.
+- Checked live in Claude Code 2.1.302: the plugin registers both agents, and a
+  scout lookup ran on `claude-haiku-5-5` (Grep, then a 25-line Read) for $0.005.
+
+### `/cco-audit`: does CCO save anything?
+
+`src/audit.js` reads `~/.claude/projects/**.jsonl` (main sessions and subagent
+runs, deduplicated across a session's continued files) and reports:
+
+- the spend split into cache reads, cache writes and output, with average and
+  peak context and the fixed-overhead share;
+- what CCO verifiably saved: each read-cache refusal in the transcript, priced
+  at one cache write plus a cache read for every later request;
+- repeated reads that still went through, via Read or Bash `cat`/`sed`;
+- three bigger levers, estimated on the same sessions: compacting at a
+  threshold (simulated), delegating exploration to Haiku, and every 10K less of
+  fixed overhead;
+- subagent spend by model.
+
+### Pricing
+
+- Haiku 5.5 (`claude-haiku-5-5`) was priced as Haiku 4.5, at $1/$5. It is
+  $0.10/$0.50, and $0.50/$2.50 per request whose prompt exceeds 100K. Those
+  requests are now priced as their own segment. Haiku 5.5 is the current Haiku
+  for `/cco-doctor` and the ROI tables.
+
+### Rename, finished
+
+- Both marketplaces carry `"renames": {"claude-context-optimizer":
+  "context-optimizer"}`. Checked with the CLI: Claude Code moves an existing
+  install to the new name on its next start, with no reinstall.
+
 ## 4.21.0 — 2026-10-17
 
 **The plugin is renamed to `context-optimizer`.** Claude Code 2.1.302 rejects

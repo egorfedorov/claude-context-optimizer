@@ -30,10 +30,11 @@ must make a number more true, a waste more visible, or a fix more automatic.
       reads at 0.025×
 - [x] **Self-learning tool costs** — shipped in v4.9.0: per-tool EMA from
       observed result sizes replaces the hardcoded MCP/Agent guesses (#38)
-- [~] **Subagent economics** — partly shipped in v4.20.0: subagent tool output
-      is booked apart from the main budget, `/cco` shows it, and subagent reads
-      no longer count as waste. Still open: credit delegation savings to the
-      advisor that suggested it
+- [x] **Subagent economics** — v4.20.0 booked subagent output apart from the
+      main budget; v4.22.0 ships Haiku `scout`/`runner` agents, a delegation
+      policy, and `/cco-audit` with subagent spend by model
+- [ ] **Measure delegation per task**: attribute a task's saving to the scout
+      runs it made (cost with vs. without), via `claude plugin eval`
 - [x] **Windows-correct paths** — shipped in v4.7.0: transcript-folder
       encoding, CRLF `.contextignore`, backslash-aware globs, project-root
       walk and path display (#46, #33)

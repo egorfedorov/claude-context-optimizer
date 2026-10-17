@@ -243,7 +243,7 @@ export function budgetEvent(event) {
     const fix = toolName === 'Read'
       ? 'read with offset/limit or Grep the file instead'
       : toolName === 'Bash'
-        ? 'pipe through tail/head/grep next time'
+        ? 'next time run it through the context-optimizer:runner subagent, or pipe it through tail/grep'
         : 'narrow the query';
     emitNotice(sessionId, {
       kind: 'budget:bigresult',

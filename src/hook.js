@@ -17,8 +17,8 @@
  */
 
 import { join } from 'path';
-import { DATA_DIR, loadJSON, saveJSON, isMainModule, toPosixPath, acquireFileLock } from './utils.js';
-import { collectNotices, takeNotices } from './notices.js';
+import { DATA_DIR, loadJSON, saveJSON, isMainModule, toPosixPath, acquireFileLock, loadConfig } from './utils.js';
+import { collectNotices, takeNotices, recordInjected } from './notices.js';
 
 /** Tools whose results enter the context — the ones worth accounting. */
 export const TRACKED_TOOLS = /^(Bash|Read|Edit|MultiEdit|Write|NotebookEdit|Glob|Grep|Agent|Task|WebFetch|WebSearch|mcp__.+)$/;
@@ -69,6 +69,28 @@ export async function renderRecap(recap) {
   const summary = await safely(async () => (await import('./dashboard.js')).endSession(recap.sessionId));
   const body = [(recap.endLine || '').replace(/^\[cco\] /, '  '), summary].filter(Boolean).join('\n');
   return body ? `[cco] Last session here:\n${body}` : '';
+}
+
+// ── Cost policy ───────────────────────────────────────────────────────────────
+// The cheapest token is one the main model never reads. The plugin ships two
+// Haiku subagents (agents/scout.md, agents/runner.md); this tells the main
+// model, once per conversation, when to use them. Off with
+// `"orchestrate": false` in ~/.claude-context-optimizer/config.json or
+// CCO_ORCHESTRATE=0.
+
+export const COST_POLICY =
+  '[context-optimizer] Token policy for this session: hand reading-heavy work — exploring several files, ' +
+  'wide searches, web docs — to the `context-optimizer:scout` subagent, and long-output commands — test ' +
+  'suites, builds — to `context-optimizer:runner`. Both run on Haiku 5.5 (~40× cheaper than Opus) and return ' +
+  'only a short summary, so this context stays small. Do a single known file or one grep yourself, and keep ' +
+  'edits and design decisions here.';
+
+/** The policy text for a SessionStart, or '' (off, or already in context). */
+export function costPolicy(source, cfg = {}, env = {}) {
+  if (env.CCO_ORCHESTRATE === '0' || cfg.orchestrate === false) return '';
+  // A resumed or forked conversation still carries the earlier copy.
+  if (source === 'resume' || source === 'fork') return '';
+  return COST_POLICY;
 }
 
 // ── Output ────────────────────────────────────────────────────────────────────
@@ -151,6 +173,12 @@ export async function dispatch(event) {
       case 'SessionStart': {
         await safely(async () => (await import('./tracker.js')).trackEvent(event));
         context.push(await safely(async () => (await import('./tasks.js')).rehydrateText(event)));
+        const policy = costPolicy(event.source, loadConfig(), process.env);
+        if (policy) {
+          context.push(policy);
+          // It enters Claude's context, so it counts against NET savings.
+          await safely(() => recordInjected(event.session_id, policy));
+        }
         // A brand-new conversation in this project: say how the last one went.
         if (!event.source || event.source === 'startup' || event.source === 'clear') {
           user.push(await renderRecap(await safely(() => takeRecap(event.cwd))));

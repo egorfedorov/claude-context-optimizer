@@ -3080,8 +3080,15 @@ describe('hooks end-to-end (sh -c, hooks.json commands)', async () => {
     assert.equal(fire('SessionEnd', { reason: 'prompt_input_exit' }), null);
     const out = fire('SessionStart', { session_id: 'next', source: 'startup' });
     assert.match(out.systemMessage, /^\[cco\] Last session here:/);
-    assert.equal(out.hookSpecificOutput, undefined, 'the recap costs Claude no context');
-    assert.equal(fire('SessionStart', { session_id: 'third', source: 'startup' }), null);
+    assert.doesNotMatch(out.hookSpecificOutput?.additionalContext || '', /Last session/, 'the recap costs Claude no context');
+    assert.equal(fire('SessionStart', { session_id: 'third', source: 'startup' }).systemMessage, undefined);
+  });
+
+  it('tells Claude once per conversation to delegate to the Haiku agents', () => {
+    const { fire } = sandbox();
+    assert.match(fire('SessionStart', { source: 'startup' }).hookSpecificOutput.additionalContext, /context-optimizer:scout/);
+    assert.match(fire('SessionStart', { source: 'compact' }).hookSpecificOutput.additionalContext, /context-optimizer:runner/);
+    assert.equal(fire('SessionStart', { source: 'resume' }), null, 'a resumed conversation still has it');
   });
 
   it('restores the active task after compaction', () => {
@@ -3166,5 +3173,137 @@ describe('plugin name', () => {
     const market = JSON.parse(rf(join(root, '.claude-plugin', 'marketplace.json'), 'utf-8'));
     assert.equal(why(plugin.name), null);
     assert.deepEqual(market.plugins.map(p => p.name), [plugin.name]);
+  });
+});
+
+describe('Haiku 5.5 pricing', async () => {
+  const { computeSessionCost } = await import('../src/utils.js');
+
+  it('is recognized and priced at $0.10/$0.50 with a 1M window', () => {
+    assert.equal(normModel('claude-haiku-5-5'), 'haiku-5.5');
+    assert.equal(normModel('claude-haiku-4-5-20251001'), 'haiku');
+    const c = getModelCost('haiku-5.5');
+    assert.equal(c.input, 0.1);
+    assert.equal(c.output, 0.5);
+    assert.equal(c.contextWindow, 1_000_000);
+  });
+
+  it('bills requests over 100K of prompt at the long-prompt rate', async () => {
+    const { parseEconomicsFromLines } = await import('../src/transcript-usage.js');
+    const row = (id, prompt, out) => JSON.stringify({ message: { id, model: 'claude-haiku-5-5', usage: {
+      input_tokens: prompt, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: out } } });
+    const e = parseEconomicsFromLines([row('a', 50_000, 1_000), row('b', 150_000, 1_000)]);
+    assert.deepEqual(e.segments.map(s => s.long).sort(), [false, true]);
+    // 50K×$0.10 + 1K×$0.50  +  150K×$0.50 + 1K×$2.50  (per million)
+    const want = (50_000 * 0.1 + 1_000 * 0.5 + 150_000 * 0.5 + 1_000 * 2.5) / 1e6;
+    assert.ok(Math.abs(computeSessionCost(e).real - want) < 1e-9);
+  });
+});
+
+describe('savings audit', async () => {
+  const { analyzeTranscript, parseTokenCount, simulateCompaction, dropSeenMessages, priceSession, summarize } =
+    await import('../src/audit.js');
+  const { parseEconomicsFromLines } = await import('../src/transcript-usage.js');
+
+  // A tiny session: 4 requests; Read a.js twice (unchanged), once refused by CCO.
+  const msg = (id, ctx, content = []) => JSON.stringify({ type: 'assistant', message: {
+    id, model: 'claude-opus-5-5', content,
+    usage: { input_tokens: 0, cache_read_input_tokens: ctx, cache_creation_input_tokens: 0, output_tokens: 100 } } });
+  const use = (id, name, input) => ({ type: 'tool_use', id, name, input });
+  const res = (id, content, isError = false) => JSON.stringify({ type: 'user', message: { content: [
+    { type: 'tool_result', tool_use_id: id, content, is_error: isError }] } });
+  const lines = [
+    msg('m1', 50_000, [use('t1', 'Read', { file_path: '/p/a.js' })]),
+    res('t1', 'x'.repeat(4_000)),
+    msg('m2', 60_000, [use('t2', 'Read', { file_path: '/p/a.js' })]),
+    res('t2', 'PreToolUse:Read hook error: ✅ [read-cache] Not an error — re-read skipped to save tokens. The full a.js is already in your context (100 lines, ~1.0K tokens).', true),
+    msg('m3', 61_000, [use('t3', 'Read', { file_path: '/p/a.js' })]),
+    res('t3', 'x'.repeat(4_000)),
+    msg('m4', 70_000),
+  ];
+
+  it('reads token counts out of refusal messages', () => {
+    assert.equal(parseTokenCount('(61 lines, ~626 tokens)'), 626);
+    assert.equal(parseTokenCount('(830 lines, ~8.5K tokens)'), 8_500);
+    assert.equal(parseTokenCount('no number here'), 0);
+  });
+
+  it('counts requests, refusals, insisted re-reads and repeats', () => {
+    const f = analyzeTranscript(lines);
+    assert.equal(f.requests, 4);
+    assert.equal(f.baseline, 50_000);
+    assert.equal(f.peak, 70_000);
+    assert.deepEqual(f.refused, { count: 1, tokens: 1_000, weight: 2_000 }); // 2 requests after m2
+    assert.equal(f.insisted, 1);
+    assert.equal(f.rereads.count, 1, 'the read that went through after the refusal is a repeat');
+    assert.equal(f.readCalls, 2);
+  });
+
+  it('does not call a read after an edit a repeat', () => {
+    const f = analyzeTranscript([
+      msg('m1', 1, [use('t1', 'Read', { file_path: '/p/a.js' })]), res('t1', 'aaaa'),
+      msg('m2', 1, [use('t2', 'Edit', { file_path: '/p/a.js' })]), res('t2', 'ok'),
+      msg('m3', 1, [use('t3', 'Read', { file_path: '/p/a.js' })]), res('t3', 'aaaa'),
+    ]);
+    assert.equal(f.rereads.count, 0);
+  });
+
+  it('simulates compaction at a threshold', () => {
+    const ctx = [50_000, 100_000, 150_000, 200_000, 250_000];
+    const none = simulateCompaction(ctx, 1_000_000);
+    assert.equal(none.sum, 750_000);
+    assert.equal(none.compactions, 0);
+    const at = simulateCompaction(ctx, 120_000, 10_000);
+    assert.equal(at.compactions, 2);
+    assert.ok(at.sum < none.sum);
+  });
+
+  it('counts a message once across continued-session files', () => {
+    const seen = new Set();
+    const a = [msg('msg_1', 10), msg('msg_2', 20)];
+    const b = [msg('msg_1', 10), msg('msg_2', 20), msg('msg_3', 30)];
+    assert.equal(dropSeenMessages(b.map(l => l.replace(/"m(\d)"/, '"msg_$1"')), seen).length, 3);
+    assert.equal(dropSeenMessages(a.map(l => l.replace(/"m(\d)"/, '"msg_$1"')), seen).length, 0);
+  });
+
+  it('prices CCO savings with the cache write once and a read per later request', () => {
+    const f = analyzeTranscript(lines);
+    const p = priceSession(f, parseEconomicsFromLines(lines));
+    // Opus 5.5: $4/M input, 5-min cache write 1.25×, read 0.05× → 1K × (1.25 + 0.05 × 2) × $4/M
+    assert.ok(Math.abs(p.refusedSaved - 1_000 * (1.25 + 0.05 * 2) * 4e-6) < 1e-12);
+    const a = summarize([{ subagent: false, facts: f, price: p }]);
+    assert.equal(a.refused, 1);
+    assert.equal(a.sessions, 1);
+  });
+});
+
+describe('cost policy', async () => {
+  const { costPolicy, COST_POLICY } = await import('../src/hook.js');
+  it('is on by default and can be turned off', () => {
+    assert.equal(costPolicy('startup'), COST_POLICY);
+    assert.equal(costPolicy('startup', { orchestrate: false }), '');
+    assert.equal(costPolicy('startup', {}, { CCO_ORCHESTRATE: '0' }), '');
+    assert.equal(costPolicy('fork'), '');
+  });
+  it('stays short', () => {
+    assert.ok(COST_POLICY.length < 600, `${COST_POLICY.length} chars`);
+  });
+});
+
+describe('Haiku agents', async () => {
+  const { readFileSync: rf } = await import('fs');
+  const { fileURLToPath } = await import('url');
+  const dir = fileURLToPath(new URL('../agents', import.meta.url));
+  const fm = (name) => rf(join(dir, `${name}.md`), 'utf-8').split('---')[1];
+  for (const name of ['scout', 'runner']) {
+    it(`${name} runs on Haiku and skips CLAUDE.md`, () => {
+      assert.match(fm(name), /^model: haiku$/m);
+      assert.match(fm(name), /^omitClaudeMd: true$/m);
+      assert.match(fm(name), new RegExp(`^name: ${name}$`, 'm'));
+    });
+  }
+  it('scout cannot change files or run commands', () => {
+    const tools = /^tools: (.*)$/m.exec(fm('scout'))[1].split(',').map(t => t.trim());
+    assert.deepEqual(tools.filter(t => ['Bash', 'Edit', 'Write', 'NotebookEdit'].includes(t)), []);
   });
 });
