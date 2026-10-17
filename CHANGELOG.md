@@ -32,7 +32,10 @@ surface something that works.
 - The README, which the directory shows as the listing description, opens
   with what each surface gets. Bundled images now use Markdown syntax instead
   of HTML `<img>`, which the directory's checklist holds for a reviewer.
-- `plugin.json` sets `displayName: "Context Optimizer (CCO)"`.
+- `plugin.json` sets `displayName: "Context Optimizer (CCO)"`, search
+  keywords, and the directory listing fields: `icon` (a new 512×512
+  `assets/icon.png`; the listing showed the author's avatar), `homepage`,
+  `documentationUrl`, `supportUrl` and `privacyPolicyUrl`.
 
 ## 4.22.0 — 2026-10-17
 

@@ -22,5 +22,10 @@
     "subagents",
     "claude code",
     "cowork"
-  ]
+  ],
+  "homepage": "https://egorfedorov.github.io/claude-context-optimizer/",
+  "icon": "./assets/icon.png",
+  "documentationUrl": "https://github.com/egorfedorov/claude-context-optimizer#readme",
+  "supportUrl": "https://github.com/egorfedorov/claude-context-optimizer/issues",
+  "privacyPolicyUrl": "https://github.com/egorfedorov/claude-context-optimizer#privacy"
 }
