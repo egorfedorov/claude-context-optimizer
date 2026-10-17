@@ -24,8 +24,9 @@ Runs locally, open source (MIT), no telemetry.
 
 ## The live meter
 
-In Claude Code, one dim line under the prompt, updated after every reply and
-every minute:
+In Claude Code, one line under the prompt, updated after every reply and every
+minute. It appears as the session starts, with your plan's limits; the context
+and cost fill in after the first reply:
 
 ```text
 context-optimizer: ctx 142K/1M 14% · $3.10 · 5h 63% · 7d 41% · cache 47m

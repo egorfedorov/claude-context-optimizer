@@ -66,20 +66,25 @@ function limitLabel(kind) {
 }
 
 /**
- * The status line, or undefined while there is nothing to show yet.
+ * The status line. Before the first reply it says so, with any limits known.
  * `usage` is $.session.usage()'s answer; `cacheLeft` is cacheMinutesLeft's.
  * @param {any} usage
  * @param {number | null} [cacheLeft]
- * @returns {string | undefined}
+ * @returns {string}
  */
 export function meterLine(usage, cacheLeft = null) {
   const ctx = usage?.context;
-  if (!ctx || !Number.isFinite(ctx.tokens)) return undefined;
   const parts = [];
-  const pct = Number.isFinite(ctx.percent) ? ` ${ctx.percent}%` : '';
-  parts.push(`ctx ${formatTokens(ctx.tokens)}/${formatTokens(ctx.window)}${pct}`);
-  if (usage.cost && Number.isFinite(usage.cost.usd)) parts.push(money(usage.cost.usd));
-  for (const l of usage.rateLimits || []) {
+  // Before the session's first reply there is no context figure yet; show
+  // what is known rather than nothing, so turning the meter on is visible.
+  if (ctx && Number.isFinite(ctx.tokens)) {
+    const pct = Number.isFinite(ctx.percent) ? ` ${ctx.percent}%` : '';
+    parts.push(`ctx ${formatTokens(ctx.tokens)}/${formatTokens(ctx.window)}${pct}`);
+  } else {
+    parts.push('ctx after the first reply');
+  }
+  if (usage?.cost && Number.isFinite(usage.cost.usd) && usage.cost.usd > 0) parts.push(money(usage.cost.usd));
+  for (const l of usage?.rateLimits || []) {
     if (Number.isFinite(l.percentUsed)) parts.push(`${limitLabel(l.kind)} ${Math.round(l.percentUsed)}%`);
   }
   if (cacheLeft === 0) parts.push('cache cold');

@@ -1,5 +1,14 @@
 # Changelog
 
+## 5.0.2 — 2026-10-17
+
+- **The live line shows up as soon as a session starts.** Before the first
+  reply there is no context figure, and the meter hid itself, so turning it
+  on in a fresh session looked like it did nothing. It now reads
+  `ctx after the first reply · 7d 94%` with whatever limits are known, and
+  fills in after the first reply. A session that has cost $0 doesn't show
+  `$0.00`.
+
 ## 5.0.1 — 2026-10-17
 
 Fixes from the first live run of 5.0.0.
