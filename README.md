@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <strong>Stop burning tokens on weak prompts and redundant reads.</strong><br/>
-  <sub>Model-aware for the whole Claude lineup — Opus 5.5, Sonnet 5.5, Fable 5.1, Haiku — detected per session, zero config.</sub>
+  <strong>Cut what Claude Code sessions cost: Haiku does the reading, the expensive model decides.</strong><br/>
+  <sub>Haiku 5.5 subagents, read dedup, budget and cache-break warnings, and an audit of your own transcripts. Model-aware for Opus 5.5, Sonnet 5.5, Fable 5.1 and Haiku 5.5.</sub>
 </p>
 
 <p align="center">
@@ -23,17 +23,28 @@
 
 ## The Problem
 
-The average Claude Code session **wastes 30-50% of tokens** on files that are read but never actually used. Every `Read` call consumes context — whether the file was relevant or not.
+In a long Claude Code session, most of the bill is **re-reading**. Every request
+sends the whole context again. Cache reads are cheap per token, but 280K of
+context × 300 requests adds up. On the sessions we measured, cache reads were
+~60% of the cost.
 
-- A 200-line config file? **800 tokens gone.**
-- A README you glanced at once? **2,400 tokens burned.**
-- That `package.json` Claude reads "just in case"? **120 tokens, every time.**
-
-At $4/M input tokens (Opus 5.5) — $10/M on Fable 5.1 — a developer spending $100/month is lighting **$30-50 on fire** on irrelevant context.
+- Context only grows: every file read, every test log, every web page stays in
+  and is paid for again on each later request.
+- The expensive model does all of it, including grepping and reading logs,
+  which a model 40× cheaper does just as well.
+- You can't see any of this. Nothing tells you where a session's money went.
 
 ## The Solution
 
-**context-optimizer** silently tracks every file read, edit, and search. It learns which files are actually useful and which are waste. Over time, it builds a profile of your coding patterns and tells you exactly where your tokens go — and how to stop wasting them.
+**context-optimizer** keeps the expensive model's context small and shows you
+the numbers:
+
+- **Haiku 5.5 subagents** (`scout`, `runner`) do the exploration and the test
+  runs. Only their short answer enters the main context.
+- **`/cco-audit`** reads your own transcripts and tells you what you spent, what
+  CCO saved, and which change would save the most.
+- **Hooks** skip unchanged re-reads, warn before the budget runs out or the
+  cache goes cold, and keep task state across `/compact`.
 
 <p align="center">
   <img src="assets/how-it-works.svg" alt="How it works" width="700"/>
@@ -545,7 +556,9 @@ Read Cache runs as a PreToolUse hook and **blocks** redundant reads when the fil
 - Repeated right after a refusal: allowed (Claude's copy may have been cleared)
 - Same file, same range, unchanged: **blocked** — saves 100% of those tokens
 
-Typical savings: **30-60% fewer tokens** per session from read deduplication alone.
+How much it saves depends on how often your sessions re-read unchanged files.
+On the sessions we measured that was rare, so the savings were small. `/cco-audit`
+shows what it saved on yours.
 
 ### NEW: `.contextignore` — block files you never need
 
