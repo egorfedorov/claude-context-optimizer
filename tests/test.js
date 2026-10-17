@@ -36,7 +36,7 @@ import { cacheTtlMinutes } from '../src/budget.js';
 import {
   emptyLedger, shouldEmit, recordEmit, DEFAULT_NOTICE_CAP
 } from '../src/notices.js';
-import { shouldNudgeBigFile, checkStaleness } from '../src/read-cache.js';
+import { shouldNudgeBigFile, checkStaleness, readContextKey, readEnd } from '../src/read-cache.js';
 import {
   estimateToolTokens, computeCost, selectWarnings,
   shouldWarnCacheBreak, shouldWarnContextRot, buildCompactRecommendation
@@ -2794,9 +2794,10 @@ describe('v4.10 task execution state (SKILL.state)', () => {
     assert.equal(renderRehydration(done), null, 'finished tasks are not re-injected');
   });
 
-  it('shouldRehydrate only after compact or resume', () => {
+  it('shouldRehydrate only after compact, resume or fork', () => {
     assert.equal(shouldRehydrate('compact'), true);
     assert.equal(shouldRehydrate('resume'), true);
+    assert.equal(shouldRehydrate('fork'), true);
     assert.equal(shouldRehydrate('startup'), false);
     assert.equal(shouldRehydrate('clear'), false);
     assert.equal(shouldRehydrate(undefined), false);
@@ -2911,5 +2912,236 @@ describe('directory policy', () => {
     const { collectConfiguredMcpServers } = await import('../src/overhead.js');
     const got = collectConfiguredMcpServers('/nonexistent', ['stake', 'bad name;rm']);
     assert.deepEqual(got, [{ name: 'stake', scope: '' }]);
+  });
+});
+
+describe('read-cache: context key and read extent', () => {
+  it('keys the main loop and each subagent separately', () => {
+    assert.equal(readContextKey({ session_id: 's' }), 'main');
+    assert.equal(readContextKey({ session_id: 's', agent_id: 'a1' }), 'agent:a1');
+  });
+
+  it('caps a default-limit read at the real file length', () => {
+    assert.equal(readEnd(0, 2000, 830), 830);
+    assert.equal(readEnd(100, 50, 830), 150);
+    assert.equal(readEnd(900, 2000, 830), 900); // past EOF: empty, never negative
+    assert.equal(readEnd(0, 2000, 0), 2000);    // unknown length: trust the limit
+  });
+});
+
+// ── v4.20: hooks end-to-end, exactly as Claude Code runs them ──────────────
+// Each case takes the command string from hooks/hooks.json, runs it with
+// `sh -c` (dash on Linux CI, bash on macOS) and a JSON event on stdin, against
+// a throwaway HOME. Claude Code reads stdout as JSON only when it is ONE object
+// and ignores stderr on exit 0 — so that is what these assert.
+
+describe('hooks end-to-end (sh -c, hooks.json commands)', async () => {
+  const { spawnSync } = await import('child_process');
+  const { mkdtempSync, readFileSync: rf, writeFileSync: wf } = await import('fs');
+  const { tmpdir } = await import('os');
+  const { fileURLToPath } = await import('url');
+  const ROOT = fileURLToPath(new URL('..', import.meta.url));
+  const HOOKS = JSON.parse(rf(join(ROOT, 'hooks', 'hooks.json'), 'utf-8')).hooks;
+  const commandFor = (event) => HOOKS[event][0].hooks[0].command;
+
+  const sandbox = () => {
+    const home = mkdtempSync(join(tmpdir(), 'cco-e2e-'));
+    const project = join(home, 'proj');
+    mkdirSync(project);
+    const file = join(project, 'mod.js');
+    wf(file, Array.from({ length: 60 }, (_, i) =>
+      i % 20 === 0 ? `export function part${i / 20}() {` : i % 20 === 19 ? '}' : `  const v${i} = ${i};`,
+    ).join('\n') + '\n');
+    const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_PLUGIN_ROOT: ROOT };
+    delete env.CI; delete env.CCO_QUIET; // quiet mode would mute the prompt coach
+    const fire = (event, fields = {}, root = ROOT) => {
+      const r = spawnSync('/bin/sh', ['-c', commandFor(event)], {
+        input: JSON.stringify({ hook_event_name: event, session_id: 'e2e', cwd: project, ...fields }),
+        env: { ...env, CLAUDE_PLUGIN_ROOT: root }, encoding: 'utf-8',
+      });
+      assert.equal(r.status, 0, `${event} exited ${r.status}: ${r.stderr}`);
+      const out = r.stdout.trim();
+      return out ? JSON.parse(out) : null; // throws unless stdout is ONE JSON object
+    };
+    const read = (fields = {}) => fire('PreToolUse', { tool_name: 'Read', tool_input: { file_path: file }, ...fields });
+    return { home, project, file, env, fire, read };
+  };
+  const denied = (out) => out?.hookSpecificOutput?.permissionDecision === 'deny';
+
+  it('every event wired in hooks.json runs and exits 0', () => {
+    const { fire } = sandbox();
+    for (const event of Object.keys(HOOKS)) fire(event, { tool_name: 'Bash', tool_input: {}, source: 'startup' });
+  });
+
+  it('a missing plugin dir is a silent no-op (issue #1)', () => {
+    const { fire } = sandbox();
+    assert.equal(fire('PreToolUse', { tool_name: 'Read', tool_input: { file_path: '/x' } }, '/nonexistent'), null);
+  });
+
+  it('dedups a repeated read with a map, via permissionDecision', () => {
+    const { read } = sandbox();
+    assert.equal(read(), null);
+    const out = read();
+    assert.ok(denied(out));
+    const reason = out.hookSpecificOutput.permissionDecisionReason;
+    assert.match(reason, /Not an error — re-read skipped/);
+    assert.match(reason, /The full mod\.js is already in your context.*61 lines/);
+    assert.match(reason, /📋 File map/, 'a file with structure gets its map');
+  });
+
+  it('gives each subagent its own context', () => {
+    const { read } = sandbox();
+    read();
+    assert.equal(read({ agent_id: 'a1' }), null, "a subagent's first read goes through");
+    assert.ok(denied(read({ agent_id: 'a1' })), 'its own repeat is deduped');
+    assert.equal(read({ agent_id: 'a2' }), null, 'another subagent starts empty too');
+  });
+
+  it('lets a read through when Claude repeats it after a refusal', () => {
+    const { read, home } = sandbox();
+    read();
+    assert.ok(denied(read()));
+    assert.equal(read(), null);
+    const cache = JSON.parse(rf(join(home, '.claude-context-optimizer', 'read-cache', 'e2e.json'), 'utf-8'));
+    assert.equal(cache.totalTokensSaved, 0, 'the refusal that did not stick is not counted as savings');
+    assert.equal(cache.insistedReads, 1);
+  });
+
+  it('re-allows a read after Edit and after compaction', () => {
+    const { read, fire, file } = sandbox();
+    read();
+    fire('PostToolUse', { tool_name: 'Edit', tool_input: { file_path: file, old_string: 'a', new_string: 'b' }, tool_response: {} });
+    assert.equal(read(), null, 'after Edit');
+    fire('PreCompact', { trigger: 'auto' });
+    assert.equal(read(), null, 'after PreCompact');
+  });
+
+  it('delivers a big-result tip to Claude as additionalContext, not stderr', () => {
+    const { fire } = sandbox();
+    const out = fire('PostToolUse', {
+      tool_name: 'Bash', tool_input: { command: 'cat huge.log' },
+      tool_response: { stdout: 'x'.repeat(60_000), stderr: '' },
+    });
+    assert.equal(out.hookSpecificOutput.hookEventName, 'PostToolUse');
+    assert.match(out.hookSpecificOutput.additionalContext, /Bash result was ~15\.0K tokens/);
+  });
+
+  it("keeps a subagent's tool results out of the main budget", () => {
+    const { fire, home } = sandbox();
+    fire('PostToolUse', {
+      agent_id: 'a1', tool_name: 'Bash', tool_input: { command: 'ls' },
+      tool_response: { stdout: 'x'.repeat(8_000) },
+    });
+    const state = JSON.parse(rf(join(home, '.claude-context-optimizer', 'budget', 'e2e.json'), 'utf-8'));
+    assert.equal(state.inputTokensEstimated, 0);
+    assert.ok(state.subagentTokens >= 2_000);
+  });
+
+  it("does not book a subagent's reads as main-context waste", () => {
+    const { fire, file, home } = sandbox();
+    fire('PostToolUse', { agent_id: 'a1', tool_name: 'Read', tool_input: { file_path: file }, tool_response: {} });
+    const session = JSON.parse(rf(join(home, '.claude-context-optimizer', 'sessions', 'e2e.json'), 'utf-8'));
+    assert.deepEqual(session.files, {});
+    assert.equal(session.totalToolCalls, 1, 'the call itself is still counted');
+  });
+
+  it('books every call when Claude runs tools in parallel', async () => {
+    const { spawn } = await import('child_process');
+    const { project, env, home } = sandbox();
+    const files = Array.from({ length: 8 }, (_, i) => {
+      const f = join(project, `p${i}.txt`);
+      wf(f, 'x\n'.repeat(40));
+      return f;
+    });
+    await Promise.all(files.map(f => new Promise((resolve) => {
+      const child = spawn('/bin/sh', ['-c', commandFor('PostToolUse')], { env });
+      child.on('close', resolve);
+      child.stdin.end(JSON.stringify({
+        hook_event_name: 'PostToolUse', session_id: 'e2e', cwd: project,
+        tool_name: 'Read', tool_input: { file_path: f }, tool_response: {},
+      }));
+    })));
+    const session = JSON.parse(rf(join(home, '.claude-context-optimizer', 'sessions', 'e2e.json'), 'utf-8'));
+    assert.equal(session.totalToolCalls, 8);
+    assert.equal(Object.keys(session.files).length, 8);
+  });
+
+  it('coaches a weak task prompt and stays quiet on chat', () => {
+    const { fire } = sandbox();
+    const out = fire('UserPromptSubmit', { prompt: 'fix it' });
+    assert.match(out.hookSpecificOutput.additionalContext, /\[prompt-coach\]/);
+    assert.equal(fire('UserPromptSubmit', { prompt: 'thanks!' }), null);
+  });
+
+  it('shows the user a recap of the last session at the next startup, once', () => {
+    const { fire, file } = sandbox();
+    fire('PreToolUse', { tool_name: 'Read', tool_input: { file_path: file } });
+    fire('PostToolUse', { tool_name: 'Read', tool_input: { file_path: file }, tool_response: { file: { content: 'x'.repeat(4000) } } });
+    assert.equal(fire('SessionEnd', { reason: 'prompt_input_exit' }), null);
+    const out = fire('SessionStart', { session_id: 'next', source: 'startup' });
+    assert.match(out.systemMessage, /^\[cco\] Last session here:/);
+    assert.equal(out.hookSpecificOutput, undefined, 'the recap costs Claude no context');
+    assert.equal(fire('SessionStart', { session_id: 'third', source: 'startup' }), null);
+  });
+
+  it('restores the active task after compaction', () => {
+    const { fire, project, env } = sandbox();
+    const tasks = join(ROOT, 'src', 'tasks.js');
+    spawnSync(process.execPath, [tasks, 'add', 'migrate auth'], { env: { ...env, CCO_PROJECT: project } });
+    spawnSync(process.execPath, [tasks, 'patch', '{"step":3}'], { env: { ...env, CCO_PROJECT: project } });
+    const out = fire('SessionStart', { source: 'compact' });
+    assert.match(out.hookSpecificOutput.additionalContext, /migrate auth/);
+    assert.match(out.hookSpecificOutput.additionalContext, /"step":3/);
+  });
+});
+
+describe('hook dispatcher output', async () => {
+  const { buildOutput, clip, saveRecap, takeRecap } = await import('../src/hook.js');
+
+  it('refuses only on PreToolUse', () => {
+    assert.equal(buildOutput('PreToolUse', { deny: 'no' }).hookSpecificOutput.permissionDecision, 'deny');
+    assert.equal(buildOutput('PostToolUse', { deny: 'no' }), null);
+  });
+
+  it('drops Claude context on events that cannot carry it', () => {
+    assert.equal(buildOutput('PreCompact', { context: ['x'] }), null);
+    assert.equal(buildOutput('SessionStart', { context: ['x'] }).hookSpecificOutput.additionalContext, 'x');
+  });
+
+  it('routes user notices to systemMessage and says nothing when empty', () => {
+    assert.deepEqual(buildOutput('PostToolUse', { user: ['a', '', 'b'] }), { systemMessage: 'a\nb' });
+    assert.equal(buildOutput('PostToolUse', { context: ['', undefined] }), null);
+  });
+
+  it('stays under the 10,000-character field cap', () => {
+    assert.equal(clip('x'.repeat(20_000)).length, 9_500);
+    assert.equal(clip('short'), 'short');
+  });
+
+  it('keeps one recap per project and expires stale ones', async () => {
+    const { mkdtempSync } = await import('fs');
+    const { tmpdir } = await import('os');
+    const file = join(mkdtempSync(join(tmpdir(), 'cco-recap-')), 'recaps.json');
+    saveRecap('/p', { sessionId: 's1', endLine: 'x' }, 1_000, file);
+    assert.equal(takeRecap('/p', 2_000, file).sessionId, 's1');
+    assert.equal(takeRecap('/p', 2_000, file), null, 'consumed');
+    saveRecap('/p', { sessionId: 's2' }, 0, file);
+    assert.equal(takeRecap('/p', 8 * 24 * 3600 * 1000, file), null, 'older than a week');
+  });
+});
+
+describe('skill listing cost', () => {
+  // Every model-invocable skill's description rides along on every request.
+  // Reports, settings and cleanup are typed by the user (/cco-report …), so
+  // they stay out of the listing; only skills Claude uses mid-task stay in.
+  it('lists only the skills Claude invokes itself', async () => {
+    const { readdirSync, readFileSync: rf } = await import('fs');
+    const { fileURLToPath } = await import('url');
+    const dir = fileURLToPath(new URL('../skills', import.meta.url));
+    const listed = readdirSync(dir).filter(name => {
+      const fm = rf(join(dir, name, 'SKILL.md'), 'utf-8').split('---')[1] || '';
+      return !/^disable-model-invocation:\s*true\s*$/m.test(fm);
+    }).sort();
+    assert.deepEqual(listed, ['cco-anatomy', 'cco-git', 'cco-pack', 'cco-task', 'smart-loader']);
   });
 });

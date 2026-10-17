@@ -2,6 +2,7 @@
 name: cco-config
 description: View and tune CCO's behavior thresholds — re-read warnings, cache staleness, prompt-coach length bands, and the /cco-pack budget cap
 license: MIT
+disable-model-invocation: true
 argument-hint: "[show | get <key> | set <key> <value> | reset [key]]"
 allowed-tools:
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/config.js:*)"

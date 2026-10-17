@@ -2,6 +2,7 @@
 name: cco-tools
 description: Show what tools actually cost in tokens — learned per-tool averages from observed results, replacing the hardcoded MCP/Agent guesses
 license: MIT
+disable-model-invocation: true
 argument-hint: "[show | reset]"
 allowed-tools:
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/tool-costs.js:*)"

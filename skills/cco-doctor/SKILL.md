@@ -2,6 +2,7 @@
 name: cco-doctor
 description: Health check for the context-optimizer plugin install — verifies versions, hooks, data dir, model config, and reports any issues
 license: MIT
+disable-model-invocation: true
 allowed-tools:
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/doctor.js:*)"
   - Read
@@ -28,7 +29,10 @@ node ${CLAUDE_PLUGIN_ROOT}/src/doctor.js --tests
 - Plugin manifest and `package.json` exist
 - Versions are in sync (`plugin.json` and `package.json`)
 - `hooks.json` is valid JSON with all expected event types
-- All hook scripts present in `src/`
+- Every script `hooks.json` runs is present in `src/`
+- The hooks really work: runs the hook through `sh -c` the way Claude Code
+  does and checks that a repeated read is deduplicated and a subagent's first
+  read is not
 - Data directory `~/.claude-context-optimizer/` is writable
 - `patterns.json` size is reasonable
 - Global stats file is parseable

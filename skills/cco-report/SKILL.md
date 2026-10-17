@@ -2,6 +2,7 @@
 name: cco-report
 description: Show detailed token ROI report across all tracked sessions
 license: MIT
+disable-model-invocation: true
 allowed-tools:
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/report.js:*)"
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js:*)"

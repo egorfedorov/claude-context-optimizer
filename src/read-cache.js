@@ -18,7 +18,10 @@
  *      derived from the file's structural map.
  *
  * v1.1 features preserved:
- *   - PPID tracking for Agent subprocess isolation
+ *   - Per-agent isolation: a subagent (hook input carries `agent_id`) starts
+ *     with an empty context, so its first read of a file is always allowed.
+ *     This used to key on process.ppid, which is the transient /bin/sh when
+ *     sh is dash — every read looked new and nothing was ever deduped.
  *   - Range tracking for partial reads
  *   - Edit/Write invalidation
  *   - PreCompact cache clearing
@@ -194,124 +197,141 @@ function getMtime(filePath) {
   try { return statSync(filePath).mtimeMs; } catch { return null; }
 }
 
-/** Cap PPID list to last N entries to bound memory. */
-function trimPpids(ppids, max = 20) {
-  const unique = [...new Set(ppids)];
-  return unique.slice(-max);
+/**
+ * Which context a read lands in. Subagents run in-process (same ppid as the
+ * main loop), but Claude Code stamps their hook events with `agent_id`.
+ */
+export function readContextKey(event) {
+  return event.agent_id ? `agent:${event.agent_id}` : 'main';
 }
 
-function allow(sessionId, cache, filePath, mtime, offset, end, ext, ppid, logMsg) {
-  const tokens = estimateTokens(end - offset, ext);
-  const existing = cache.files[filePath];
-  cache.files[filePath] = {
+/**
+ * Last line a read covers. Capped at the file's real length so a full read of
+ * an 800-line file is booked as 800 lines, not the tool's 2000-line default.
+ */
+export function readEnd(offset, limit, fileLines) {
+  const end = offset + limit;
+  return fileLines > 0 ? Math.max(offset, Math.min(end, fileLines)) : end;
+}
+
+/**
+ * The slice of the cache one context owns. The main loop keeps the top-level
+ * `files` map (what /cco and the tracker read); each subagent gets its own,
+ * since it starts with an empty context and has read nothing the main loop has.
+ */
+export function contextScope(cache, ctxKey) {
+  if (ctxKey === 'main') return cache;
+  cache.agents ||= {};
+  if (!cache.agents[ctxKey]) {
+    // Bound memory: keep the 20 most recently created subagent scopes.
+    const keys = Object.keys(cache.agents);
+    if (keys.length >= 20) delete cache.agents[keys[0]];
+    cache.agents[ctxKey] = { files: {} };
+  }
+  return cache.agents[ctxKey];
+}
+
+function record(scope, filePath, mtime, offset, end, ext) {
+  scope.files[filePath] = {
     mtime,
     lines: end - offset,
-    tokens,
+    tokens: estimateTokens(end - offset, ext),
     readAt: new Date().toISOString(),
     readAtMs: Date.now(),
     ranges: [[offset, end]],
-    ppids: trimPpids(existing ? [...(existing.ppids || []), ppid] : [ppid])
   };
-  saveCache(sessionId, cache);
-  if (logMsg) console.error(logMsg);
-  process.exit(0);
 }
 
 // ── Build digest block message ────────────────────────────────────────────────
 
 function buildBlockMessage(filePath, entry, wasPartialRequest) {
   const name = basename(filePath);
-  let landmarks, digest;
+  let landmarks = [], digest = '';
   try {
     landmarks = parseFileStructure(filePath);
-    digest = formatDigest(landmarks, entry.lines);
-  } catch {
-    landmarks = [];
-    digest = '';
-  }
+    // A "no landmarks" line tells Claude nothing — only show a real map.
+    if (landmarks.length) digest = '\n' + formatDigest(landmarks, entry.lines);
+  } catch { /* map is best-effort */ }
 
   // Pick a useful offset/limit suggestion from the landmarks
   let suggestion = '';
   if (landmarks.length > 1) {
     const mid = landmarks[Math.floor(landmarks.length / 2)];
-    suggestion = `\n→ Example: Read with offset=${mid.line - 1}, limit=50 to see ${mid.label}`;
+    suggestion = `\n→ Need a different part? Read with offset=${mid.line - 1}, limit=50 to see ${mid.label}`;
   }
 
-  const partialHint = wasPartialRequest ? ' This section is already loaded.' : '';
-
-  const reason =
-    `⛔ [read-cache] Already loaded ${name} this session ` +
-    `(${entry.lines} lines, ~${formatTokens(entry.tokens)} tokens).` +
-    `${partialHint} File unchanged.\n${digest}${suggestion}`;
-
-  return reason;
+  // Claude Code labels every refusal "hook error", and a model that takes it
+  // for a failure retries or reports being blocked. Say plainly that it is a
+  // skip, and that the copy it already has is the one to use.
+  const what = wasPartialRequest ? 'That section of' : 'The full';
+  return (
+    `✅ [read-cache] Not an error — re-read skipped to save tokens. ${what} ${name} is already in your context ` +
+    `from an earlier Read this session, and the file is unchanged since (${entry.lines} lines, ~${formatTokens(entry.tokens)} tokens). ` +
+    `Use that copy.${digest}${suggestion}` +
+    `\nIf it is no longer in your context (older tool results cleared), repeat the same Read and it will go through.`
+  );
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────────
+// ── Hook handlers ─────────────────────────────────────────────────────────────
+// Pure of process state: each returns what the dispatcher (hook.js) should do
+// and never calls process.exit, so several handlers can share one process.
 
-async function main() {
-  let input = '';
-  for await (const chunk of process.stdin) { input += chunk; }
-  if (!input.trim()) process.exit(0);
+/** PreCompact: the context is being rewritten — every cached read is gone. */
+export function onCompact(event) {
+  const sessionId = event.session_id || 'unknown';
+  const cache = loadCache(sessionId);
+  const fileCount = Object.keys(cache.files).length;
+  if (fileCount === 0 && !cache.agents) return 0;
+  cache.files = {};
+  delete cache.agents;
+  saveCache(sessionId, cache);
+  return fileCount;
+}
 
-  let event;
-  try { event = JSON.parse(input); } catch { process.exit(0); }
-
-  // ── PreCompact: clear cache (context is being compressed) ───────────
-  if (event.hook_event_name === 'PreCompact') {
-    const sessionId = event.session_id || 'unknown';
-    const cache = loadCache(sessionId);
-    const fileCount = Object.keys(cache.files).length;
-    if (fileCount > 0) {
-      cache.files = {};
-      saveCache(sessionId, cache);
-      console.error(`[read-cache] Context compacted — ${fileCount} file(s) cleared from cache. Fresh reads welcome!`);
-    }
-    process.exit(0);
+/** PostToolUse Edit/Write: the file changed — no context holds the new text. */
+export function onFileWritten(event) {
+  const filePath = (event.tool_input || {}).file_path || '';
+  if (!filePath) return;
+  const sessionId = event.session_id || 'unknown';
+  const cache = loadCache(sessionId);
+  let changed = false;
+  for (const scope of [cache, ...Object.values(cache.agents || {})]) {
+    if (scope.files?.[filePath]) { delete scope.files[filePath]; changed = true; }
   }
+  if (changed) saveCache(sessionId, cache);
+}
 
-  // ── PostToolUse: invalidate cache on Edit/Write ─────────────────────
-  if (event.hook_event_name === 'PostToolUse' && (event.tool_name === 'Edit' || event.tool_name === 'Write')) {
-    const filePath = (event.tool_input || {}).file_path || '';
-    if (filePath) {
-      const sessionId = event.session_id || 'unknown';
-      const cache = loadCache(sessionId);
-      if (cache.files[filePath]) {
-        delete cache.files[filePath];
-        saveCache(sessionId, cache);
-      }
-    }
-    process.exit(0);
-  }
-
-  if (event.hook_event_name !== 'PreToolUse') process.exit(0);
-  if ((event.tool_name || '') !== 'Read') process.exit(0);
-
+/**
+ * PreToolUse Read: allow, or deny with a file map instead of the content.
+ * Returns { deny: reason } or { log?: message } (allowed).
+ */
+export function decideRead(event) {
   const toolInput = event.tool_input || {};
   const filePath = toolInput.file_path || '';
   const sessionId = event.session_id || 'unknown';
-  const ppid = process.ppid;
+  const ctxKey = readContextKey(event);
 
-  if (!filePath || filePath.startsWith('/dev/') || filePath.startsWith('/proc/')) {
-    process.exit(0);
-  }
+  if (!filePath || filePath.startsWith('/dev/') || filePath.startsWith('/proc/')) return {};
 
   // ── .contextignore check ────────────────────────────────────────────
   const ignoreResult = isContextIgnored(filePath);
   if (ignoreResult.ignored) {
-    const reason = `🚫 [contextignore] ${basename(filePath)} matches pattern "${ignoreResult.pattern}" in .contextignore. ` +
-      `Use Grep to search inside, or remove the pattern from .contextignore to allow reading.`;
-    console.log(JSON.stringify({ decision: 'block', reason }));
-    process.exit(0);
+    return {
+      deny: `🚫 [contextignore] ${basename(filePath)} matches pattern "${ignoreResult.pattern}" in .contextignore. ` +
+        `Use Grep to search inside, or remove the pattern from .contextignore to allow reading.`,
+    };
   }
 
   const offset = toolInput.offset || 0;
   const limit = toolInput.limit || 2000;
-  const end = offset + limit;
   const ext = extname(filePath);
+  // Binaries (images, archives, locks) have no meaningful line count.
+  const fileLines = shouldSkipFile(filePath) ? 0 : getFileLines(filePath);
+  const end = readEnd(offset, limit, fileLines);
   setSessionModel(getSessionModel(sessionId));
   const cache = loadCache(sessionId);
-  const entry = cache.files[filePath];
+  const scope = contextScope(cache, ctxKey);
+  const entry = scope.files[filePath];
   if (entry) {
     // Legacy/placeholder entries may lack these fields — default them so the
     // range/token accounting below can't throw (a throw silently kills caching).
@@ -327,85 +347,120 @@ async function main() {
     const threshold = cfg.bigFileThreshold || 1500;
     // Never map binaries (images, archives, locks): "2411 lines" of PNG bytes
     // has no structure to map, and the Read tool renders images natively.
-    const mappable = enabled && !toolInput.offset && !toolInput.limit && !shouldSkipFile(filePath);
-    const lines = mappable ? getFileLines(filePath) : 0;
+    const mappable = enabled && !toolInput.offset && !toolInput.limit;
+    const lines = mappable ? fileLines : 0;
 
     if (shouldNudgeBigFile({
       entry, hasOffset: !!toolInput.offset, hasLimit: !!toolInput.limit, lines, threshold, enabled,
     })) {
-      const mtime = getMtime(filePath);
       // Placeholder entry (no covered ranges) so the NEXT read is allowed & cached.
-      cache.files[filePath] = {
-        mtime, lines, tokens: estimateTokens(lines, ext),
+      scope.files[filePath] = {
+        mtime: getMtime(filePath), lines, tokens: estimateTokens(lines, ext),
         readAt: new Date().toISOString(), readAtMs: Date.now(),
-        ranges: [], ppids: [ppid], nudged: true,
+        ranges: [], nudged: true,
       };
       cache.bigFileNudges = (cache.bigFileNudges || 0) + 1;
       saveCache(sessionId, cache);
 
       let digest = '';
       try { digest = formatDigest(parseFileStructure(filePath), lines); } catch { /* best-effort */ }
-      const reason =
-        `🗺️ [read-cache] ${basename(filePath)} is ${lines} lines (~${formatTokens(estimateTokens(lines, ext))} tokens). ` +
-        `Here's its map — Read with offset/limit for the section you need, or Read it again to load the whole file.\n${digest}`;
-      console.log(JSON.stringify({ decision: 'block', reason }));
-      process.exit(0);
+      return {
+        deny: `🗺️ [read-cache] ${basename(filePath)} is ${lines} lines (~${formatTokens(estimateTokens(lines, ext))} tokens). ` +
+          `Here's its map — Read with offset/limit for the section you need, or Read it again to load the whole file.\n${digest}`,
+      };
     }
 
-    allow(sessionId, cache, filePath, getMtime(filePath), offset, end, ext, ppid);
+    record(scope, filePath, getMtime(filePath), offset, end, ext);
+    saveCache(sessionId, cache);
+    return {};
   }
 
   // ── File deleted — allow (Read tool will return error naturally) ─────
   const currentMtime = getMtime(filePath);
-  if (currentMtime === null) process.exit(0);
+  if (currentMtime === null) return {};
 
   // ── File modified since last read — allow ───────────────────────────
   if (currentMtime !== entry.mtime) {
-    allow(sessionId, cache, filePath, currentMtime, offset, end, ext, ppid,
-      `[read-cache] ${basename(filePath)} changed on disk — cache refreshed.`);
+    record(scope, filePath, currentMtime, offset, end, ext);
+    saveCache(sessionId, cache);
+    return { log: `[read-cache] ${basename(filePath)} changed on disk — cache refreshed.` };
   }
 
-  // ── Different process context (Agent subprocess) — allow ────────────
-  if (!(entry.ppids || []).includes(ppid)) {
-    entry.ppids = trimPpids([...(entry.ppids || []), ppid]);
-    entry.readAt = new Date().toISOString();
-    entry.readAtMs = Date.now();
+  // ── Claude asked again right after a refusal — it needs the text ────
+  // Older tool results can be cleared from context without a PreCompact
+  // (context editing). A model that repeats the Read after being told it
+  // already has the file most likely doesn't: let it through, and take
+  // back the savings the refusal claimed, since they never happened.
+  if (entry.denied && entry.denied.offset === offset && entry.denied.end === end) {
+    cache.totalTokensSaved = Math.max(0, (cache.totalTokensSaved || 0) - (entry.denied.credit || 0));
+    cache.blockedReads = Math.max(0, (cache.blockedReads || 0) - 1);
+    cache.insistedReads = (cache.insistedReads || 0) + 1;
+    record(scope, filePath, currentMtime, offset, end, ext);
     saveCache(sessionId, cache);
-    process.exit(0);
+    return { log: `[read-cache] ${basename(filePath)} re-read on request after a refusal.` };
   }
 
   // ── New range not yet covered — allow ───────────────────────────────
   if (!isRangeCovered(entry.ranges, offset, end)) {
     entry.ranges.push([offset, end]);
-    entry.ppids = trimPpids([...(entry.ppids || []), ppid]);
-    entry.lines += limit;
-    entry.tokens += estimateTokens(limit, ext);
+    entry.lines += end - offset;
+    entry.tokens += estimateTokens(end - offset, ext);
     entry.readAt = new Date().toISOString();
     entry.readAtMs = Date.now();
     saveCache(sessionId, cache);
-    process.exit(0);
+    return {};
   }
 
   // ── Staleness check — context may have shifted ──────────────────────
-  const staleness = checkStaleness(cache, filePath);
+  const staleness = checkStaleness(scope, filePath);
   if (staleness.stale) {
-    allow(sessionId, cache, filePath, currentMtime, offset, end, ext, ppid,
-      `[read-cache] Re-read allowed: ${basename(filePath)} context is stale (${staleness.reason}).`);
+    record(scope, filePath, currentMtime, offset, end, ext);
+    saveCache(sessionId, cache);
+    return { log: `[read-cache] Re-read allowed: ${basename(filePath)} context is stale (${staleness.reason}).` };
   }
 
   // ── Redundant read — BLOCK with structural digest ───────────────────
   // Count what the re-read would ACTUALLY have reloaded — capped at the tokens
   // already cached for this file — not the raw `limit` (default 2000 lines),
   // which would wildly over-credit re-reads of small files. Honest accounting.
-  const wouldReload = Math.min(estimateTokens(limit, ext), entry.tokens || estimateTokens(limit, ext));
-  cache.totalTokensSaved += wouldReload;
-  cache.blockedReads += 1;
+  const wouldReload = Math.min(estimateTokens(end - offset, ext), entry.tokens || estimateTokens(end - offset, ext));
+  cache.totalTokensSaved = (cache.totalTokensSaved || 0) + wouldReload;
+  cache.blockedReads = (cache.blockedReads || 0) + 1;
+  entry.denied = { offset, end, credit: wouldReload };
   saveCache(sessionId, cache);
 
   const wasPartialRequest = !!(toolInput.offset || toolInput.limit);
-  const reason = buildBlockMessage(filePath, entry, wasPartialRequest);
+  return { deny: buildBlockMessage(filePath, entry, wasPartialRequest) };
+}
 
-  console.log(JSON.stringify({ decision: 'block', reason }));
+/** The PreToolUse output that refuses a tool call; the reason is shown to Claude. */
+export function denyOutput(reason) {
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: reason,
+    },
+  };
+}
+
+// Standalone entry (kept for direct invocation); hooks.json goes through hook.js.
+async function main() {
+  let input = '';
+  for await (const chunk of process.stdin) { input += chunk; }
+  if (!input.trim()) return;
+  let event;
+  try { event = JSON.parse(input); } catch { return; }
+
+  if (event.hook_event_name === 'PreCompact') { onCompact(event); return; }
+  if (event.hook_event_name === 'PostToolUse' && (event.tool_name === 'Edit' || event.tool_name === 'Write')) {
+    onFileWritten(event);
+    return;
+  }
+  if (event.hook_event_name !== 'PreToolUse' || event.tool_name !== 'Read') return;
+  const r = decideRead(event);
+  if (r.log) console.error(r.log);
+  if (r.deny) console.log(JSON.stringify(denyOutput(r.deny)));
 }
 
 if (isMainModule(import.meta.url)) main().catch(() => process.exit(0));

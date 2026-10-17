@@ -1,5 +1,92 @@
 # Changelog
 
+## 4.20.0 — 2026-10-17
+
+The hooks now do what the README says they do. Most of CCO's advice never
+reached anyone, and on Linux the read dedup never ran.
+
+### Advice was invisible
+
+Claude Code ignores a hook's stderr when it exits 0 (it goes to the debug log),
+and reads stdout only when it is one JSON object. Budget warnings, cache-break
+costs, the delegation advisor, ContextShield tips and the session summary were
+all printed to stderr, so neither Claude nor the user saw them. They are now
+delivered in the hook's JSON:
+
+- **To Claude** (`additionalContext`): advice that changes what Claude does
+  next — big tool results, the delegation advisor, ContextShield's waste
+  history, files that went unused in past sessions, task state after
+  `/compact`.
+- **To the user** (`systemMessage`, costs no context): budget thresholds,
+  cache-break costs, context-rot warnings, `/compact` prompts, CLAUDE.md size,
+  `.contextignore` suggestions.
+- **Session recap.** SessionEnd output reaches no one, and SessionEnd hooks
+  share a 1.5 s budget. SessionEnd now only records the session; the next
+  session in that project prices it and shows the verdict. The old summary also
+  priced whichever session was newest, not the one that ended.
+
+The notice ledger still caps advisory output per session, and only what
+reaches Claude counts as CCO overhead in NET savings. The prompt coach's
+injections now count too.
+
+### Read dedup
+
+- **Repeated reads were never blocked under dash.** The read cache told the
+  main loop and subagents apart by `process.ppid`. Claude Code runs hooks with
+  `sh -c`; under dash (Debian, Ubuntu, most CI and cloud machines) that parent
+  is a fresh shell per call, so every read looked like the first.
+- **Subagents get their own cache.** Contexts are keyed by the hook input's
+  `agent_id`. A subagent's first read of a file always goes through, and line
+  ranges are tracked per context, so a subagent is never refused a range only
+  the main loop has read.
+- **No dead ends.** If Claude repeats a read right after a refusal (its copy
+  was cleared from context, for example), the read goes through and the
+  refusal's claimed savings are taken back.
+- **Honest re-read size.** A full read of an 830-line file was booked as the
+  Read tool's 2000-line default (~20K tokens instead of ~8.5K).
+- Refusals use `permissionDecision: "deny"` instead of the deprecated
+  top-level `decision: "block"`. Claude Code shows every refusal as a "hook
+  error", so the message now says outright that the re-read was skipped and
+  that Claude should use the copy it already has. It shows a file map only
+  when the file has structure to map.
+- Checked live in Claude Code 2.1.302. Claude Code does not skip unchanged
+  re-reads on its own: without CCO, the second Read of a file returns the
+  whole file again.
+
+### One process per event
+
+`hooks.json` runs a single dispatcher, `src/hook.js`, instead of one Node
+process per feature. PostToolUse goes from ~109 ms to ~64 ms per tool call.
+Calls are serialized per session: Claude runs tools in parallel, and parallel
+hooks used to lose each other's writes (8 parallel reads booked 5).
+
+### Subagents
+
+- Tool output inside a subagent no longer counts toward the main context
+  budget or its `/compact` suggestions. `/cco` shows it on its own line.
+- Subagent reads are not booked as waste and don't trip the delegation
+  advisor.
+
+### Less noise and context
+
+- 17 user-invoked skills (`/cco`, `/cco-report`, `/cco-config`, …) are marked
+  `disable-model-invocation`, so their descriptions no longer load into every
+  request. The skill listing drops from ~2.9K to ~0.9K characters. The five
+  skills Claude uses mid-task stay listed.
+- A file's waste history is no longer repeated after the read when
+  ContextShield already flagged it before. ContextShield's "load these files
+  together" tip is gone: it asked Claude to read more on a guess.
+
+### Checks
+
+- `/cco-doctor` runs the real hook through `sh -c` and confirms read dedup
+  and subagent isolation work on this machine.
+- New end-to-end tests run every `hooks.json` command the way Claude Code
+  does. CI covers Node 18–24 on Ubuntu (dash) and macOS (bash) and runs the
+  doctor.
+- SessionStart restores task state after `fork` too, not only `resume` and
+  `compact`.
+
 ## 4.12.1 — 2026-09-30
 
 Directory review fixes. Nothing changes in what the plugin measures.

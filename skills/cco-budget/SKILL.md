@@ -2,6 +2,7 @@
 name: cco-budget
 description: Configure token budget limits, auto-compact settings, and view current budget status (model-aware — Claude 5 lineup, Opus 5.5 default fallback, full 1M context at standard price)
 license: MIT
+disable-model-invocation: true
 argument-hint: "[status | set <tokens> | model <haiku-4.5|sonnet-4.6|sonnet-5|sonnet-5.5|opus-4.7|opus-4.8|opus-5|opus-5.5|fable-5|fable-5.1> | auto <on|off>]"
 allowed-tools:
   - Read

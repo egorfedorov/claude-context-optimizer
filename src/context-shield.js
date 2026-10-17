@@ -110,22 +110,21 @@ async function main() {
   for await (const chunk of process.stdin) {
     input += chunk;
   }
-
-  if (!input.trim()) process.exit(0);
-
+  if (!input.trim()) return;
   let event;
-  try { event = JSON.parse(input); } catch { process.exit(0); }
+  try { event = JSON.parse(input); } catch { return; }
+  if (event.hook_event_name !== 'PreToolUse' || event.tool_name !== 'Read') return;
+  shieldRead(event);
+}
 
-  if (event.hook_event_name !== 'PreToolUse') process.exit(0);
-
-  const toolName = event.tool_name || '';
+/**
+ * PreToolUse Read: warn (never block) about files history says are waste.
+ * Speaks only through the notice ledger.
+ */
+export function shieldRead(event) {
   const toolInput = event.tool_input || {};
-
-  // Only shield Read operations
-  if (toolName !== 'Read') process.exit(0);
-
   const filePath = toolInput.file_path || '';
-  if (!filePath || filePath.startsWith('/dev/') || filePath.startsWith('/proc/')) process.exit(0);
+  if (!filePath || filePath.startsWith('/dev/') || filePath.startsWith('/proc/')) return;
 
   const sessionId = event.session_id || 'unknown';
   const patterns = loadPatterns();
@@ -148,6 +147,7 @@ async function main() {
           `[context-shield] ${ignoreSuggestions.length} file(s) in this project were read but never used in 3+ sessions ` +
           `(~${formatTokens(totalWaste)} tokens/session recurring). Top: ${top}. ` +
           `Run /cco-shield apply to add them to .contextignore for good.`,
+        audience: 'user',
       });
     }
   } catch { /* suggestion is best-effort — never block the Read */ }
@@ -189,21 +189,9 @@ async function main() {
     }
   }
 
-  // ── Check 3: File frequently read with co-occurring files ──
-  if (proj.coOccurrence[filePath]) {
-    const related = Object.entries(proj.coOccurrence[filePath])
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .filter(([, count]) => count >= 3);
-
-    if (related.length > 0) {
-      const names = related.map(([p]) => basename(p)).join(', ');
-      warnings.push(
-        `[context-shield] Pro tip: ${basename(filePath)} is often edited with: ${names}. ` +
-        `Load them together to save time!`
-      );
-    }
-  }
+  // (Co-edited files used to be suggested here as "load them together". That
+  // asks Claude to read MORE on a guess; /cco-pack uses co-occurrence where
+  // the task is known.)
 
   // Emit at most one shield tip per file, gated by the session noise budget —
   // these are pure FYI, so they must never crowd out Claude's working context.
@@ -211,9 +199,7 @@ async function main() {
     emitNotice(sessionId, { kind: `shield:${basename(filePath)}`, text: warnings[0] });
   }
 
-  // ContextShield never blocks — only warns
-  // Output empty JSON to allow the operation
-  process.exit(0);
+  // ContextShield never blocks — only warns.
 }
 
 if (isMainModule(import.meta.url)) main().catch(() => process.exit(0));

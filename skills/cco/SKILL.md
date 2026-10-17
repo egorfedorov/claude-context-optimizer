@@ -2,6 +2,7 @@
 name: cco
 description: Context Control Center — one screen for budget, $ spent, tokens saved, waste, last prompt grade, the active task, and ready-to-run optimization actions
 license: MIT
+disable-model-invocation: true
 allowed-tools:
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/dashboard.js:*)"
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js:*)"

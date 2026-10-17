@@ -2,6 +2,7 @@
 name: cco-shield
 description: Show ContextShield status and waste protection stats; suggest or apply .contextignore rules from historical waste
 license: MIT
+disable-model-invocation: true
 allowed-tools:
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/context-shield.js:*)"
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js:*)"

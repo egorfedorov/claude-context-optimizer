@@ -2,6 +2,7 @@
 name: cco-claudemd
 description: Analyze CLAUDE.md files for token bloat and suggest optimizations
 license: MIT
+disable-model-invocation: true
 allowed-tools:
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/claudemd-analyzer.js:*)"
   - Read

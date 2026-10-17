@@ -153,9 +153,10 @@ export function renderRehydration(task) {
   ].join('\n');
 }
 
-/** Should a SessionStart event re-inject task state? Only after compaction / resume. */
+/** Should a SessionStart event re-inject task state? Only after compaction / resume / fork. */
 export function shouldRehydrate(source) {
-  return source === 'compact' || source === 'resume';
+  // 'fork' continues an existing conversation just like 'resume'.
+  return source === 'compact' || source === 'resume' || source === 'fork';
 }
 
 /** Tasks for a project (newest first), optional limit. */
@@ -181,6 +182,16 @@ export function loadTasks() {
 export function saveTasks(state) {
   ensureDataDirs();
   saveJSON(TASKS_FILE, state);
+}
+
+/**
+ * SessionStart: the bounded task-state block for Claude's context, only after
+ * a compact, resume or fork — a fresh session should not inherit an old task by
+ * surprise. '' when there is nothing to restore.
+ */
+export function rehydrateText(event, fallbackProject = process.cwd()) {
+  if (!shouldRehydrate(event.source)) return '';
+  return renderRehydration(getActiveTask(loadTasks(), { project: event.cwd || fallbackProject })) || '';
 }
 
 // ── CLI (used by the cco-task skill) ───────────────────────────────────────────
@@ -245,13 +256,9 @@ function main() {
     return;
   }
   if (action === 'rehydrate') {
-    // SessionStart hook: stdin carries { source, cwd, ... }. Print the bounded
-    // state block to stdout (it enters Claude's context) only after a compact
-    // or a resume — a fresh session should not inherit an old task by surprise.
     let event = {};
     try { event = JSON.parse(readFileSync(0, 'utf-8') || '{}'); } catch { /* no stdin */ }
-    if (!shouldRehydrate(event.source)) return;
-    const block = renderRehydration(getActiveTask(state, { project: event.cwd || project }));
+    const block = rehydrateText(event, project);
     if (block) console.log(block);
     return;
   }

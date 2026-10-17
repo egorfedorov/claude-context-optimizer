@@ -2,6 +2,7 @@
 name: cco-export
 description: Export context report as Markdown or HTML
 license: MIT
+disable-model-invocation: true
 argument-hint: "[md|html] (default: md)"
 allowed-tools:
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/export.js:*)"

@@ -60,6 +60,8 @@ export function gather(sessionId) {
   // budget hook; the chars-per-token estimate is the fallback.
   const used = (budget && (budget.realContextTokens || budget.totalTokensEstimated)) || 0;
   const inTok = (budget && budget.inputTokensEstimated) || 0;
+  // Tool results that landed in subagent contexts (discarded on return).
+  const subagentTokens = (budget && budget.subagentTokens) || 0;
   const outTok = (budget && budget.outputTokensEstimated) || 0;
 
   // Cache economics — exact usage totals from the full transcript, priced at
@@ -127,7 +129,7 @@ export function gather(sessionId) {
 
   return {
     model, cost, effectiveBudget,
-    used, inTok, outTok, dollars, cacheEcon,
+    used, inTok, outTok, dollars, cacheEcon, subagentTokens,
     saved, savedGross, overhead, blocked, multiplier,
     cold, useful, reclaimable, wastePct,
     prompt, project, active, recentTasks,
@@ -186,6 +188,10 @@ export function renderBoard(d) {
 
   L.push(`  Waste    ${bar(d.wastePct)}  ${d.wastePct}%  (${d.cold.length} cold file${d.cold.length === 1 ? '' : 's'})`);
 
+  if (d.subagentTokens > 0) {
+    L.push(`  Agents   ~${formatTokens(d.subagentTokens)} of tool output stayed in subagent contexts, out of the main one`);
+  }
+
   if (d.prompt) {
     const hint = d.prompt.suggestions && d.prompt.suggestions.length
       ? `  (${d.prompt.suggestions[0]})` : '';
@@ -239,7 +245,7 @@ function buildActions(d) {
 
 // ── Session-end summary (Auto-Optimizer report) ───────────────────────────────
 
-export function renderSummary(d) {
+export function renderSummary(d, { ended = false } = {}) {
   if (!d.hasData || (d.saved === 0 && d.used === 0)) return '';
   const L = [];
   L.push('  ── CCO session summary ───────────────────────────────────────');
@@ -273,10 +279,23 @@ export function renderSummary(d) {
     }
     if (c.fast) L.push('  Fast mode ran this session — those turns bill at 2× (included above).');
   }
-  if (d.reclaimable > 3000) {
+  if (!ended && d.reclaimable > 3000) {
     L.push(`  Tip: ~${formatTokens(d.reclaimable)} of cold context is still loaded — /compact before next task.`);
   }
   return L.join('\n');
+}
+
+/**
+ * SessionEnd: render the session summary and let ground truth teach the
+ * estimator its local drift. Returns the summary text ('' when empty).
+ */
+export function endSession(sessionId) {
+  const s = renderSummary(gather(sessionId), { ended: true });
+  const budget = sessionId ? loadJSON(join(BUDGET_STATE_DIR, `${sessionId}.json`)) : null;
+  if (budget && budget.realContextTokens && budget.totalTokensEstimated) {
+    updateCalibrationFromSession(budget.realContextTokens, budget.totalTokensEstimated);
+  }
+  return s;
 }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
@@ -284,17 +303,11 @@ export function renderSummary(d) {
 function main() {
   const mode = process.argv[2] || 'board';
   const sessionId = process.argv[3] || getLatestSessionId();
-  const d = gather(sessionId);
   if (mode === 'summary') {
-    const s = renderSummary(d);
+    const s = endSession(sessionId);
     if (s) console.log(s);
-    // Session is over — let ground truth teach the estimator its local drift.
-    const budget = sessionId ? loadJSON(join(BUDGET_STATE_DIR, `${sessionId}.json`)) : null;
-    if (budget && budget.realContextTokens && budget.totalTokensEstimated) {
-      updateCalibrationFromSession(budget.realContextTokens, budget.totalTokensEstimated);
-    }
   } else {
-    console.log(renderBoard(d));
+    console.log(renderBoard(gather(sessionId)));
   }
 }
 

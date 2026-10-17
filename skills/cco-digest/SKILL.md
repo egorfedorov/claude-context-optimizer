@@ -2,6 +2,7 @@
 name: cco-digest
 description: Show weekly/daily efficiency digest with score and trends
 license: MIT
+disable-model-invocation: true
 argument-hint: "[7|14|30] (days, default 7)"
 allowed-tools:
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/digest.js:*)"

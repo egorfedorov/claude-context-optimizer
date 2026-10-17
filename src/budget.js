@@ -185,14 +185,18 @@ async function main() {
   for await (const chunk of process.stdin) {
     input += chunk;
   }
-
-  if (!input.trim()) process.exit(0);
-
+  if (!input.trim()) return;
   let event;
-  try { event = JSON.parse(input); } catch { process.exit(0); }
+  try { event = JSON.parse(input); } catch { return; }
+  if (event.hook_event_name !== 'PostToolUse') return;
+  budgetEvent(event);
+}
 
-  if (event.hook_event_name !== 'PostToolUse') process.exit(0);
-
+/**
+ * PostToolUse: account the call against the session budget and raise the
+ * warnings it crosses. Speaks only through the notice ledger; never exits.
+ */
+export function budgetEvent(event) {
   const toolName = event.tool_name || '';
   const toolInput = event.tool_input || {};
   const sessionId = event.session_id || 'unknown';
@@ -215,6 +219,18 @@ async function main() {
   // #38: teach the estimator what this tool really costs, so the NEXT session
   // budgets it from evidence instead of a constant.
   if (respTokens > 0) recordToolCost(toolName, respTokens);
+
+  // A subagent's tool results land in ITS context, which is discarded when it
+  // returns — only the Agent call's summary (a main-loop event) reaches the
+  // main context. Book them apart so they never inflate the main budget or
+  // show up as "drop with /compact" candidates.
+  if (event.agent_id) {
+    state.subagentTokens = (state.subagentTokens || 0) +
+      (respTokens > 0 ? respTokens : Math.round(est.input * getCalibrationFactor()));
+    state.lastEventAt = Date.now();
+    saveBudgetState(state);
+    return;
+  }
   // Self-calibration: sessions with transcript ground truth teach the local
   // real/estimated drift (see utils.updateCalibrationFromSession). Input-side
   // only — output estimates already come from exact string lengths.
@@ -297,6 +313,7 @@ async function main() {
     state.cacheBreaks = (state.cacheBreaks || 0) + 1;
     emitNotice(sessionId, {
       kind: `budget:cachebreak:${state.cacheBreaks}`,
+      audience: 'user',
       text:
         `[context-budget] ~${Math.round(gapMin)} min pause — the prompt cache (${ttl === '1h' ? '1-hour' : '5-min'} TTL) went cold; ` +
         `re-warming ${formatTokens(state.realContextTokens)} of context costs ~$${lost.toFixed(2)} extra. ` +
@@ -322,6 +339,7 @@ async function main() {
     const rec = buildCompactRecommendation(state);
     emitNotice(sessionId, {
       kind: 'budget:rot',
+      audience: 'user',
       priority: 'critical',
       text:
         `[context-budget] ${formatTokens(contextNow)} in context — entering the degradation zone (~300-400K on 1M models: ` +
@@ -350,6 +368,7 @@ async function main() {
 
     emitNotice(sessionId, {
       kind: `budget:${threshold}`,
+      audience: 'user',
       text: msg,
       priority: threshold >= 85 ? 'critical' : 'normal',
     });
@@ -369,6 +388,7 @@ async function main() {
         const reclaimMsg = rec ? ` Free ~${formatTokens(rec.reclaimableTokens)} tokens.` : '';
         emitNotice(sessionId, {
           kind: 'budget:critical',
+          audience: 'user',
           priority: 'critical',
           text:
             `[context-budget] CRITICAL: ${usagePercent}% budget used (${formatTokens(contextNow)}/${formatTokens(effectiveBudget)}). ` +
@@ -383,6 +403,7 @@ async function main() {
         const reclaimMsg = rec ? ` Free ~${formatTokens(rec.reclaimableTokens)} tokens.` : '';
         emitNotice(sessionId, {
           kind: 'budget:autocompact',
+          audience: 'user',
           priority: 'critical',
           text:
             `[context-budget] Auto-compact recommended — ${usagePercent}% budget used. ` +
@@ -398,6 +419,7 @@ async function main() {
       if (rec && rec.reclaimableTokens > 5000) {
         emitNotice(sessionId, {
           kind: 'budget:still',
+          audience: 'user',
           priority: 'critical',
           text: `[context-budget] Still at ${usagePercent}% — run /compact to reclaim ~${formatTokens(rec.reclaimableTokens)} tokens`,
         });
@@ -410,7 +432,6 @@ async function main() {
   // reports NET savings (saved − the optimizer's own injected tokens) instead.
 
   saveBudgetState(state);
-  process.exit(0);
 }
 
 // Run the hook only when executed directly — importing for tests must not read stdin.

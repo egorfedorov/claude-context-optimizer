@@ -2,6 +2,7 @@
 name: cco-templates
 description: Manage context templates for common task types
 license: MIT
+disable-model-invocation: true
 argument-hint: "[list | create <name> | apply <name> | delete <name>]"
 allowed-tools:
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js:*)"

@@ -2,6 +2,7 @@
 name: cco-roi
 description: Calculate monthly token savings and ROI by model
 license: MIT
+disable-model-invocation: true
 argument-hint: "[sessions-per-day] (default: 5)"
 allowed-tools:
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/roi.js:*)"
