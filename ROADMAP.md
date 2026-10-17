@@ -30,8 +30,10 @@ must make a number more true, a waste more visible, or a fix more automatic.
       reads at 0.025×
 - [x] **Self-learning tool costs** — shipped in v4.9.0: per-tool EMA from
       observed result sizes replaces the hardcoded MCP/Agent guesses (#38)
-- [ ] **Subagent economics**: split main-loop vs agent token spend in `/cco`
-      and credit delegation savings to the advisor that suggested it
+- [~] **Subagent economics** — partly shipped in v4.20.0: subagent tool output
+      is booked apart from the main budget, `/cco` shows it, and subagent reads
+      no longer count as waste. Still open: credit delegation savings to the
+      advisor that suggested it
 - [x] **Windows-correct paths** — shipped in v4.7.0: transcript-folder
       encoding, CRLF `.contextignore`, backslash-aware globs, project-root
       walk and path display (#46, #33)
@@ -56,8 +58,9 @@ must make a number more true, a waste more visible, or a fix more automatic.
 
 1. **Honesty first**: never report a number we can't defend; prefer transcript
    ground truth over estimates; NET savings over gross.
-2. **Silence is a feature**: hooks stay <10ms and inject nothing that isn't
-   actionable (the notice ledger caps advisory output).
+2. **Silence is a feature**: one Node process per hook event, and nothing
+   injected that isn't actionable (the notice ledger caps advisory output;
+   user-facing notes go to `systemMessage` and cost Claude no context).
 3. Tests for all new pure logic; CI green on Node 18/20/22 + CodeQL.
 4. Version sync: `npm run sync-version` (4 files) **+ the external
    `egorfedorov/claude-plugins` marketplace** (the script warns about it).

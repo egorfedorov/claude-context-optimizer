@@ -2,6 +2,7 @@
 name: cco-clean
 description: Clean up old tracking data and reset statistics
 license: MIT
+disable-model-invocation: true
 argument-hint: "[--prune] [--sessions-older-than <days>] [--reset-all]"
 allowed-tools:
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js prune)"

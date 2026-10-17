@@ -32,6 +32,7 @@ import {
   PROMPTS_DIR, ensureDataDirs, loadJSON, saveJSON,
   estimateTokensFromString, isQuietMode, isMainModule, getThresholds
 } from './utils.js';
+import { recordInjected } from './notices.js';
 
 ensureDataDirs();
 
@@ -339,15 +340,11 @@ function priorPromptCount(sessionId) {
   } catch { return 0; }
 }
 
-async function hookMode() {
-  const raw = await readStdin();
-  if (!raw.trim()) process.exit(0);
-
-  let event;
-  try { event = JSON.parse(raw); } catch { process.exit(0); }
-
-  if (event.hook_event_name !== 'UserPromptSubmit') process.exit(0);
-
+/**
+ * UserPromptSubmit: grade the prompt and, for a weak task prompt, return the
+ * coaching text to add to Claude's context ('' = stay silent).
+ */
+export function coachPrompt(event) {
   const prompt = event.prompt || '';
   const sessionId = event.session_id || 'unknown';
 
@@ -357,7 +354,7 @@ async function hookMode() {
 
   if (kind === 'chat') {
     logPrompt(sessionId, prompt, { score: null, grade: '-', wordCount: 0, signals: {}, suggestions: [] }, kind);
-    process.exit(0);
+    return '';
   }
 
   const priors = priorPromptCount(sessionId); // before logging this one
@@ -366,22 +363,18 @@ async function hookMode() {
 
   // Questions get graded for history but never coached — "name the file you
   // want changed" is meaningless advice for "why did X happen?".
-  if (kind === 'question') process.exit(0);
+  if (kind === 'question') return '';
 
   // Strong prompt or quiet mode — stay silent.
-  if (analysis.score >= 80 || isQuietMode()) {
-    process.exit(0);
-  }
+  if (analysis.score >= 80 || isQuietMode()) return '';
 
   // Follow-up leniency: mid-conversation, short prompts lean on context that
   // is already loaded. Only coach follow-ups that are truly unbounded.
-  if (priors > 0 && analysis.wordCount < 12 && !analysis.signals.hasUnbounded) {
-    process.exit(0);
-  }
+  if (priors > 0 && analysis.wordCount < 12 && !analysis.signals.hasUnbounded) return '';
 
   // Weak prompt — inject coaching as additional context (visible to Claude).
   const top = analysis.suggestions.slice(0, 3);
-  if (top.length === 0) process.exit(0);
+  if (top.length === 0) return '';
 
   const lines = [
     `[prompt-coach] Prompt quality: ${analysis.grade} (${analysis.score}/100).`,
@@ -393,14 +386,23 @@ async function hookMode() {
   }
   lines.push('');
   lines.push('Apply these mentally before reading files. If the prompt is too vague, ask one clarifying question instead of guessing.');
+  const text = lines.join('\n');
+  // It enters Claude's context, so it counts against CCO's NET savings.
+  recordInjected(sessionId, text);
+  return text;
+}
 
+async function hookMode() {
+  const raw = await readStdin();
+  if (!raw.trim()) return;
+  let event;
+  try { event = JSON.parse(raw); } catch { return; }
+  if (event.hook_event_name !== 'UserPromptSubmit') return;
+  const text = coachPrompt(event);
+  if (!text) return;
   console.log(JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: 'UserPromptSubmit',
-      additionalContext: lines.join('\n'),
-    }
+    hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: text },
   }));
-  process.exit(0);
 }
 
 // ── CLI mode ─────────────────────────────────────────────────────────────────

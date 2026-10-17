@@ -184,9 +184,7 @@ function trackRead(session, filePath, lineCount, readOptions = {}) {
       const proj = getProjectPatterns(patterns, session.projectRoot);
       const wasteData = proj.wastedReads[filePath];
       if (wasteData && wasteData.sessions >= 3) {
-        warnings.push(
-          `[cco] ${basename(filePath)} was unused in ${wasteData.sessions} past sessions (~${formatTokens(wasteData.totalTokensWasted)} wasted). Try Grep for specific content instead.`
-        );
+        // context-shield already said this before the read — don't repeat it.
       } else if (wasteData && wasteData.sessions >= 2) {
         warnings.push(
           `[cco] ${basename(filePath)} was wasted in ${wasteData.sessions} past sessions. Consider skipping.`
@@ -971,12 +969,19 @@ async function main() {
   for await (const chunk of process.stdin) {
     input += chunk;
   }
-
-  if (!input.trim()) process.exit(0);
-
+  if (!input.trim()) return;
   let event;
-  try { event = JSON.parse(input); } catch { process.exit(0); }
+  try { event = JSON.parse(input); } catch { return; }
+  trackEvent(event, action);
+}
 
+/**
+ * Record one hook event in the session file. Speaks only through the notice
+ * ledger. Never exits the process (hook.js runs it in-process).
+ * Returns { endLine } on SessionEnd: the one-line session verdict.
+ */
+export function trackEvent(event, action) {
+  const out = {};
   const sessionId = event.session_id || 'unknown';
   const session = loadSession(sessionId);
   const toolName = event.tool_name || '';
@@ -987,7 +992,9 @@ async function main() {
     case 'PostToolUse': {
       trackToolUse(session, toolName);
 
-      if (toolName === 'Read') {
+      // A subagent's reads live in its own, discarded context: they are neither
+      // main-context load nor waste, so only the main loop's reads are booked.
+      if (toolName === 'Read' && !event.agent_id) {
         const filePath = toolInput.file_path || '';
         const lineCount = toolInput.limit || getFileLines(filePath);
         trackRead(session, filePath, lineCount, {
@@ -1011,7 +1018,9 @@ async function main() {
       }
 
       // ── Delegation advisor ──
-      {
+      // A subagent's reads are the delegation this advisor asks for: they
+      // never reach the main context, so they don't extend the streak.
+      if (!event.agent_id) {
         let tokensAdded = 0;
         if (toolName === 'Read') {
           const fp = toolInput.file_path || '';
@@ -1045,6 +1054,7 @@ async function main() {
               // session noise cap and its tokens count as overhead (NET math).
               emitNotice(sessionId, {
                 kind: 'pulse',
+                audience: 'user',
                 text: `[cco] Session pulse: ${formatTokens(totalTracked)} used, ` +
                   `${formatTokens(saved)} saved by CCO (${pct}% efficiency)`,
               });
@@ -1073,6 +1083,7 @@ async function main() {
         if (memLines > 200) {
           emitNotice(sessionId, {
             kind: 'claudemd-size',
+            audience: 'user',
             text:
               `[cco] CLAUDE.md memory totals ${memLines} lines — it loads into every prompt ` +
               `(≤200 recommended). Run /cco-claudemd to find what to trim or split into .claude/rules/.`,
@@ -1087,9 +1098,15 @@ async function main() {
           const savings = calculateWeeklySavings(globalStats);
           if (savings && savings.sessions >= 3) {
             if (savings.improving) {
-              console.error(`[cco] Waste down ${savings.improvementPct}% this week — you're getting better!`);
+              emitNotice(sessionId, {
+                kind: 'start:streak', audience: 'user',
+                text: `[cco] Waste down ${savings.improvementPct}% this week — you're getting better!`,
+              });
             } else if (savings.avgWaste > 30) {
-              console.error(`[cco] ${savings.avgWaste}% avg waste this week (${savings.sessions} sessions). Tip: Grep before Read saves tokens!`);
+              emitNotice(sessionId, {
+                kind: 'start:streak', audience: 'user',
+                text: `[cco] ${savings.avgWaste}% avg waste this week (${savings.sessions} sessions). Tip: Grep before Read saves tokens!`,
+              });
             }
           }
 
@@ -1104,13 +1121,19 @@ async function main() {
                 .slice(0, 2);
               if (topWaste.length > 0) {
                 const names = topWaste.map(([p]) => basename(p)).join(', ');
-                console.error(`[cco] Often unused: ${names}. You can probably skip these.`);
+                emitNotice(sessionId, {
+                  kind: 'start:waste',
+                  text: `[cco] In past sessions on this project these files were read but never used: ${names}. Grep them instead of reading in full.`,
+                });
               }
               // Mention auto-template if available
               const projectName = basename(projKey);
               const templateFile = join(TEMPLATES_DIR, `auto-${projectName}.json`);
               if (existsSync(templateFile)) {
-                console.error(`[cco] Auto-template ready! Run: /cco-templates apply auto-${projectName}`);
+                emitNotice(sessionId, {
+                  kind: 'start:template', audience: 'user',
+                  text: `[cco] Auto-template ready! Run: /cco-templates apply auto-${projectName}`,
+                });
               }
               break;
             }
@@ -1145,7 +1168,7 @@ async function main() {
           }
         }
 
-        console.error(msg);
+        out.endLine = msg;
       }
 
       // Generate session summary for replay
@@ -1162,7 +1185,7 @@ async function main() {
   }
 
   saveSession(session);
-  process.exit(0);
+  return out;
 }
 
 if (isMainModule(import.meta.url)) {

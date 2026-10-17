@@ -14,7 +14,7 @@
  *   - priority 'normal'    → at most once per `kind`, and only while the session
  *                            is under `cap` total advisory lines (default 4)
  *
- * The hot-path hooks (tracker, budget, context-shield) gate every console.error
+ * The hot-path hooks (tracker, budget, context-shield) gate every notice
  * through this. read-cache block messages are NOT counted here — they replace a
  * far larger read, so they're accounted as savings, not overhead.
  *
@@ -64,16 +64,46 @@ export function saveLedger(sessionId, ledger) {
   saveJSON(ledgerFile(sessionId), ledger);
 }
 
+/** Book context tokens a hook injected outside emitNotice (prompt coach). */
+export function recordInjected(sessionId, text) {
+  if (!sessionId || !text) return;
+  const ledger = loadLedger(sessionId);
+  ledger.tokensInjected = (ledger.tokensInjected || 0) + estimateTokensFromString(text);
+  saveLedger(sessionId, ledger);
+}
+
+// ── Delivery ─────────────────────────────────────────────────────────────────
+// Claude Code ignores a hook's stderr when it exits 0 (debug log only), so a
+// notice has to travel in the hook's JSON output: `additionalContext` reaches
+// Claude, `systemMessage` reaches the user. hook.js opens a sink, runs the
+// handlers, then turns what they emitted into that JSON.
+
+let _sink = null;
+
+/** Start collecting notices instead of printing them (hook.js). */
+export function collectNotices() { _sink = []; }
+
+/** Stop collecting; returns [{ text, audience }] in emit order. */
+export function takeNotices() {
+  const out = _sink || [];
+  _sink = null;
+  return out;
+}
+
 /**
- * Convenience for hooks: print `text` to stderr only if the session noise
- * budget allows it, and record the cost. Returns true if it spoke.
- * `printFn` defaults to console.error (stderr → surfaces to Claude as context).
+ * Convenience for hooks: speak only if the session noise budget allows it, and
+ * record the cost. Returns true if it spoke.
+ *
+ * `audience`: 'claude' (enters the model's context, counted as CCO overhead)
+ * or 'user' (shown in the UI only — costs no context tokens).
+ * Outside hook.js (no sink) it falls back to `printFn` for CLI use.
  */
-export function emitNotice(sessionId, { kind, text, priority = 'normal', cap = DEFAULT_NOTICE_CAP }, printFn = console.error) {
+export function emitNotice(sessionId, { kind, text, priority = 'normal', cap = DEFAULT_NOTICE_CAP, audience = 'claude' }, printFn = console.error) {
   if (!sessionId || !text) return false;
   const ledger = loadLedger(sessionId);
   if (!shouldEmit(ledger, { kind, priority, cap })) return false;
-  printFn(text);
-  saveLedger(sessionId, recordEmit(ledger, { kind, text }));
+  if (_sink) _sink.push({ text, audience });
+  else printFn(text);
+  saveLedger(sessionId, recordEmit(ledger, { kind, text: audience === 'claude' ? text : '' }));
   return true;
 }

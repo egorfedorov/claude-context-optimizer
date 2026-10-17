@@ -41,6 +41,29 @@ At $4/M input tokens (Opus 5.5) — $10/M on Fable 5.1 — a developer spending 
 
 ---
 
+## What's new in v4.20 — the hooks really work
+
+- **Advice reaches someone now.** Claude Code ignores a hook's stderr when it
+  exits 0, and that's where CCO printed its warnings, so nobody saw them.
+  Advice for Claude now arrives as `additionalContext`. Notes for you (budget,
+  cache breaks, `/compact`) arrive as a `systemMessage`, which costs no context.
+- **Read dedup works on Linux.** It keyed on the parent PID. Under dash, the
+  `/bin/sh` on Ubuntu and Debian, that is a new shell every call, so nothing
+  was ever deduped.
+- **Subagents get their own read cache.** A subagent's first read always goes
+  through, its tool output stays out of the main budget, and its reads don't
+  count as waste.
+- **No dead ends.** Repeat a refused read and it goes through. The refusal's
+  claimed savings are taken back.
+- **One process per hook event.** PostToolUse takes ~64 ms instead of ~109 ms.
+  Parallel tool calls no longer lose each other's bookkeeping.
+- **Last-session recap.** The next session in a project starts with a short
+  verdict on the previous one.
+- **A lighter skill listing.** User-only commands no longer load their
+  descriptions into every request (~2.9K → ~0.9K characters).
+- **`/cco-doctor` proves it.** It runs the real hook the way Claude Code does
+  and checks dedup and subagent isolation on your machine.
+
 ## What's new in v4.12 — honest numbers
 
 - **Session cost was counted ~2×.** Claude Code repeats a message's `usage` on
@@ -484,7 +507,8 @@ Read Cache runs as a PreToolUse hook and **blocks** redundant reads when the fil
 - First read: always allowed
 - File modified since last read: allowed (detects via mtime)
 - Different section (offset/limit): allowed if not already covered
-- Agent subprocess reads: tracked separately — won't block reads in the main conversation
+- Subagents: each has its own cache (by `agent_id`) — a subagent's first read always goes through
+- Repeated right after a refusal: allowed (Claude's copy may have been cleared)
 - Same file, same range, unchanged: **blocked** — saves 100% of those tokens
 
 Typical savings: **30-60% fewer tokens** per session from read deduplication alone.
@@ -883,6 +907,7 @@ claude-context-optimizer/
 ├── .claude-plugin/
 │   └── plugin.json          # Plugin manifest
 ├── src/
+│   ├── hook.js              # The one script hooks.json runs: dispatches each event, writes the JSON reply
 │   ├── utils.js             # Shared: constants, classification, model costs, atomic JSON I/O
 │   ├── dashboard.js         # NEW — Context Control Center (one-screen board + session summary)
 │   ├── tasks.js             # NEW — per-task register (tokens/$ per task)
@@ -957,7 +982,9 @@ Your data never leaves your machine. Period.
 ## FAQ
 
 **Q: Does this slow down Claude Code?**
-A: No. Hook scripts run asynchronously and typically complete in <10ms.
+A: Barely. Each hook event starts one Node process (`src/hook.js`), which takes
+~50–65 ms on typical hardware, mostly Node's own startup. Only Read triggers a
+PreToolUse hook. Run `/cco-doctor` to see the time on your machine.
 
 **Q: How accurate are the token estimates?**
 A: They use a ~4 tokens/line heuristic. Not exact, but consistent across sessions for reliable trends.
@@ -975,10 +1002,16 @@ A: No. It uses deterministic local heuristics (regex + scoring). Zero API calls,
 zero latency added to your prompt submission, runs in &lt;5ms.
 
 **Q: Will this work with subagents?**
-A: Yes. The PostToolUse hook fires for all tool calls, including those made by subagents.
+A: Yes. Hooks fire inside subagents too, and CCO tells them apart by the hook's
+`agent_id`. Each subagent gets its own read cache. Its tool output is booked
+apart from the main context, and its reads never count as waste.
 
 **Q: Does Read Cache break anything?**
-A: No. It only blocks truly redundant reads — same file, same range, no modifications since last read. If the file changed or you request a different section, the read goes through normally.
+A: No. It only blocks truly redundant reads: same file, same range, same
+context, and no changes since the last read. If the file changed, you request a
+different section, or the context was compacted, the read goes through. If
+Claude repeats a read right after a refusal, it goes through too, in case its
+copy was cleared from context.
 
 ---
 

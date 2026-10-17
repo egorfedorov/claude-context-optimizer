@@ -6,11 +6,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/read-cache.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/read-cache.js\""
-          },
+            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/hook.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/hook.js\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Read|Edit|MultiEdit|Write|NotebookEdit|Glob|Grep|Agent|Task|WebFetch|WebSearch|mcp__.*",
+        "hooks": [
           {
             "type": "command",
-            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/context-shield.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/context-shield.js\""
+            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/hook.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/hook.js\"",
+            "timeout": 15
           }
         ]
       }
@@ -20,27 +29,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/prompt-coach.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/prompt-coach.js\""
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/read-cache.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/read-cache.js\""
-          }
-        ]
-      },
-      {
-        "matcher": "Bash|Read|Edit|Write|Glob|Grep|Agent|mcp__.*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "payload=$(cat); test -f \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\" && printf '%s' \"$payload\" | node \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\"; test -f \"${CLAUDE_PLUGIN_ROOT}/src/budget.js\" && printf '%s' \"$payload\" | node \"${CLAUDE_PLUGIN_ROOT}/src/budget.js\"; exit 0"
+            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/hook.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/hook.js\"",
+            "timeout": 15
           }
         ]
       }
@@ -50,11 +40,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/read-cache.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/read-cache.js\""
-          },
-          {
-            "type": "command",
-            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\""
+            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/hook.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/hook.js\"",
+            "timeout": 15
           }
         ]
       }
@@ -64,7 +51,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "payload=$(cat); test -f \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\" && printf '%s' \"$payload\" | node \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\"; test -f \"${CLAUDE_PLUGIN_ROOT}/src/tasks.js\" && printf '%s' \"$payload\" | node \"${CLAUDE_PLUGIN_ROOT}/src/tasks.js\" rehydrate; exit 0"
+            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/hook.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/hook.js\"",
+            "timeout": 15
           }
         ]
       }
@@ -74,7 +62,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "payload=$(cat); test -f \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\" && printf '%s' \"$payload\" | node \"${CLAUDE_PLUGIN_ROOT}/src/tracker.js\"; test -f \"${CLAUDE_PLUGIN_ROOT}/src/dashboard.js\" && printf '%s' \"$payload\" | node \"${CLAUDE_PLUGIN_ROOT}/src/dashboard.js\" summary; exit 0"
+            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/src/hook.js\" || exit 0; node \"${CLAUDE_PLUGIN_ROOT}/src/hook.js\"",
+            "timeout": 15
           }
         ]
       }

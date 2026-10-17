@@ -2,6 +2,7 @@
 name: cco-patterns
 description: Share learned file patterns across a team — export an anonymized digest of what's usually waste/useful/co-edited, and import a teammate's so a fresh clone benefits day one
 license: MIT
+disable-model-invocation: true
 argument-hint: "[export [--out <file>] | import <file> | show]"
 allowed-tools:
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/patterns-share.js:*)"

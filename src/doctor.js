@@ -9,14 +9,17 @@
  *   - data dir writable
  *   - patterns.json size sane
  *   - tests pass (optional, --tests flag)
- *   - hook scripts present
+ *   - hook scripts present, and the hook really runs under sh -c
  *   - model + budget config sane for current Claude version
  */
 
-import { readFileSync, existsSync, statSync, accessSync, constants, writeFileSync, unlinkSync } from 'fs';
+import {
+  readFileSync, existsSync, statSync, accessSync, constants, writeFileSync, unlinkSync, mkdtempSync, rmSync,
+} from 'fs';
 import { join, dirname } from 'path';
+import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import {
   DATA_DIR, PATTERNS_FILE, GLOBAL_STATS_FILE, CONFIG_FILE,
   loadConfig, getEffectiveBudget, getModelContextWindow, formatTokens,
@@ -80,13 +83,51 @@ check('hooks.json is valid JSON', () => {
 });
 
 check('hook scripts present', () => {
-  const required = [
-    'src/read-cache.js', 'src/context-shield.js', 'src/tracker.js',
-    'src/budget.js', 'src/prompt-coach.js'
-  ];
-  const missing = required.filter(p => !existsSync(join(ROOT, p)));
+  const j = readJSON(join(ROOT, 'hooks', 'hooks.json'));
+  const scripts = new Set();
+  for (const groups of Object.values(j.hooks || {})) {
+    for (const g of groups) {
+      for (const h of g.hooks || []) {
+        for (const m of String(h.command || '').matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([\w./-]+\.js)/g)) scripts.add(m[1]);
+      }
+    }
+  }
+  const missing = [...scripts].filter(p => !existsSync(join(ROOT, p)));
   if (missing.length > 0) return `missing: ${missing.join(', ')}`;
-  return `${required.length} hook scripts found`;
+  return `${[...scripts].join(', ')}`;
+});
+
+// Run the real hook the way Claude Code does (sh -c, JSON on stdin) against a
+// throwaway data dir: two reads of the same file must end in a refusal, and a
+// subagent's first read must not. This is the check that would have caught
+// read dedup silently doing nothing under dash.
+check('hooks work end-to-end (sh -c)', () => {
+  if (process.platform === 'win32') return { warn: 'skipped on Windows (hooks run under Git Bash there)' };
+  const home = mkdtempSync(join(tmpdir(), 'cco-doctor-'));
+  try {
+    const hook = join(ROOT, 'src', 'hook.js');
+    const run = (extra = {}) => {
+      const r = spawnSync('/bin/sh', ['-c', `node "${hook}"`], {
+        input: JSON.stringify({
+          hook_event_name: 'PreToolUse', session_id: 'doctor', tool_name: 'Read',
+          tool_input: { file_path: join(ROOT, 'src', 'utils.js') }, cwd: ROOT, ...extra,
+        }),
+        env: { ...process.env, HOME: home, USERPROFILE: home },
+        encoding: 'utf-8', timeout: 10_000,
+      });
+      if (r.status !== 0) throw new Error(`hook exited ${r.status}: ${(r.stderr || '').trim().slice(0, 120)}`);
+      return r.stdout.trim();
+    };
+    const t0 = Date.now();
+    if (run() !== '') return 'first read was refused';
+    const second = run();
+    const ms = Math.round((Date.now() - t0) / 2);
+    if (!/"permissionDecision":"deny"/.test(second)) return 'repeated read was not deduplicated';
+    if (run({ agent_id: 'doctor-sub' }) !== '') return "a subagent's first read was refused";
+    return `read dedup + subagent isolation OK, ~${ms} ms per call`;
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 check('data directory writable', () => {

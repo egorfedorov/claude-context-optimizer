@@ -9,10 +9,12 @@ more automatic**. Concretely:
 
 1. **Honesty first.** Never report a number we can't defend. Prefer transcript
    ground truth over estimates, and NET savings over gross.
-2. **Silence is a feature.** Hooks stay under ~10ms and inject nothing that
-   isn't actionable.
+2. **Silence is a feature.** One Node process per hook event (`src/hook.js`),
+   and nothing reaches Claude's context that isn't actionable.
 3. **No dependencies.** CCO is Node built-ins only, and stays that way.
-4. **Tests for new pure logic.** CI runs Node 18/20/22 plus CodeQL.
+4. **Tests for new pure logic, end-to-end tests for hook behavior.** CI runs
+   Node 18/20/22/24 on Ubuntu (hooks under dash) and Node 22 on macOS (bash),
+   plus CodeQL.
 
 ## Setup
 
@@ -35,6 +37,12 @@ node src/dashboard.js       # /cco screen
 - Keep pure logic exported and covered in `tests/test.js` — the hook entry
   points are guarded by `isMainModule()` precisely so tests can import them
   without the module blocking on stdin.
+- Hooks: `hooks.json` runs only `src/hook.js`. A feature exports a handler
+  that returns its result (never `process.exit`, never `console.*`) and speaks
+  through `emitNotice` with `audience: 'claude'` or `'user'`. Claude Code
+  ignores a hook's stderr on exit 0 and parses stdout only as ONE JSON object,
+  so `hook.js` writes the single reply. Cover new behavior in the
+  "hooks end-to-end" suite, which runs the real `hooks.json` commands.
 - Update `CHANGELOG.md` under an `## Unreleased` heading for user-visible
   changes.
 - Reference the issue you're closing (`Closes #NN`).

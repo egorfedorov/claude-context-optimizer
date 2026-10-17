@@ -2,6 +2,7 @@
 name: cco-overhead
 description: Audit the fixed context overhead every session starts with — system prompt, MCP tools, agents, CLAUDE.md, memory — measured from real transcript usage
 license: MIT
+disable-model-invocation: true
 allowed-tools:
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/overhead.js:*)"
   - Read
