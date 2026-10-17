@@ -269,7 +269,7 @@ export function summarize(sessions) {
   };
 }
 
-const usd = (x) => `$${x >= 100 ? x.toFixed(0) : x.toFixed(2)}`;
+const usd = (x) => `$${x >= 100 ? x.toFixed(0) : x >= 0.1 || x === 0 ? x.toFixed(2) : x.toFixed(3)}`;
 const pct = (x, of) => (of > 0 ? `${Math.round((x / of) * 100)}%` : '0%');
 
 export function renderAudit(a, { days, compactAt }) {
