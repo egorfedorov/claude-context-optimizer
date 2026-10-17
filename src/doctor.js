@@ -23,7 +23,7 @@ import { execSync, spawnSync } from 'child_process';
 import {
   DATA_DIR, PATTERNS_FILE, GLOBAL_STATS_FILE, CONFIG_FILE,
   loadConfig, getEffectiveBudget, getModelContextWindow, formatTokens,
-  getPluginVersion, CURRENT_MODELS
+  getPluginVersion, CURRENT_MODELS, reservedPluginNameReason
 } from './utils.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -63,6 +63,12 @@ check('package.json exists', () => {
   const f = join(ROOT, 'package.json');
   if (!existsSync(f)) return 'package.json missing';
   return true;
+});
+
+check('plugin name accepted by Claude Code', () => {
+  const { name } = readJSON(join(ROOT, '.claude-plugin', 'plugin.json'));
+  const reason = reservedPluginNameReason(name);
+  return reason ? `"${name}" ${reason} — \`claude plugin validate\` rejects it` : name;
 });
 
 check('versions in sync (plugin.json vs package.json)', () => {

@@ -24,6 +24,26 @@ export function toPosixPath(p) {
 // Hook modules use this to guard their stdin-reading main() — importing them
 // for unit testing must NOT start the hook, or the test process hangs forever
 // waiting on stdin (this caused the v3.6.0 CI runs to time out at 6h).
+/**
+ * Why Claude Code would reject `name` as a third-party plugin name, or null.
+ * Mirrors `claude plugin validate` (2.1.302): names that pass for Anthropic's
+ * own are reserved. 4.20.0 shipped as "claude-context-optimizer" and failed it.
+ */
+export function reservedPluginNameReason(name) {
+  const n = String(name || '').toLowerCase();
+  if (['claude', 'anthropic', 'anthropics', 'claude-code', 'claude-mods'].includes(n)) return `"${n}" is reserved`;
+  const prefix = ['claude-', 'anthropic-', 'anthropics-', 'cc-plugin-'].find(p => n.startsWith(p));
+  if (prefix) return `starts with "${prefix}"`;
+  const parts = n.split('-');
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i] !== 'official') continue;
+    if (['claude', 'anthropic'].includes(parts[i - 1]) || ['claude', 'anthropic'].includes(parts[i + 1])) {
+      return 'puts "official" beside "claude" or "anthropic"';
+    }
+  }
+  return null;
+}
+
 export function isMainModule(metaUrl) {
   try {
     if (!process.argv[1]) return false;
