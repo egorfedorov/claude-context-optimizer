@@ -1032,8 +1032,8 @@ export function trackEvent(event, action) {
           const e = session.explore;
           emitNotice(sessionId, {
             kind: 'delegate',
-            text: `[cco] ${e.streak} read/search calls in a row, no edits (~${formatTokens(e.streakTokens)} tokens now pinned in main context). ` +
-              `Broad exploration is cheaper in a subagent (Explore/general-purpose): its context is discarded, only the conclusion returns.`,
+            text: `[cco] ${e.streak} read/search calls in a row, no edits (~${formatTokens(e.streakTokens)} tokens now in this context, re-read on every request). ` +
+              `Hand the rest of this exploration to the context-optimizer:scout subagent: it runs on Haiku (~40× cheaper) and only its answer comes back.`,
           });
         }
       }

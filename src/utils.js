@@ -80,11 +80,15 @@ export const TOOL_COSTS_FILE = join(DATA_DIR, 'tool-costs.json');
 //   • Opus 5 / 4.8 / 4.7 — $5/$25, full 1M context window at standard price
 //     (there is NO long-context premium; the old "1M tier surcharge" is gone).
 //   • Sonnet 5.5 / Sonnet 5 — $2/$10, 1M.  Sonnet 4.6 — $3/$15, 1M.
+//   • Haiku 5.5 — $0.10/$0.50, 1M — 40× below Opus 5.5 per token. Prompts over
+//     100K bill at $0.50/$2.50 (`longPrompt`, applied per request).
 //   • Haiku 4.5 — $1/$5, 200K context window.
 // `cacheRead` (optional) overrides CACHE_READ_MULT for that model.
 export const MODEL_COSTS = {
   'haiku':         { input: 1,  output: 5,  contextWindow:   200_000 },
   'haiku-4.5':     { input: 1,  output: 5,  contextWindow:   200_000 },
+  'haiku-5.5':     { input: 0.1, output: 0.5, contextWindow: 1_000_000,
+                     longPrompt: { over: 100_000, input: 0.5, output: 2.5 } },
   'sonnet':        { input: 3,  output: 15, contextWindow: 1_000_000 },
   'sonnet-4.6':    { input: 3,  output: 15, contextWindow: 1_000_000 },
   'sonnet-5':      { input: 2,  output: 10, contextWindow: 1_000_000 },
@@ -107,7 +111,7 @@ export const MODEL_COSTS = {
 
 // The current generation — what ROI/report tables compare and what doctor
 // treats as up to date. Everything else in MODEL_COSTS is an alias or older.
-export const CURRENT_MODELS = ['haiku-4.5', 'sonnet-5.5', 'opus-5.5', 'fable-5.1'];
+export const CURRENT_MODELS = ['haiku-5.5', 'sonnet-5.5', 'opus-5.5', 'fable-5.1'];
 
 /**
  * Map a raw session model id from the transcript (e.g. "claude-fable-5-1",
@@ -121,7 +125,7 @@ export function normalizeModelId(raw) {
   if (id.includes('fable') || id.includes('mythos')) {
     return /(fable|mythos)[-_.]?5[-.]1\b/.test(id) ? 'fable-5.1' : 'fable-5';
   }
-  if (id.includes('haiku')) return 'haiku';
+  if (id.includes('haiku')) return /haiku[-_.]?5[-.]5\b/.test(id) ? 'haiku-5.5' : 'haiku';
   if (id.includes('sonnet')) {
     if (/sonnet[-_.]?5[-.]5\b/.test(id)) return 'sonnet-5.5';
     return /sonnet[-_.]?5\b/.test(id) ? 'sonnet-5' : 'sonnet';
@@ -175,8 +179,7 @@ export function getCacheRates(model, ttl = '5m') {
  * Returns { real, naive, cacheSavings } — `naive` prices all input-side tokens
  * at the full input rate (what the cost would be without prompt caching).
  */
-export function computeCacheAwareCost(totals, model) {
-  const c = getModelCost(model);
+export function computeCacheAwareCost(totals, model, c = getModelCost(model)) {
   const inRate = c.input / 1e6;
   const { read } = getCacheRates(model);
   const write1h = Math.min(totals.cacheCreation1h || 0, totals.cacheCreation || 0);
@@ -207,7 +210,12 @@ export function computeSessionCost(econ, fallbackModel) {
     ? econ.segments : [{ model: null, speed: 'standard', totals: (econ && econ.totals) || {} }];
   const sum = { real: 0, naive: 0, cacheSavings: 0 };
   for (const s of segs) {
-    const c = computeCacheAwareCost(s.totals, s.model || fallbackModel);
+    const model = s.model || fallbackModel;
+    const base = getModelCost(model);
+    // Requests past a model's long-prompt threshold bill at its higher rate.
+    const rates = s.long && base.longPrompt
+      ? { ...base, input: base.longPrompt.input, output: base.longPrompt.output } : base;
+    const c = computeCacheAwareCost(s.totals, model, rates);
     const mult = s.speed === 'fast' ? FAST_MODE_MULT : 1;
     sum.real += c.real * mult;
     sum.naive += c.naive * mult;

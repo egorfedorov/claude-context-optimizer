@@ -1,7 +1,7 @@
 {
   "name": "context-optimizer",
-  "version": "4.21.0",
-  "description": "Cuts wasted context in Claude Code and shows what each session really costs. Model-aware for the Claude 5 lineup (Opus 5.5, Sonnet 5.5, Fable 5.1) with 1-hour-cache pricing and cache-break warnings; read dedup and file digests; auto .contextignore; a ru/en prompt coach; task state that survives /compact; and a one-screen /cco control center. Runs locally, no network calls.",
+  "version": "4.22.0",
+  "description": "Cuts what Claude Code sessions cost: Haiku 5.5 subagents do the reading and test runs so the expensive model's context stays small, and /cco-audit shows from your own transcripts where the money went and what was saved. Plus read dedup with file maps, cache-break and budget warnings, task state that survives /compact, and a one-screen /cco control center. Runs locally; the plugin's code makes no network calls.",
   "author": {
     "name": "Egor Fedorov"
   },

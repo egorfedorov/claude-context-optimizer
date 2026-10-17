@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <strong>Stop burning tokens on weak prompts and redundant reads.</strong><br/>
-  <sub>Model-aware for the whole Claude lineup — Opus 5.5, Sonnet 5.5, Fable 5.1, Haiku — detected per session, zero config.</sub>
+  <strong>Cut what Claude Code sessions cost: Haiku does the reading, the expensive model decides.</strong><br/>
+  <sub>Haiku 5.5 subagents, read dedup, budget and cache-break warnings, and an audit of your own transcripts. Model-aware for Opus 5.5, Sonnet 5.5, Fable 5.1 and Haiku 5.5.</sub>
 </p>
 
 <p align="center">
@@ -23,23 +23,59 @@
 
 ## The Problem
 
-The average Claude Code session **wastes 30-50% of tokens** on files that are read but never actually used. Every `Read` call consumes context — whether the file was relevant or not.
+In a long Claude Code session, most of the bill is **re-reading**. Every request
+sends the whole context again. Cache reads are cheap per token, but 280K of
+context × 300 requests adds up. On the sessions we measured, cache reads were
+~60% of the cost.
 
-- A 200-line config file? **800 tokens gone.**
-- A README you glanced at once? **2,400 tokens burned.**
-- That `package.json` Claude reads "just in case"? **120 tokens, every time.**
-
-At $4/M input tokens (Opus 5.5) — $10/M on Fable 5.1 — a developer spending $100/month is lighting **$30-50 on fire** on irrelevant context.
+- Context only grows: every file read, every test log, every web page stays in
+  and is paid for again on each later request.
+- The expensive model does all of it, including grepping and reading logs,
+  which a model 40× cheaper does just as well.
+- You can't see any of this. Nothing tells you where a session's money went.
 
 ## The Solution
 
-**context-optimizer** silently tracks every file read, edit, and search. It learns which files are actually useful and which are waste. Over time, it builds a profile of your coding patterns and tells you exactly where your tokens go — and how to stop wasting them.
+**context-optimizer** keeps the expensive model's context small and shows you
+the numbers:
+
+- **Haiku 5.5 subagents** (`scout`, `runner`) do the exploration and the test
+  runs. Only their short answer enters the main context.
+- **`/cco-audit`** reads your own transcripts and tells you what you spent, what
+  CCO saved, and which change would save the most.
+- **Hooks** skip unchanged re-reads, warn before the budget runs out or the
+  cache goes cold, and keep task state across `/compact`.
 
 <p align="center">
   <img src="assets/how-it-works.svg" alt="How it works" width="700"/>
 </p>
 
 ---
+
+## What's new in v4.22 — the orchestrator, and an audit that tells the truth
+
+We checked whether CCO really saves anything, on real sessions, and the answer
+changed the plugin.
+
+- **Where the money goes.** In a long Opus session, ~60% of the bill is cache
+  reads: the whole context is re-read on every request. A 200-request session
+  averaging 270K of context reads 54M tokens. Repeated reads of unchanged files,
+  which read dedup removes, were close to zero in the sessions we measured.
+- **The orchestrator.** The plugin now ships two subagents that run on
+  **Haiku 5.5, about 40× cheaper per token than Opus 5.5**. `scout` does
+  read-only exploration (files, searches, web docs) and `runner` runs tests and
+  builds. Only their short answer enters the main context. Claude delegates to
+  them on its own; `/cco-orchestrate <task>` runs a whole task that way.
+  Checked live: a scout lookup ran on `claude-haiku-5-5` for $0.005.
+- **`/cco-audit`.** It reads your own transcripts and reports what you spent and
+  on what, what CCO verifiably saved (every read-cache refusal is in the
+  transcript), and which lever would save the most: compacting earlier, Haiku
+  delegation or trimming fixed overhead.
+- **Haiku 5.5 pricing.** CCO priced Haiku 5.5 as Haiku 4.5 ($1/$5). It now uses
+  $0.10/$0.50, and $0.50/$2.50 for requests with prompts over 100K.
+- **Seamless rename.** Both marketplaces carry a `renames` map, so
+  `claude-context-optimizer` installs move to `context-optimizer` on Claude
+  Code's next start, with no reinstall.
 
 ## What's new in v4.21 — a name Claude Code accepts
 
@@ -520,7 +556,9 @@ Read Cache runs as a PreToolUse hook and **blocks** redundant reads when the fil
 - Repeated right after a refusal: allowed (Claude's copy may have been cleared)
 - Same file, same range, unchanged: **blocked** — saves 100% of those tokens
 
-Typical savings: **30-60% fewer tokens** per session from read deduplication alone.
+How much it saves depends on how often your sessions re-read unchanged files.
+On the sessions we measured that was rare, so the savings were small. `/cco-audit`
+shows what it saved on yours.
 
 ### NEW: `.contextignore` — block files you never need
 
@@ -702,6 +740,8 @@ When installed as a plugin, commands are namespaced: `/context-optimizer:cco`. W
 | Command | Description |
 |---------|-------------|
 | `/cco` | **Context Control Center** — one screen: budget, $ spent, tokens saved, waste, prompt grade, active task, actions |
+| `/cco-audit [--days N]` | **NEW** — honest savings audit from your own transcripts: where the money went, what CCO saved, which lever saves more |
+| `/cco-orchestrate <task>` | **NEW** — do a task as an orchestrator: Haiku scouts read and run tests, the main model plans and edits |
 | `/cco-task [add\|list\|done]` | **NEW** — organize work by task; tracks tokens + $ per task |
 | `/cco-report` | Full ROI report — stats, trends, waste analysis, recommendations |
 | `/cco-roi` | ROI calculator — $/month savings per model, effective-context multiplier |
@@ -722,6 +762,19 @@ When installed as a plugin, commands are namespaced: `/context-optimizer:cco`. W
 | `/cco-config [show\|get\|set\|reset]` | **NEW** — tune the behavior thresholds below without editing source |
 | `/cco-patterns [export\|import\|show]` | **NEW** — share learned file patterns with your team via a committed digest |
 | `/cco-tools [show\|reset]` | **NEW** — what your tools really cost, learned from observed results |
+
+### Subagents
+
+| Agent | Model | Use |
+|-------|-------|-----|
+| `context-optimizer:scout` | Haiku 5.5 | Read-only exploration: several files, wide searches, web docs. Returns a short answer with `path:line`. |
+| `context-optimizer:runner` | Haiku 5.5 | Test suites, builds, linters. Returns pass/fail and the failing items only. |
+| `context-optimizer:context-analyzer` | inherits | Analyzes CCO's own usage data. |
+
+Claude picks the Haiku agents on its own from their descriptions, and a
+one-paragraph policy at session start tells it when (about 90 tokens, once per
+conversation). Turn the policy off with `"orchestrate": false` in
+`~/.claude-context-optimizer/config.json` or `CCO_ORCHESTRATE=0`.
 
 ### Tunable thresholds (`/cco-config`)
 
@@ -812,8 +865,9 @@ Then restart Claude Code to apply the update.
 
 Until 4.20 the plugin was called `claude-context-optimizer`. Claude Code no
 longer accepts third-party plugin names that start with `claude-`, so from
-4.21 it is `context-optimizer`. A plugin's id comes from its name, so
-`plugin update` can't cross the rename. Reinstall it once:
+4.21 it is `context-optimizer`. Both marketplaces map the old name to the new
+one, so Claude Code moves your install over the next time it starts. If it
+doesn't (an older Claude Code), reinstall once:
 
 ```bash
 claude plugin uninstall claude-context-optimizer@cco   # or @egorfedorov-plugins
@@ -995,10 +1049,11 @@ This plugin:
 
 - **Tracks file paths and line counts** — never file contents
 - **Keeps a 200-character preview of each prompt** (with its grade) so `/cco-coach` can show trends
-- **Reads token-usage numbers** from Claude Code's own session transcript to price the session
+- **Reads token-usage numbers** from Claude Code's own session transcript to price the session; `/cco-audit` reads your transcripts under `~/.claude/projects/` and prints only totals
 - **Runs `git` locally** for `/cco-git`, `/cco-pack` and `/cco-anatomy`; nothing else is executed
 - **Stores everything locally** in `~/.claude-context-optimizer/`, pruned automatically (90 days for session history, 14 for live-session state)
-- **Sends zero telemetry** — no network calls, no analytics, no tracking
+- **Sends zero telemetry** — the plugin's own code makes no network calls, no analytics, no tracking
+- **Ships two subagents** (`scout`, `runner`) that Claude can call. They use Claude Code's own tools under your permission settings: `scout` may use WebFetch/WebSearch when asked to read web docs, and `runner` runs the commands it is given through Bash
 - **Can be fully wiped** with `/cco-clean --reset-all`
 
 Your data never leaves your machine. Period.
