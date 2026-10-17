@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Session Baseline Overhead audit — /cco-overhead
+ * Session Baseline Overhead audit — /cco overhead
  *
  * The biggest invisible token spend isn't redundant reads — it's the FIXED
  * overhead every session starts with: system prompt, tool schemas, MCP
@@ -135,7 +135,7 @@ export function measureLocalSources(cwd) {
   };
 
   add('Project CLAUDE.md', tokensOfFile(join(cwd, 'CLAUDE.md')),
-    'trim with /cco-claudemd');
+    'trim with /cco claudemd');
   add('Global ~/.claude/CLAUDE.md', tokensOfFile(join(home, '.claude', 'CLAUDE.md')),
     'loaded in EVERY project — keep it minimal');
   add('Memory index (MEMORY.md)',
@@ -172,7 +172,7 @@ export function buildReport(cwd, transcriptArg) {
   if (!baselines.length) {
     L.push('  No session transcripts found for this project yet.');
     L.push(`  Looked in: ${projectTranscriptDir(cwd)}`);
-    L.push('  Start a session, do one exchange, then run /cco-overhead again.');
+    L.push('  Start a session, do one exchange, then run /cco overhead again.');
     return L.join('\n');
   }
 
@@ -207,7 +207,7 @@ export function buildReport(cwd, transcriptArg) {
   const recs = [];
   const claudeMd = items.find(i => i.label === 'Project CLAUDE.md');
   if (claudeMd && claudeMd.tokens > 3000) {
-    recs.push(`Project CLAUDE.md is ~${formatTokens(claudeMd.tokens)} — run /cco-claudemd to trim it.`);
+    recs.push(`Project CLAUDE.md is ~${formatTokens(claudeMd.tokens)} — run /cco claudemd to trim it.`);
   }
   if (unattributed > 40_000) {
     recs.push(`~${formatTokens(unattributed)} is system prompt/tools/MCP — run /context in a fresh session ` +

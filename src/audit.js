@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Savings audit — /cco-audit
+ * Savings audit — /cco audit
  *
  * Does CCO actually save anything? This answers from your own transcripts
  * (~/.claude/projects/**.jsonl), not from estimates or benchmarks:
@@ -303,8 +303,8 @@ export function renderAudit(a, { days, compactAt }) {
   L.push('  BIGGER LEVERS (estimates on these sessions)');
   const levers = [
     [a.compactSaved, `Compact at ${formatTokens(compactAt)} instead of letting context grow`, '/compact when the budget warning fires'],
-    [a.delegateSaved, 'Delegate exploration (Read/Grep) to Haiku subagents', 'context-optimizer:scout, /cco-orchestrate'],
-    [a.per10kOverhead, 'Every 10K less of fixed overhead (MCP tools, CLAUDE.md, skills)', '/cco-overhead'],
+    [a.delegateSaved, 'Delegate exploration (Read/Grep) to Haiku subagents', 'context-optimizer:scout, /cco orchestrate'],
+    [a.per10kOverhead, 'Every 10K less of fixed overhead (MCP tools, CLAUDE.md, skills)', '/cco overhead'],
   ].sort((x, y) => y[0] - x[0]);
   for (const [v, what, how] of levers) {
     L.push(`  ~${usd(v).padStart(8)}  ${pct(v, a.total).padStart(4)}  ${what}`);

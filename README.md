@@ -9,7 +9,7 @@ tokens went. It does something useful on every surface:
 |---|---|
 | **claude.ai chat** | `fresh-start` writes a compact handoff so you can continue in a new chat; `token-check` sizes files and conversations and says how to cut them; `sharpen-prompt` turns a vague request into a precise one |
 | **Cowork** | the same skills, plus the `scout` and `runner` subagents that run on Haiku 5.5, about 40× cheaper than Opus |
-| **Claude Code** | everything: Haiku subagents, read dedup with file maps, budget and cache-break warnings, task state across `/compact`, the `/cco` control center and `/cco-audit`, an audit of your own transcripts |
+| **Claude Code** | everything: Haiku subagents, read dedup with file maps, budget and cache-break warnings, task state across `/compact`, the `/cco` control center and `/cco audit`, an audit of your own transcripts |
 
 Runs locally, open source (MIT), no telemetry.
 
@@ -42,7 +42,7 @@ the numbers:
 
 - **Haiku 5.5 subagents** (`scout`, `runner`) do the exploration and the test
   runs. Only their short answer enters the main context.
-- **`/cco-audit`** reads your own transcripts and tells you what you spent, what
+- **`/cco audit`** reads your own transcripts and tells you what you spent, what
   CCO saved, and which change would save the most.
 - **Hooks** skip unchanged re-reads, warn before the budget runs out or the
   cache goes cold, and keep task state across `/compact`.
@@ -77,9 +77,9 @@ changed the plugin.
   **Haiku 5.5, about 40× cheaper per token than Opus 5.5**. `scout` does
   read-only exploration (files and searches) and `runner` runs tests and
   builds. Only their short answer enters the main context. Claude delegates to
-  them on its own; `/cco-orchestrate <task>` runs a whole task that way.
+  them on its own; `/cco orchestrate <task>` runs a whole task that way.
   Checked live: a scout lookup ran on `claude-haiku-5-5` for $0.005.
-- **`/cco-audit`.** It reads your own transcripts and reports what you spent and
+- **`/cco audit`.** It reads your own transcripts and reports what you spent and
   on what, what CCO verifiably saved (every read-cache refusal is in the
   transcript), and which lever would save the most: compacting earlier, Haiku
   delegation or trimming fixed overhead.
@@ -96,7 +96,7 @@ third-party names that start with `claude-` (`claude plugin validate` fails),
 so `claude-context-optimizer` could not pass review. Commands, data and
 behavior are unchanged. Already installed? See
 [Upgrading from 4.20 or earlier](#upgrading-from-420-or-earlier-the-plugin-was-renamed).
-CI and `/cco-doctor` now check the name against the same rule.
+CI and `/cco doctor` now check the name against the same rule.
 
 ## What's new in v4.20 — the hooks really work
 
@@ -118,7 +118,7 @@ CI and `/cco-doctor` now check the name against the same rule.
   verdict on the previous one.
 - **A lighter skill listing.** User-only commands no longer load their
   descriptions into every request (~2.9K → ~0.9K characters).
-- **`/cco-doctor` proves it.** It runs the real hook the way Claude Code does
+- **`/cco doctor` proves it.** It runs the real hook the way Claude Code does
   and checks dedup and subagent isolation on your machine.
 
 ## What's new in v4.12 — honest numbers
@@ -142,7 +142,7 @@ CI and `/cco-doctor` now check the name against the same rule.
 cache at **$0.20/M (0.05×)**, so a real Opus 5.5 session showed **~50% more
 spend than it cost** ($4.60 vs $3.06 on the session this release was built in).
 Opus 5.5 and Sonnet 5.5 now have their own rows, and `opus-5.5` is the default
-fallback. ROI, digest, export and `/cco-report` compare the current lineup
+fallback. ROI, digest, export and `/cco report` compare the current lineup
 (Haiku 4.5 · Sonnet 5.5 · Opus 5.5 · Fable 5.1) instead of 17 aliases.
 
 **Data retention.** One file per session landed in six folders under
@@ -150,14 +150,14 @@ fallback. ROI, digest, export and `/cco-report` compare the current lineup
 Once a day at session start, per-session files older than 90 days and
 live-session state older than 14 days are pruned; aggregated stats and learned
 patterns stay. Projects untouched for 180 days drop out of `patterns.json`.
-Run it now with `/cco-clean --prune`.
+Run it now with `/cco clean --prune`.
 
 **Shield picks the right project.** With nested projects (`repo` and
 `repo/games/x`), the Read shield used the first prefix match, which was often
 the parent, and `/rx` matched `/r`. It now takes the deepest root on a `/`
 boundary.
 
-**`/cco-doctor`** flags a stale fallback model in your config (e.g. `opus-4.8`).
+**`/cco doctor`** flags a stale fallback model in your config (e.g. `opus-4.8`).
 
 ## What's new in v4.10 — Claude 5 prices, the 1-hour cache, and task state that survives /compact
 
@@ -183,7 +183,7 @@ history gets replaced. `/compact` writes a lossy free-form summary; CCO now keep
 an exact, bounded state per task and re-injects it right after compaction:
 
 ```
-/cco-task patch '{"goal": "ship 1h-cache pricing", "done": ["parser", "tests"], "next": "README", "scratch": null}'
+/cco task patch '{"goal": "ship 1h-cache pricing", "done": ["parser", "tests"], "next": "README", "scratch": null}'
 ✓ State of task #7 updated (3 keys, 118/4000 chars)
 
 … /compact …
@@ -209,14 +209,14 @@ CCO already measured every tool result; now it remembers. After three calls a
 tool is budgeted from what it actually costs **you**:
 
 ```
-/cco-tools
+/cco tools
   tool                          calls      avg      max    total
    mcp__linear__list_issues        41    38.2K   112.0K     1.5M   ← where your budget really goes
    Bash                           380      133      342    50.5K
   · mcp__github__get_pr             2     4.1K     6.0K     8.2K   ← still on the constant
 ```
 
-Pair it with `/cco-overhead mcp`: that finds servers you never call, this prices
+Pair it with `/cco overhead mcp`: that finds servers you never call, this prices
 the ones you do. ([#38](https://github.com/egorfedorov/claude-context-optimizer/issues/38))
 
 **Patterns travel with the repo.** What CCO learns — which files are usually
@@ -225,8 +225,8 @@ fresh clone started blind and re-learned the same lessons by wasting the same
 tokens.
 
 ```bash
-/cco-patterns export     # → .cco/patterns.digest.json — commit it
-/cco-patterns import     # teammate, day one on a fresh clone
+/cco patterns export     # → .cco/patterns.digest.json — commit it
+/cco patterns import     # teammate, day one on a fresh clone
 ```
 
 The digest carries **relative paths and counts only** — no file contents, no
@@ -241,7 +241,7 @@ numbers a lie. The import fills in only where you have no evidence of your own.
 ([#37](https://github.com/egorfedorov/claude-context-optimizer/issues/37))
 
 > This repo ships its own `.cco/patterns.digest.json` — clone it and
-> `/cco-patterns import` to see the feature work on real data.
+> `/cco patterns import` to see the feature work on real data.
 
 ---
 
@@ -254,8 +254,8 @@ numbers a lie. The import fills in only where you have no evidence of your own.
   `.txt` **27.8** (over-counted), `.ts` **44**. Notably the measurement
   contradicted my own priors: `.json` is 38.8, not the ~20 I expected.
   ([#35](https://github.com/egorfedorov/claude-context-optimizer/issues/35))
-- **`/cco-config` — 11 hardcoded knobs, now tunable.** Re-read warning points,
-  Read-Cache staleness, prompt-coach length bands, `/cco-pack` budget cap. Every
+- **`/cco config` — 11 hardcoded knobs, now tunable.** Re-read warning points,
+  Read-Cache staleness, prompt-coach length bands, `/cco pack` budget cap. Every
   value range-validated: a typo is ignored in favour of the default and flagged,
   never silently applied.
   ([#39](https://github.com/egorfedorov/claude-context-optimizer/issues/39))
@@ -274,7 +274,7 @@ numbers a lie. The import fills in only where you have no evidence of your own.
 CCO quietly assumed POSIX paths. On Windows that broke four things at once, and
 none of them looked broken — they just reported less:
 
-- **`/cco-overhead` said "no session transcripts found"** even with transcripts
+- **`/cco overhead` said "no session transcripts found"** even with transcripts
   right there. The cwd → folder encoding dropped `\`, `:` and spaces, so it
   looked in `~\.claude\projects\C:\Program Files\Git` instead of
   `…\projects\C--Program-Files-Git`. Fixed — which also restores the
@@ -322,10 +322,10 @@ avoidable dollar leaks get caught live:
   fills. Budget-% warnings can't catch this; a quality signal can.
 - **Observation → rule, automatically.** Files read-but-unused in 3+ sessions now
   surface *in the hook path* once per session (when the recurring waste is ≥30K
-  tokens) with the exact `/cco-shield apply` fix — previously you had to run the
+  tokens) with the exact `/cco shield apply` fix — previously you had to run the
   CLI to see them.
 - **CLAUDE.md size nudge.** Project + user memory over 200 lines → a one-shot
-  pointer to `/cco-claudemd`. Memory loads into *every* prompt; it's the most
+  pointer to `/cco claudemd`. Memory loads into *every* prompt; it's the most
   expensive place for bloat.
 - **The headline.** Session-end summary now leads with the number that matters:
   `★ CCO saved $654.36 this session — 86% of what it would have cost.`
@@ -339,7 +339,7 @@ avoidable dollar leaks get caught live:
   usage. The `/cco` board gains a **Cache line**: hit rate, $ saved vs uncached,
   and **cache breaks** — moments a >5-min pause or a mid-session CLAUDE.md edit
   went and re-wrote your whole context at the 1.25× rate, with the extra $ shown.
-- **NEW `/cco-overhead`.** Every session starts with a fixed payload — system
+- **NEW `/cco overhead`.** Every session starts with a fixed payload — system
   prompt, tool schemas, MCP servers, agents, CLAUDE.md — paid before you type a
   word. This audit measures it from ground truth (first-turn API usage), itemizes
   what's measurable locally, and tells you what to trim. Baseline cuts repay in
@@ -348,7 +348,7 @@ avoidable dollar leaks get caught live:
   F-grade prompt with injected advice to "name the file you want changed". The
   coach classifies chat / question / task, coaches only tasks, goes easier on
   short follow-ups — and now understands **Russian**.
-- **`/cco-shield apply`.** Files wasted in 3+ sessions become `.contextignore`
+- **`/cco shield apply`.** Files wasted in 3+ sessions become `.contextignore`
   rules with one command — observation closes into a permanent rule.
 - **Self-calibrating estimates.** Real transcript totals teach the token
   estimator each codebase's drift (EMA, clamped) — estimates get honest on
@@ -367,8 +367,8 @@ avoidable dollar leaks get caught live:
 - **Race-free state.** The tracker/budget hooks are serialized (they shared a
   notice ledger and clobbered each other), and concurrent session finalization
   is guarded by an atomic file lock — no more lost global stats.
-- **A dozen bug fixes** — `$NaN` in `/cco-digest`, 3×-overstated costs in
-  `/cco-export` and `/cco-claudemd`, a benchmark that measured an empty
+- **A dozen bug fixes** — `$NaN` in `/cco digest`, 3×-overstated costs in
+  `/cco export` and `/cco claudemd`, a benchmark that measured an empty
   structure, O(n²) state rewrites, and more. See [CHANGELOG.md](CHANGELOG.md).
 
 ---
@@ -416,22 +416,22 @@ and corrects the model facts.
   ✓ #3 add OAuth provider  ·  ~22K
   ────────────────────────────────────────────────────────────
   ⚡ Free ~22K:  drop legacy/old_api.ts, vendor/build.js  → /compact
-  📦 Pack minimal context:  /cco-pack "refactor login flow"
+  📦 Pack minimal context:  /cco pack "refactor login flow"
 ```
 
 One screen ties together **budget %, $ spent, tokens saved (effectiveness
 multiplier), waste, last prompt grade, the active task's cost, and ready-to-run
 actions** — all from data the optimizer already tracks. Nothing to configure.
 
-### NEW: Organize work by task (`/cco-task`)
+### NEW: Organize work by task (`/cco task`)
 
 Track tokens and cost **per task**, not just per session:
 
 ```bash
-$ /cco-task add "refactor login flow"   # start a task
-$ /cco-pack "refactor login flow"        # load only the files it needs
+$ /cco task add "refactor login flow"   # start a task
+$ /cco pack "refactor login flow"        # load only the files it needs
   …work…
-$ /cco-task done                         # freezes the task's token/$ total
+$ /cco task done                         # freezes the task's token/$ total
 ```
 
 While a task is active, session tokens are attributed to it, so `/cco` shows
@@ -481,14 +481,14 @@ Suggestions to make this prompt produce better results:
   - State the success condition: what tests pass? what error disappears?
 ```
 
-Run `/cco-coach` to grade an arbitrary prompt or see your prompt history (with average score).
+Run `/cco coach` to grade an arbitrary prompt or see your prompt history (with average score).
 Strong prompts produce sharper edits, fewer reads, lower bills. The coach is **deterministic
 and runs locally** — no model call, no telemetry.
 
 ### NEW: Smart Context Pack — optimal file set for your task
 
 ```bash
-$ /cco-pack "refactor login flow to support OAuth"
+$ /cco pack "refactor login flow to support OAuth"
 
   SMART CONTEXT PACK
   Files proposed: 7
@@ -514,7 +514,7 @@ Stops at 25% of your effective context. With Opus 4.8's 1M window that's 250K of
 ### NEW: 1M context support — standard on Opus
 
 ```bash
-/cco-budget model opus-4.8
+/cco budget model opus-4.8
 ```
 
 Opus 4.7/4.8 deliver the full 1M window at the standard $5/$25 price — no premium tier, no
@@ -535,7 +535,7 @@ and uses the model's real prices. Your reported cost is now the cost you actuall
 PostToolUse matchers now include `mcp__*` — Linear, Slack, GitHub, Postgres, etc. show up
 in token reports alongside Read/Edit/Write.
 
-### NEW: `/cco-doctor` — health check
+### NEW: `/cco doctor` — health check
 
 ```
 ✔ versions in sync (plugin.json vs package.json) — v4.2.0
@@ -568,7 +568,7 @@ Read Cache runs as a PreToolUse hook and **blocks** redundant reads when the fil
 - Same file, same range, unchanged: **blocked** — saves 100% of those tokens
 
 How much it saves depends on how often your sessions re-read unchanged files.
-On the sessions we measured that was rare, so the savings were small. `/cco-audit`
+On the sessions we measured that was rare, so the savings were small. `/cco audit`
 shows what it saved on yours.
 
 ### NEW: `.contextignore` — block files you never need
@@ -607,13 +607,13 @@ When your context budget reaches 80%, the plugin automatically tells Claude to r
    Run /compact immediately or the session will lose older context.
 ```
 
-- Toggle with `/cco-budget auto on` or `/cco-budget auto off`
+- Toggle with `/cco budget auto on` or `/cco budget auto off`
 - Configurable thresholds in `budget-config.json`
 - Smart rate-limiting — won't spam every single tool call
 
 ### NEW: Session Replay — pick up where you left off
 
-Every session automatically generates a summary saved to disk. Start your next session by running `/cco-replay` to see what was done before — no need to re-read files or guess context.
+Every session automatically generates a summary saved to disk. Start your next session by running `/cco replay` to see what was done before — no need to re-read files or guess context.
 
 ```
 ╔══════════════════════════════════════════════════════════════╗
@@ -631,7 +631,7 @@ Every session automatically generates a summary saved to disk. Start your next s
 
 ### NEW: Project Anatomy — codebase map in one file
 
-Run `/cco-anatomy` to generate a compact project map. Claude reads one file instead of opening twenty to understand the codebase.
+Run `/cco anatomy` to generate a compact project map. Claude reads one file instead of opening twenty to understand the codebase.
 
 ```
 # Project Anatomy: my-app
@@ -659,11 +659,11 @@ ContextShield runs as a **PreToolUse hook** and warns you *before* loading known
                  Consider loading them together.
 ```
 
-Run `/cco-shield` to see protection status and stats.
+Run `/cco shield` to see protection status and stats.
 
 ### NEW: CLAUDE.md Analyzer — trim the bloat
 
-Run `/cco-claudemd` to analyze your CLAUDE.md for token waste: duplicates, verbose patterns, oversized code blocks, excessive whitespace. Get concrete suggestions with estimated savings.
+Run `/cco claudemd` to analyze your CLAUDE.md for token waste: duplicates, verbose patterns, oversized code blocks, excessive whitespace. Get concrete suggestions with estimated savings.
 
 ```
   CLAUDE.MD ANALYSIS — /project/CLAUDE.md — 342 lines | ~2.9K tokens
@@ -681,7 +681,7 @@ File patterns now have confidence scores (0.0-1.0) based on session count, usefu
 
 ### HTML Dashboard Export — Chart.js analytics
 
-Run `/cco-export html` to generate a static HTML dashboard you can open in any browser:
+Run `/cco export html` to generate a static HTML dashboard you can open in any browser:
 - Waste trend line chart
 - Token usage bar chart
 - Project breakdown doughnut
@@ -691,20 +691,20 @@ Run `/cco-export html` to generate a static HTML dashboard you can open in any b
 
 Run `/cco` for the live board: budget %, $ spent, tokens saved by the cache (effectiveness
 multiplier), waste/cold files, last prompt grade, the active task's cost, and ready-to-run
-actions (what to drop → `/compact`, what to `/cco-pack`). Drill into the per-file heatmap —
+actions (what to drop → `/compact`, what to `/cco pack`). Drill into the per-file heatmap —
 green = useful, red = waste — for detail.
 
 ![Context Control Center](assets/heatmap-demo.svg)
 
 ### Token ROI Report — full analytics across sessions
 
-Run `/cco-report` for a comprehensive dashboard: total tokens, waste ratio, cost estimates, trends, and actionable recommendations.
+Run `/cco report` for a comprehensive dashboard: total tokens, waste ratio, cost estimates, trends, and actionable recommendations.
 
 ![Token ROI Report](assets/dashboard-demo.svg)
 
 ### Efficiency Score — gamified optimization
 
-Run `/cco-digest` for a weekly efficiency grade (S/A/B/C/D/F) with breakdown by precision, edit ratio, search accuracy, and focus.
+Run `/cco digest` for a weekly efficiency grade (S/A/B/C/D/F) with breakdown by precision, edit ratio, search accuracy, and focus.
 
 ![Efficiency Score](assets/efficiency-score.svg)
 
@@ -721,15 +721,15 @@ Set a token budget and get real-time warnings as you approach the limit. Auto-co
 
 ### Git-Aware Suggestions — smart context loading
 
-Run `/cco-git` and the plugin analyzes your `git diff`, finds related test files, configs, and historically useful files — then suggests exactly what to load.
+Run `/cco git` and the plugin analyzes your `git diff`, finds related test files, configs, and historically useful files — then suggests exactly what to load.
 
 ### Context Templates — presets for common tasks
 
 Create reusable context sets for different task types:
 
 ```bash
-/cco-templates create bug-fix    # Save files you always need for bug fixes
-/cco-templates apply bug-fix     # Load them instantly next time
+/cco templates create bug-fix    # Save files you always need for bug fixes
+/cco templates apply bug-fix     # Load them instantly next time
 ```
 
 ### Smart Loader Skill — automatic suggestions
@@ -748,28 +748,28 @@ When installed as a plugin, commands are namespaced: `/context-optimizer:cco`. W
 | `fresh-start` | **NEW, every surface** — compact handoff to continue in a new conversation when one gets long |
 | `token-check` | **NEW, every surface** — how many tokens a file or conversation takes and how to cut it |
 | `sharpen-prompt` | **NEW, every surface** — rewrite a vague request into a precise prompt |
-| `/cco-audit [--days N]` | **NEW** — honest savings audit from your own transcripts: where the money went, what CCO saved, which lever saves more |
-| `/cco-orchestrate <task>` | **NEW** — do a task as an orchestrator: Haiku scouts read and run tests, the main model plans and edits |
-| `/cco-task [add\|list\|done]` | **NEW** — organize work by task; tracks tokens + $ per task |
-| `/cco-report` | Full ROI report — stats, trends, waste analysis, recommendations |
-| `/cco-roi` | ROI calculator — $/month savings per model, effective-context multiplier |
-| `/cco-digest [days]` | Efficiency digest — score, grade, cost analysis (default: 7 days) |
-| `/cco-budget [status\|set\|model\|auto]` | Token budget — configure limits, cost model, auto-compact |
-| `/cco-git` | Git-aware suggestions — smart file loading based on diff |
-| `/cco-templates [list\|create\|apply\|delete]` | Context templates — reusable file sets for task types |
-| `/cco-export [md\|html]` | Export reports — Markdown or static HTML dashboard |
-| `/cco-clean` | Cleanup — remove old tracking data |
-| `/cco-shield [suggest\|apply]` | ContextShield status; **NEW** — turn waste history into `.contextignore` rules |
-| `/cco-overhead` | **NEW** — audit the fixed baseline every session starts with (system prompt, MCP, agents, CLAUDE.md) |
-| `/cco-claudemd` | CLAUDE.md analyzer — find and fix token bloat |
-| `/cco-anatomy` | Project anatomy — compact codebase map with file sizes and token estimates |
-| `/cco-replay [N]` | Session replay — recent session summaries for quick context recovery |
-| `/cco-coach [prompt]` | **NEW** — Prompt quality score (S/A/B/C/D/F) + concrete suggestions to improve |
-| `/cco-pack [task]` | **NEW** — Build optimal context pack for a task: ranked files with offset/limit |
-| `/cco-doctor` | **NEW** — Plugin health check (versions, hooks, data dir, model config) |
-| `/cco-config [show\|get\|set\|reset]` | **NEW** — tune the behavior thresholds below without editing source |
-| `/cco-patterns [export\|import\|show]` | **NEW** — share learned file patterns with your team via a committed digest |
-| `/cco-tools [show\|reset]` | **NEW** — what your tools really cost, learned from observed results |
+| `/cco audit [--days N]` | **NEW** — honest savings audit from your own transcripts: where the money went, what CCO saved, which lever saves more |
+| `/cco orchestrate <task>` | **NEW** — do a task as an orchestrator: Haiku scouts read and run tests, the main model plans and edits |
+| `/cco task [add\|list\|done]` | **NEW** — organize work by task; tracks tokens + $ per task |
+| `/cco report` | Full ROI report — stats, trends, waste analysis, recommendations |
+| `/cco roi` | ROI calculator — $/month savings per model, effective-context multiplier |
+| `/cco digest [days]` | Efficiency digest — score, grade, cost analysis (default: 7 days) |
+| `/cco budget [status\|set\|model\|auto]` | Token budget — configure limits, cost model, auto-compact |
+| `/cco git` | Git-aware suggestions — smart file loading based on diff |
+| `/cco templates [list\|create\|apply\|delete]` | Context templates — reusable file sets for task types |
+| `/cco export [md\|html]` | Export reports — Markdown or static HTML dashboard |
+| `/cco clean` | Cleanup — remove old tracking data |
+| `/cco shield [suggest\|apply]` | ContextShield status; **NEW** — turn waste history into `.contextignore` rules |
+| `/cco overhead` | **NEW** — audit the fixed baseline every session starts with (system prompt, MCP, agents, CLAUDE.md) |
+| `/cco claudemd` | CLAUDE.md analyzer — find and fix token bloat |
+| `/cco anatomy` | Project anatomy — compact codebase map with file sizes and token estimates |
+| `/cco replay [N]` | Session replay — recent session summaries for quick context recovery |
+| `/cco coach [prompt]` | **NEW** — Prompt quality score (S/A/B/C/D/F) + concrete suggestions to improve |
+| `/cco pack [task]` | **NEW** — Build optimal context pack for a task: ranked files with offset/limit |
+| `/cco doctor` | **NEW** — Plugin health check (versions, hooks, data dir, model config) |
+| `/cco config [show\|get\|set\|reset]` | **NEW** — tune the behavior thresholds below without editing source |
+| `/cco patterns [export\|import\|show]` | **NEW** — share learned file patterns with your team via a committed digest |
+| `/cco tools [show\|reset]` | **NEW** — what your tools really cost, learned from observed results |
 
 ### Subagents
 
@@ -785,11 +785,11 @@ conversation). Turn the policy off with `"orchestrate": false` in
 `~/.claude-context-optimizer/config.json`. In the same file, `"quiet": true`
 hides the donation line and the prompt coach.
 
-### Tunable thresholds (`/cco-config`)
+### Tunable thresholds (`/cco config`)
 
 Stored under `thresholds` in `~/.claude-context-optimizer/config.json`. Every
 value is range-validated; an out-of-range or misspelled entry is ignored in
-favour of the default and flagged with `!` in `/cco-config show`, so a typo
+favour of the default and flagged with `!` in `/cco config show`, so a typo
 can never make a hook behave wildly.
 
 | Key | Default | What it changes |
@@ -804,13 +804,13 @@ can never make a hook behave wildly.
 | `promptMinWords` | 8 | word count below which the coach calls a prompt too vague |
 | `promptIdealMaxWords` | 200 | upper bound of the coach's "ideal length" band |
 | `promptTooLongWords` | 500 | word count above which the ask is considered buried |
-| `packBudgetPercent` | 25 | max share of the budget `/cco-pack` may consume |
+| `packBudgetPercent` | 25 | max share of the budget `/cco pack` may consume |
 
 ```bash
-/cco-config                          # table of all values, * = set by you
-/cco-config set rereadWarnAt 5       # fewer re-read warnings
-/cco-config set staleTimeMs 300000   # Read Cache re-allows after 5 min, not 10
-/cco-config reset staleTimeMs        # back to the default
+/cco config                          # table of all values, * = set by you
+/cco config set rereadWarnAt 5       # fewer re-read warnings
+/cco config set staleTimeMs 300000   # Read Cache re-allows after 5 min, not 10
+/cco config reset staleTimeMs        # back to the default
 ```
 
 ---
@@ -882,7 +882,7 @@ claude plugin install context-optimizer@cco            # or @egorfedorov-plugins
 ```
 
 Your history stays where it was, in `~/.claude-context-optimizer/`. The
-commands are unchanged (`/cco`, `/cco-report`, …).
+commands are unchanged (`/cco`, `/cco report`, …).
 
 ### Requirements
 
@@ -949,7 +949,7 @@ You use Claude Code normally
           │
           ▼
 ┌─────────────────────┐
-│  Reports & Insights  │  /cco, /cco-report, /cco-digest, /cco-claudemd
+│  Reports & Insights  │  /cco, /cco report, /cco digest, /cco claudemd
 │  HTML Dashboard      │  Static Chart.js analytics, open in any browser
 │  ContextShield       │  Proactive waste prevention before file reads
 │  Smart Suggestions   │  Confidence-scored recommendations
@@ -1015,27 +1015,27 @@ claude-context-optimizer/
 │   ├── export.js            # Chart.js HTML dashboard exporter
 │   ├── prompt-coach.js      # UserPromptSubmit hook + CLI: prompt classification & quality scoring
 │   ├── smart-pack.js        # Optimal file pack builder (git + history + keywords)
-│   ├── overhead.js          # NEW — session baseline overhead audit (/cco-overhead)
+│   ├── overhead.js          # NEW — session baseline overhead audit (/cco overhead)
 │   └── doctor.js            # Health check CLI
 ├── skills/
 │   ├── cco/SKILL.md               # /cco — Context Control Center (one-screen board)
-│   ├── cco-task/SKILL.md          # NEW — /cco-task — per-task tokens/$ tracking
-│   ├── cco-report/SKILL.md        # /cco-report — full ROI report
-│   ├── cco-roi/SKILL.md           # /cco-roi — ROI calculator
-│   ├── cco-replay/SKILL.md        # /cco-replay — session replay
-│   ├── cco-digest/SKILL.md        # /cco-digest — efficiency digest
-│   ├── cco-budget/SKILL.md        # /cco-budget — budget manager
-│   ├── cco-git/SKILL.md           # /cco-git — git suggestions
-│   ├── cco-export/SKILL.md        # /cco-export — report export
-│   ├── cco-templates/SKILL.md     # /cco-templates — template manager
-│   ├── cco-clean/SKILL.md         # /cco-clean — data cleanup
-│   ├── cco-shield/SKILL.md        # /cco-shield — ContextShield status
-│   ├── cco-claudemd/SKILL.md      # /cco-claudemd — CLAUDE.md analyzer
-│   ├── cco-anatomy/SKILL.md       # /cco-anatomy — project anatomy
-│   ├── cco-coach/SKILL.md         # NEW — /cco-coach prompt quality grader
-│   ├── cco-pack/SKILL.md          # NEW — /cco-pack smart context pack
-│   ├── cco-doctor/SKILL.md        # /cco-doctor health check
-│   ├── cco-overhead/SKILL.md      # NEW — /cco-overhead session baseline audit
+│   ├── cco-task/SKILL.md          # NEW — /cco task — per-task tokens/$ tracking
+│   ├── cco-report/SKILL.md        # /cco report — full ROI report
+│   ├── cco-roi/SKILL.md           # /cco roi — ROI calculator
+│   ├── cco-replay/SKILL.md        # /cco replay — session replay
+│   ├── cco-digest/SKILL.md        # /cco digest — efficiency digest
+│   ├── cco-budget/SKILL.md        # /cco budget — budget manager
+│   ├── cco-git/SKILL.md           # /cco git — git suggestions
+│   ├── cco-export/SKILL.md        # /cco export — report export
+│   ├── cco-templates/SKILL.md     # /cco templates — template manager
+│   ├── cco-clean/SKILL.md         # /cco clean — data cleanup
+│   ├── cco-shield/SKILL.md        # /cco shield — ContextShield status
+│   ├── cco-claudemd/SKILL.md      # /cco claudemd — CLAUDE.md analyzer
+│   ├── cco-anatomy/SKILL.md       # /cco anatomy — project anatomy
+│   ├── cco-coach/SKILL.md         # NEW — /cco coach prompt quality grader
+│   ├── cco-pack/SKILL.md          # NEW — /cco pack smart context pack
+│   ├── cco-doctor/SKILL.md        # /cco doctor health check
+│   ├── cco-overhead/SKILL.md      # NEW — /cco overhead session baseline audit
 │   └── smart-loader/SKILL.md      # Auto-suggestion skill (model-invoked)
 ├── agents/
 │   └── context-analyzer.md  # Deep analysis agent
@@ -1054,15 +1054,15 @@ claude-context-optimizer/
 This plugin:
 
 - **Tracks file paths and line counts** — never file contents
-- **Keeps a 200-character preview of each prompt** (with its grade) so `/cco-coach` can show trends
-- **Reads token-usage numbers** from Claude Code's own session transcript to price the session; `/cco-audit` reads your transcripts under `~/.claude/projects/` and prints only totals
-- **Runs `git` locally** for `/cco-git`, `/cco-pack` and `/cco-anatomy`; nothing else is executed
+- **Keeps a 200-character preview of each prompt** (with its grade) so `/cco coach` can show trends
+- **Reads token-usage numbers** from Claude Code's own session transcript to price the session; `/cco audit` reads your transcripts under `~/.claude/projects/` and prints only totals
+- **Runs `git` locally** for `/cco git`, `/cco pack` and `/cco anatomy`; nothing else is executed
 - **Stores everything locally** in `~/.claude-context-optimizer/`, pruned automatically (90 days for session history, 14 for live-session state)
 - **Sends zero telemetry** — the plugin's own code makes no network calls, no analytics, no tracking
 - **Reads no environment variables** — every setting lives in `~/.claude-context-optimizer/config.json`
 - **Ships two subagents** (`scout`, `runner`) that Claude can call. They use Claude Code's own tools under your permission settings: `scout` only reads and searches the project (Read, Grep, Glob), and `runner` runs the commands it is given through Bash
-- **`/cco-export html` writes one offline file** — charts are inline SVG, with no scripts and nothing loaded from the web
-- **Can be fully wiped** with `/cco-clean --reset-all`
+- **`/cco export html` writes one offline file** — charts are inline SVG, with no scripts and nothing loaded from the web
+- **Can be fully wiped** with `/cco clean --reset-all`
 
 Your data never leaves your machine. Period.
 
@@ -1073,14 +1073,14 @@ Your data never leaves your machine. Period.
 **Q: Does this slow down Claude Code?**
 A: Barely. Each hook event starts one Node process (`src/hook.js`), which takes
 ~50–65 ms on typical hardware, mostly Node's own startup. Only Read triggers a
-PreToolUse hook. Run `/cco-doctor` to see the time on your machine.
+PreToolUse hook. Run `/cco doctor` to see the time on your machine.
 
 **Q: How accurate are the token estimates?**
 A: They use a ~4 tokens/line heuristic. Not exact, but consistent across sessions for reliable trends.
 
 **Q: Can I use this with Opus 5.5 / Sonnet 5.5 / Fable 5.1 / Opus 5 / Sonnet 5 / Haiku / Opus 4.x?**
 A: Yes — and you normally don't have to tell it: the budget hook reads the session's real
-model id from the transcript. `/cco-budget model opus-5.5` / `sonnet-5.5` / `fable-5.1` /
+model id from the transcript. `/cco budget model opus-5.5` / `sonnet-5.5` / `fable-5.1` /
 `opus-5` / `sonnet-5` / `opus-4.8` / `haiku-4.5` sets only the fallback. Each key carries its own
 window, prices and cache-read rate (Fable 5.1 reads at 0.025×, Opus 5.5 at 0.05×). Everything from Sonnet 4.6 up is 1M
 context; Haiku 4.5 is 200K. (`opus-4.7-1m` / `opus-4.8-1m` still work as back-compat aliases —
@@ -1127,9 +1127,9 @@ GitHub's [contributors graph](https://github.com/egorfedorov/claude-context-opti
 | | Found | Shipped |
 |---|---|---|
 | **[@GesPacClinica](https://github.com/GesPacClinica)** | [#1](https://github.com/egorfedorov/claude-context-optimizer/issues/1) — the very first issue: a clean install on fresh Linux Mint crashed Node on every hook, because `npx skills add` puts `CLAUDE_PLUGIN_ROOT` somewhere with no `src/` | `fd5dc7e` — every hook now tests for the file before running it |
-| **[@zwrose](https://github.com/zwrose)** | [#29](https://github.com/egorfedorov/claude-context-optimizer/pull/29) — `/cco-report` crashed outright, and its cost table printed `$NaN` | sent the fix themselves, as a PR |
-| **[@Reapper-Stack](https://github.com/Reapper-Stack)** | [#46](https://github.com/egorfedorov/claude-context-optimizer/issues/46) — on Windows every transcript lookup pointed at a malformed path, so `/cco-overhead` always claimed "no transcripts found" — reported with the root cause | v4.7.0 Windows-correct paths |
-| **[@harvest316](https://github.com/harvest316)** | [#53](https://github.com/egorfedorov/claude-context-optimizer/issues/53) — `/cco-overhead mcp` told fresh installs to delete MCP servers it had never actually watched; the cold-start guard counted sessions, not evidence — reported with the root cause, the on-disk verification, and the fix | v4.9.1 |
+| **[@zwrose](https://github.com/zwrose)** | [#29](https://github.com/egorfedorov/claude-context-optimizer/pull/29) — `/cco report` crashed outright, and its cost table printed `$NaN` | sent the fix themselves, as a PR |
+| **[@Reapper-Stack](https://github.com/Reapper-Stack)** | [#46](https://github.com/egorfedorov/claude-context-optimizer/issues/46) — on Windows every transcript lookup pointed at a malformed path, so `/cco overhead` always claimed "no transcripts found" — reported with the root cause | v4.7.0 Windows-correct paths |
+| **[@harvest316](https://github.com/harvest316)** | [#53](https://github.com/egorfedorov/claude-context-optimizer/issues/53) — `/cco overhead mcp` told fresh installs to delete MCP servers it had never actually watched; the cold-start guard counted sessions, not evidence — reported with the root cause, the on-disk verification, and the fix | v4.9.1 |
 
 A report that names the root cause is worth more than one that just names the symptom — #46 and #53 both arrived that way, and #29 arrived as the patch itself.
 

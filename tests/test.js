@@ -2442,7 +2442,7 @@ describe('pattern sharing: imported data never overrides local evidence', () => 
 });
 
 // ── smart-pack: the logic that decides what reaches the context ─────────────
-// /cco-pack proposes files for Claude to read. Nothing here was under test, so
+// /cco pack proposes files for Claude to read. Nothing here was under test, so
 // a scoping bug could recommend another project's source and no one would know.
 
 describe('smart-pack: path scoping', () => {
@@ -3167,7 +3167,7 @@ describe('hook dispatcher output', async () => {
 
 describe('skill listing cost', () => {
   // Every model-invocable skill's description rides along on every request.
-  // Reports, settings and cleanup are typed by the user (/cco-report …), so
+  // Reports, settings and cleanup are typed by the user (/cco report …), so
   // they stay out of the listing; only skills Claude uses mid-task stay in.
   it('lists only the skills Claude invokes itself', async () => {
     const { readdirSync, readFileSync: rf } = await import('fs');
@@ -3177,7 +3177,41 @@ describe('skill listing cost', () => {
       const fm = rf(join(dir, name, 'SKILL.md'), 'utf-8').split('---')[1] || '';
       return !/^disable-model-invocation:\s*true\s*$/m.test(fm);
     }).sort();
-    assert.deepEqual(listed, ['cco-anatomy', 'cco-git', 'cco-pack', 'cco-task', 'fresh-start', 'sharpen-prompt', 'smart-loader', 'token-check']);
+    assert.deepEqual(listed, ['cco', 'doc-digest', 'fresh-start', 'project-context', 'sharpen-prompt', 'token-check']);
+  });
+});
+
+describe('/cco router', async () => {
+  // v5: one /cco entry instead of 24 skills. Each command's instructions live
+  // in skills/cco/commands/<name>.md and are read only when that command runs.
+  const { readdirSync, readFileSync: rf } = await import('fs');
+  const { fileURLToPath } = await import('url');
+  const dir = fileURLToPath(new URL('../skills/cco', import.meta.url));
+  const router = rf(join(dir, 'SKILL.md'), 'utf-8');
+  const files = readdirSync(join(dir, 'commands')).map(f => f.replace(/\.md$/, '')).sort();
+  const listed = [...router.matchAll(/^\| (?:\*\(none\)\* \/ )?`(\w+)/gm)].map(m => m[1]).sort();
+
+  it('lists every command that has instructions, and nothing else', () => {
+    assert.deepEqual(listed, files);
+  });
+
+  it('pre-approves every script a command runs, and only those', () => {
+    const allowed = new Set([...router.matchAll(/Bash\(node \$\{CLAUDE_PLUGIN_ROOT\}\/src\/([\w-]+\.js):\*\)/g)].map(m => m[1]));
+    const used = new Set();
+    for (const f of files) {
+      for (const m of rf(join(dir, 'commands', `${f}.md`), 'utf-8').matchAll(/node \$\{CLAUDE_PLUGIN_ROOT\}\/src\/([\w-]+\.js)/g)) used.add(m[1]);
+    }
+    for (const m of router.matchAll(/`node \$\{CLAUDE_PLUGIN_ROOT\}\/src\/([\w-]+\.js)/g)) used.add(m[1]);
+    assert.deepEqual([...used].filter(u => !allowed.has(u)), [], 'run but not pre-approved');
+    assert.deepEqual([...allowed].filter(a => !used.has(a)), [], 'pre-approved but never run');
+  });
+
+  it('command files carry no frontmatter and name no old /cco-x commands', () => {
+    for (const f of files) {
+      const text = rf(join(dir, 'commands', `${f}.md`), 'utf-8');
+      assert.doesNotMatch(text, /^---/, f);
+      assert.doesNotMatch(text, /(^|[^\w.])\/cco-[a-z]/, f);
+    }
   });
 });
 
@@ -3190,7 +3224,7 @@ describe('works on every surface', async () => {
   const text = (n) => rf(join(root, 'skills', n, 'SKILL.md'), 'utf-8');
 
   it('chat skills run nothing locally', () => {
-    for (const n of ['fresh-start', 'token-check', 'sharpen-prompt']) {
+    for (const n of ['fresh-start', 'token-check', 'sharpen-prompt', 'doc-digest', 'project-context']) {
       assert.doesNotMatch(text(n), /CLAUDE_PLUGIN_ROOT|allowed-tools/, n);
     }
   });
@@ -3394,5 +3428,74 @@ describe('no environment reads, no network', () => {
     for (const f of readdirSync(dir)) {
       assert.doesNotMatch(rf(join(dir, f), 'utf-8'), /^tools:.*\bWeb(Fetch|Search)\b/m, f);
     }
+  });
+});
+
+describe('live meter (v5)', async () => {
+  const { meterLine, cacheMinutesLeft, learnTtl, nudges, formatTokens, SHORT_TTL_MIN, LONG_TTL_MIN } = await import('../src/meter-core.js');
+  const usage = (over = {}) => ({
+    context: { tokens: 142_000, window: 1_000_000, percent: 14 },
+    rateLimits: [{ kind: 'five_hour', percentUsed: 63.2 }, { kind: 'seven_day', percentUsed: 41 }],
+    cost: { usd: 3.1 },
+    ...over,
+  });
+
+  it('says nothing before the first reply', () => {
+    assert.equal(meterLine({ context: { window: 1_000_000 } }), undefined);
+    assert.equal(meterLine(undefined), undefined);
+  });
+
+  it('fits context, cost, limits and cache in one line', () => {
+    assert.equal(meterLine(usage(), 47), 'CCO · ctx 142K/1M 14% · $3.10 · 5h 63% · 7d 41% · cache 47m');
+    assert.equal(meterLine(usage({ rateLimits: [], cost: undefined }), 0), 'CCO · ctx 142K/1M 14% · cache cold');
+  });
+
+  it('formats token counts compactly', () => {
+    assert.equal(formatTokens(950), '950');
+    assert.equal(formatTokens(1_500_000), '1.5M');
+    assert.equal(formatTokens(200_000), '200K');
+    assert.equal(formatTokens(NaN), '?');
+  });
+
+  it('counts the cache down from the last reply', () => {
+    const t = 1_000_000_000;
+    assert.equal(cacheMinutesLeft(0, t, 60), null);
+    assert.equal(cacheMinutesLeft(t, t + 13 * 60_000, 60), 47);
+    assert.equal(cacheMinutesLeft(t, t + 6 * 60_000, 5), 0);
+  });
+
+  it('learns the cache lifetime from the first request after a pause', () => {
+    const ctx = 100_000;
+    // a hit after 20 minutes: the long cache
+    assert.equal(learnTtl(SHORT_TTL_MIN, 20, { cache_read_input_tokens: 95_000, cache_creation_input_tokens: 2_000 }, ctx), LONG_TTL_MIN);
+    // a full rewrite after 20 minutes: the short one
+    assert.equal(learnTtl(LONG_TTL_MIN, 20, { cache_read_input_tokens: 0, cache_creation_input_tokens: 98_000 }, ctx), SHORT_TTL_MIN);
+    // a short pause or a tiny context proves nothing
+    assert.equal(learnTtl(LONG_TTL_MIN, 3, { cache_read_input_tokens: 0, cache_creation_input_tokens: 98_000 }, ctx), LONG_TTL_MIN);
+    assert.equal(learnTtl(LONG_TTL_MIN, 20, { cache_read_input_tokens: 0, cache_creation_input_tokens: 5_000 }, 5_000), LONG_TTL_MIN);
+    // a miss after the hour is just the long cache running out
+    assert.equal(learnTtl(LONG_TTL_MIN, 90, { cache_read_input_tokens: 0, cache_creation_input_tokens: 98_000 }, ctx), LONG_TTL_MIN);
+  });
+
+  it('nudges once per kind, only when it matters', () => {
+    assert.deepEqual(nudges(usage(), { cacheLeft: 30 }), []);
+    const hot = usage({
+      context: { tokens: 720_000, window: 1_000_000, percent: 72 },
+      rateLimits: [{ kind: 'five_hour', percentUsed: 84, resetsAt: '2026-10-17T14:20:00Z' }],
+    });
+    const kinds = nudges(hot, { cacheLeft: 0 }).map(n => n.kind);
+    assert.deepEqual(kinds, ['context', 'five_hour', 'cache']);
+    assert.deepEqual(nudges(hot, { cacheLeft: 0, shown: new Set(kinds) }), []);
+    // a lapsed cache on a small context costs pennies
+    assert.deepEqual(nudges(usage({ context: { tokens: 20_000, window: 1_000_000, percent: 2 } }), { cacheLeft: 0 }), []);
+  });
+
+  it('is wired into hooks.json as a module', async () => {
+    const { readFileSync: rf } = await import('fs');
+    const hooks = JSON.parse(rf(new URL('../hooks/hooks.json', import.meta.url), 'utf-8'));
+    assert.deepEqual(hooks.modules, ['./meter.ts']);
+    const mod = rf(new URL('../hooks/meter.ts', import.meta.url), 'utf-8');
+    assert.match(mod, /from '\.\.\/src\/meter-core\.js'/);
+    assert.doesNotMatch(mod, /\$\.(fs|process|network|http)\b|fetch\(/, 'the meter reads no files and sends nothing');
   });
 });

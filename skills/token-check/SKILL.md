@@ -40,5 +40,5 @@ what uses up limits.
 4. When a conversation is long, start fresh from a handoff (the `fresh-start`
    skill).
 5. In Claude Code: read files with offset/limit, let the `context-optimizer`
-   scout subagent do wide exploration on Haiku, and run `/cco-audit` to see
+   scout subagent do wide exploration on Haiku, and run `/cco audit` to see
    where a session's tokens actually went.

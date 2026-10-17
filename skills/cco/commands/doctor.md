@@ -1,0 +1,40 @@
+# CCO Doctor
+
+When the user runs `/cco doctor` or reports the plugin "isn't working", run a quick health check.
+
+## How to use
+
+Standard run (fast — under 1s):
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/src/doctor.js
+```
+
+With test suite (slower — runs all unit tests):
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/src/doctor.js --tests
+```
+
+## What it checks
+
+- Plugin manifest and `package.json` exist
+- Versions are in sync (`plugin.json` and `package.json`)
+- `hooks.json` is valid JSON with all expected event types
+- Every script `hooks.json` runs is present in `src/`
+- The hooks really work: runs the hook through `sh -c` the way Claude Code
+  does and checks that a repeated read is deduplicated and a subagent's first
+  read is not
+- Data directory `~/.claude-context-optimizer/` is writable
+- `patterns.json` size is reasonable
+- Global stats file is parseable
+- User config has sane model + budget for the chosen model
+- Node version meets the >=18 requirement
+
+## Presentation
+
+Translate the doctor output into plain language. If anything is `fail`, walk the user through the fix:
+- versions out of sync → `npm run sync-version`
+- patterns.json too big → `/cco clean`
+- budget > model window → `/cco budget set <smaller>` or pick a 1M-context model (e.g. `opus-5.5`)
+- node too old → upgrade Node
+
+If everything is `pass`, confirm "плагин в порядке, текущая версия Х.Y.Z" and stop.

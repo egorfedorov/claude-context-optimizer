@@ -5,7 +5,7 @@
  *
  * A task is a named unit of work. While a task is active, the tokens your
  * session spends are attributed to it, so the dashboard can show cost *per task*
- * (not just per session). Combined with Smart Pack (/cco-pack), each task gets
+ * (not just per session). Combined with Smart Pack (/cco pack), each task gets
  * the minimal context it needs and you can see which task is burning budget.
  *
  * Storage: one JSON file (TASKS_FILE), a flat list of tasks scoped by project +
@@ -128,7 +128,7 @@ export function applyStatePatch(state, patch, maxChars = TASK_STATE_MAX_CHARS) {
 /** Patch the active task's state in a scope. Returns { state, task, error? }. */
 export function patchActiveTask(state, { project = null, sessionId = null, patch, stamp = null } = {}) {
   const active = getActiveTask(state, { project, sessionId });
-  if (!active) return { state, task: null, error: 'no active task — start one with /cco-task add "<name>"' };
+  if (!active) return { state, task: null, error: 'no active task — start one with /cco task add "<name>"' };
   const r = applyStatePatch(active.state || {}, patch);
   if (r.error) return { state, task: active, error: r.error };
   const next = { ...state, tasks: [...state.tasks] };
@@ -149,7 +149,7 @@ export function renderRehydration(task) {
     `[cco-task] Active task #${task.id}: ${task.name}`,
     'Execution state (authoritative — trust this over any summary of earlier turns):',
     JSON.stringify(st),
-    'Update it as you go: /cco-task patch \'{"key": value, "finished_key": null}\'',
+    'Update it as you go: /cco task patch \'{"key": value, "finished_key": null}\'',
   ].join('\n');
 }
 
@@ -213,7 +213,7 @@ function fmtCost(tokens, model) {
 function printTasks(state, project, model) {
   const list = tasksForProject(state, project, 12);
   if (!list.length) {
-    console.log('No tasks yet. Start one:  /cco-task add "<what you are working on>"');
+    console.log('No tasks yet. Start one:  /cco task add "<what you are working on>"');
     return;
   }
   console.log('  Tasks (newest first)');
@@ -243,7 +243,7 @@ function main() {
     const r = addTask(state, { name: rest, project, sessionId, tokensNow, stamp });
     saveTasks(r.state);
     console.log(`▶ Started task #${r.task.id}: ${r.task.name}`);
-    console.log('  Pack the minimal context for it:  /cco-pack "' + r.task.name + '"');
+    console.log('  Pack the minimal context for it:  /cco pack "' + r.task.name + '"');
     return;
   }
   if (action === 'patch') {

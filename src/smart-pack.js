@@ -314,7 +314,7 @@ function formatPack(pack, asJson) {
     }
   }
   out.push('');
-  out.push('  Tip: pass these to Claude as context, or apply via /cco-templates.');
+  out.push('  Tip: pass these to Claude as context, or apply via /cco templates.');
   out.push('');
   return out.join('\n');
 }
