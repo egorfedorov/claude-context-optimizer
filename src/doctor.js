@@ -118,7 +118,9 @@ check('hooks work end-to-end (sh -c)', () => {
           hook_event_name: 'PreToolUse', session_id: 'doctor', tool_name: 'Read',
           tool_input: { file_path: join(ROOT, 'src', 'utils.js') }, cwd: ROOT, ...extra,
         }),
-        env: { ...process.env, HOME: home, USERPROFILE: home },
+        // A throwaway HOME and PATH (to find node) only — nothing else from
+        // the user's environment reaches the child process.
+        env: { PATH: process.env.PATH, HOME: home, USERPROFILE: home },
         encoding: 'utf-8', timeout: 10_000,
       });
       if (r.status !== 0) throw new Error(`hook exited ${r.status}: ${(r.stderr || '').trim().slice(0, 120)}`);

@@ -13,7 +13,7 @@
     {
       "name": "context-optimizer",
       "description": "Spend less of your Claude usage on re-reading. In chat: a fresh-start handoff, token checks and prompt sharpening. In Claude Code and Cowork: Haiku 5.5 subagents do the reading and test runs so the expensive model's context stays small, plus read dedup, budget and cache-break warnings, and /cco-audit of your own transcripts. Local, no telemetry.",
-      "version": "4.23.0",
+      "version": "4.23.1",
       "source": "./"
     }
   ]

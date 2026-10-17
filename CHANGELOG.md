@@ -1,5 +1,19 @@
 # Changelog
 
+## 4.23.1 — 2026-10-17
+
+The directory's security scan held v4.22.0 with "Update adds credential
+forward". Nothing was sent anywhere, but the code passed whole environments
+around:
+
+- The SessionStart cost policy received all of `process.env` to read one
+  variable. It now gets `CCO_ORCHESTRATE` alone.
+- `/cco-doctor` and the end-to-end tests started child processes with a copy
+  of the user's environment. They now pass only `PATH` (to find `node`) and a
+  throwaway `HOME`.
+- A test fails if any source passes `process.env` as a whole again, and the
+  README's privacy section says so.
+
 ## 4.23.0 — 2026-10-17
 
 The directory dashboard showed where the installs come from: 56% from
