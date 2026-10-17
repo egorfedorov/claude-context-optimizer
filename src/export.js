@@ -33,15 +33,6 @@ export function escapeHtml(value) {
 }
 
 /**
- * JSON safe to embed inside a <script> block. JSON.stringify does NOT escape
- * `</script>`, so a project named `</script>...` closes the block and whatever
- * follows is parsed as markup.
- */
-export function jsonForScript(value) {
-  return JSON.stringify(value).replace(/</g, '\\u003c');
-}
-
-/**
  * Text safe inside a markdown table cell rendered as a code span.
  * Backslashes go first: escaping `|` before `\` turns `a\|b` into `a\\|b`,
  * where the pair reads as a literal backslash and the pipe splits the cell again.
@@ -118,6 +109,52 @@ function exportMarkdown() {
   return outFile;
 }
 
+// ── Charts ────────────────────────────────────────────────────────────────────
+// Drawn here as inline SVG: the report is one self-contained file that opens
+// offline and loads nothing from anywhere.
+
+const CW = 480, CH = 200, CP = 30;
+
+/** A line (default) or bar chart of one series. Labels are escaped. */
+export function svgChart(values, labels, { type = 'line', color = '#58a6ff', max, suffix = '' } = {}) {
+  if (!values.length) return '<p class="empty">No sessions yet.</p>';
+  const n = values.length;
+  const top = max ?? Math.max(1, ...values);
+  const y = v => CH - CP - (Math.min(Math.max(0, v), top) / top) * (CH - 2 * CP);
+  const f = v => v.toFixed(1);
+  let body;
+  if (type === 'bar') {
+    const step = (CW - 2 * CP) / n;
+    const bw = Math.max(2, step * 0.7);
+    body = values.map((v, i) => {
+      const x = CP + i * step + (step - bw) / 2;
+      return `<rect x="${f(x)}" y="${f(y(v))}" width="${f(bw)}" height="${f(CH - CP - y(v))}" fill="${color}"><title>${escapeHtml(labels[i])}: ${v}${suffix}</title></rect>`;
+    }).join('');
+  } else {
+    const x = i => CP + (n === 1 ? (CW - 2 * CP) / 2 : (i * (CW - 2 * CP)) / (n - 1));
+    const pts = values.map((v, i) => `${f(x(i))},${f(y(v))}`).join(' ');
+    body = `<polygon points="${f(x(0))},${CH - CP} ${pts} ${f(x(n - 1))},${CH - CP}" fill="${color}22"/>` +
+      `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2"/>`;
+  }
+  const axis = `<line x1="${CP}" y1="${CH - CP}" x2="${CW - CP}" y2="${CH - CP}" stroke="#30363d"/>` +
+    `<text x="${CP - 4}" y="${CP + 4}" text-anchor="end">${top}${suffix}</text>` +
+    `<text x="${CP - 4}" y="${CH - CP}" text-anchor="end">0</text>` +
+    `<text x="${CP}" y="${CH - 10}">${escapeHtml(labels[0])}</text>` +
+    `<text x="${CW - CP}" y="${CH - 10}" text-anchor="end">${escapeHtml(labels[n - 1])}</text>`;
+  return `<svg viewBox="0 0 ${CW} ${CH}" role="img">${axis}${body}</svg>`;
+}
+
+/** Tokens per project as a table of bars. */
+export function projectBars(projects) {
+  if (!projects.length) return '<p class="empty">No sessions yet.</p>';
+  const top = Math.max(1, ...projects.map(([, d]) => d.tokens));
+  const rows = projects.map(([name, d]) => {
+    const w = Math.round((d.tokens / top) * 160);
+    return `<tr><td><code>${escapeHtml(name)}</code></td><td>${formatTokens(d.tokens)}</td><td><span class="bar bar-y" style="width:${w}px"></span></td></tr>`;
+  }).join('');
+  return `<table>${rows}</table>`;
+}
+
 export function buildHtml(stats, date) {
   const overallWaste = stats.totalTokensTracked > 0 ?
     Math.round((stats.estimatedTokensSaved / stats.totalTokensTracked) * 100) : 0;
@@ -153,7 +190,6 @@ export function buildHtml(stats, date) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Context Optimizer Dashboard</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"><\/script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, 'SF Mono', 'Fira Code', monospace; background: #0d1117; color: #c9d1d9; padding: 1.5rem; }
@@ -173,7 +209,9 @@ export function buildHtml(stats, date) {
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
   @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
   .chart-box { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 1.2rem; }
-  .chart-box canvas { max-height: 260px; }
+  .chart-box svg { width: 100%; height: auto; display: block; }
+  .chart-box svg text { fill: #8b949e; font-size: 10px; font-family: inherit; }
+  .empty { color: #484f58; font-size: 0.8rem; }
   table { width: 100%; border-collapse: collapse; margin: 0.8rem 0; }
   th { text-align: left; color: #8b949e; font-size: 0.7rem; text-transform: uppercase; padding: 0.5rem 0.4rem; border-bottom: 1px solid #30363d; }
   td { padding: 0.5rem 0.4rem; border-bottom: 1px solid #21262d; font-size: 0.82rem; }
@@ -183,12 +221,9 @@ export function buildHtml(stats, date) {
   .donate { background: linear-gradient(135deg, #161b22 0%, #1a1f2e 100%); border: 1px solid #30363d; border-radius: 10px; padding: 1.5rem; margin: 2rem 0; }
   .donate h3 { color: #58a6ff; margin-bottom: 0.8rem; font-size: 1rem; }
   .donate p { color: #8b949e; font-size: 0.85rem; margin-bottom: 1rem; line-height: 1.5; }
-  .wallet { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 0.6rem 0.8rem; margin: 0.4rem 0; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; cursor: pointer; transition: border-color 0.2s; }
-  .wallet:hover { border-color: #58a6ff; }
+  .wallet { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 0.6rem 0.8rem; margin: 0.4rem 0; display: flex; gap: 0.8rem; align-items: center; font-size: 0.78rem; }
   .wallet .chain { color: #8b949e; min-width: 40px; }
-  .wallet .addr { color: #c9d1d9; word-break: break-all; }
-  .wallet .copy { color: #58a6ff; font-size: 0.7rem; opacity: 0; transition: opacity 0.2s; }
-  .wallet:hover .copy { opacity: 1; }
+  .wallet .addr { color: #c9d1d9; word-break: break-all; user-select: all; }
   footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #21262d; color: #484f58; font-size: 0.7rem; display: flex; justify-content: space-between; }
   footer a { color: #58a6ff; text-decoration: none; }
 </style>
@@ -235,22 +270,22 @@ export function buildHtml(stats, date) {
   <div class="grid-2">
     <div class="chart-box">
       <h2>Waste Trend</h2>
-      <canvas id="wasteTrend"></canvas>
+      ${svgChart(chartWaste, chartLabels, { color: '#f85149', max: 100, suffix: '%' })}
     </div>
     <div class="chart-box">
       <h2>Token Usage</h2>
-      <canvas id="tokenUsage"></canvas>
+      ${svgChart(chartTokens, chartLabels, { type: 'bar', color: '#58a6ff', suffix: 'K' })}
     </div>
   </div>
 
   <div class="grid-2" style="margin-top:1.5rem">
     <div class="chart-box">
       <h2>Tokens by Project</h2>
-      <canvas id="projectChart"></canvas>
+      ${projectBars(projects)}
     </div>
     <div class="chart-box">
       <h2>Edits per Session</h2>
-      <canvas id="editChart"></canvas>
+      ${svgChart(chartEdits, chartLabels, { color: '#3fb950' })}
     </div>
   </div>
 
@@ -279,132 +314,25 @@ export function buildHtml(stats, date) {
   <div class="donate">
     <h3>Saved tokens? Support the project</h3>
     <p>context-optimizer is free and open source. If it saved you money on tokens, consider supporting development with a donation.</p>
-    <div class="wallet" onclick="navigator.clipboard.writeText('${DONATION_ADDRESSES.btc}')">
+    <div class="wallet">
       <span class="chain">BTC</span>
       <span class="addr">${DONATION_ADDRESSES.btc}</span>
-      <span class="copy">click to copy</span>
     </div>
-    <div class="wallet" onclick="navigator.clipboard.writeText('${DONATION_ADDRESSES.eth}')">
+    <div class="wallet">
       <span class="chain">ETH</span>
       <span class="addr">${DONATION_ADDRESSES.eth}</span>
-      <span class="copy">click to copy</span>
     </div>
-    <div class="wallet" onclick="navigator.clipboard.writeText('${DONATION_ADDRESSES.sol}')">
+    <div class="wallet">
       <span class="chain">SOL</span>
       <span class="addr">${DONATION_ADDRESSES.sol}</span>
-      <span class="copy">click to copy</span>
     </div>
   </div>
 
   <footer>
     <span>Generated by <a href="https://github.com/egorfedorov/claude-context-optimizer">claude-context-optimizer</a></span>
-    <span>v3.0.0</span>
   </footer>
 </div>
 
-<script>
-const chartDefaults = {
-  color: '#8b949e',
-  borderColor: '#30363d',
-  backgroundColor: 'transparent',
-};
-Chart.defaults.color = '#8b949e';
-Chart.defaults.borderColor = '#30363d22';
-
-// Waste Trend
-new Chart(document.getElementById('wasteTrend'), {
-  type: 'line',
-  data: {
-    labels: ${jsonForScript(chartLabels)},
-    datasets: [{
-      label: 'Waste %',
-      data: ${jsonForScript(chartWaste)},
-      borderColor: '#f85149',
-      backgroundColor: '#f8514920',
-      fill: true,
-      tension: 0.3,
-      pointRadius: 2,
-      pointHoverRadius: 5,
-    }]
-  },
-  options: {
-    responsive: true,
-    plugins: { legend: { display: false } },
-    scales: {
-      y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } },
-      x: { ticks: { maxTicksLimit: 8 } }
-    }
-  }
-});
-
-// Token Usage
-new Chart(document.getElementById('tokenUsage'), {
-  type: 'bar',
-  data: {
-    labels: ${jsonForScript(chartLabels)},
-    datasets: [{
-      label: 'Tokens (K)',
-      data: ${jsonForScript(chartTokens)},
-      backgroundColor: '#58a6ff40',
-      borderColor: '#58a6ff',
-      borderWidth: 1,
-      borderRadius: 3,
-    }]
-  },
-  options: {
-    responsive: true,
-    plugins: { legend: { display: false } },
-    scales: {
-      y: { beginAtZero: true, ticks: { callback: v => v + 'K' } },
-      x: { ticks: { maxTicksLimit: 8 } }
-    }
-  }
-});
-
-// Project Doughnut
-new Chart(document.getElementById('projectChart'), {
-  type: 'doughnut',
-  data: {
-    labels: ${jsonForScript(projects.map(([name]) => name))},
-    datasets: [{
-      data: ${jsonForScript(projects.map(([, d]) => Math.round(d.tokens / 1000)))},
-      backgroundColor: ['#58a6ff', '#3fb950', '#d29922', '#f85149', '#bc8cff', '#79c0ff', '#7ee787', '#ffa657'],
-      borderWidth: 0,
-    }]
-  },
-  options: {
-    responsive: true,
-    plugins: {
-      legend: { position: 'right', labels: { boxWidth: 12, padding: 8, font: { size: 11 } } }
-    }
-  }
-});
-
-// Edits per session
-new Chart(document.getElementById('editChart'), {
-  type: 'line',
-  data: {
-    labels: ${jsonForScript(chartLabels)},
-    datasets: [{
-      label: 'Edits',
-      data: ${jsonForScript(chartEdits)},
-      borderColor: '#3fb950',
-      backgroundColor: '#3fb95020',
-      fill: true,
-      tension: 0.3,
-      pointRadius: 2,
-    }]
-  },
-  options: {
-    responsive: true,
-    plugins: { legend: { display: false } },
-    scales: {
-      y: { beginAtZero: true },
-      x: { ticks: { maxTicksLimit: 8 } }
-    }
-  }
-});
-<\/script>
 </body>
 </html>`;
 

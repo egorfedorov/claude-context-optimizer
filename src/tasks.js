@@ -223,7 +223,7 @@ function printTasks(state, project, model) {
 function main() {
   const action = process.argv[2] || 'list';
   const rest = process.argv.slice(3).join(' ').trim();
-  const project = process.env.CCO_PROJECT || process.cwd();
+  const project = process.cwd();
   const sessionId = getLatestSessionId();
   const model = (loadConfig().model) || 'opus-5.5';
   const tokensNow = getSessionTokenTotal(sessionId);

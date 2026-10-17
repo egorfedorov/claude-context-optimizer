@@ -51,8 +51,7 @@ ensureDataDirs();
 // which keeps Read Cache aggressive without false re-allows.
 
 // The base ratios are user-tunable (#39): config.thresholds.staleTokenRatio /
-// .staleFiles / .staleTimeMs, each range-validated. CCO_STALE_TIME_MS still
-// wins over config, for one-off experiments without editing anything.
+// .staleFiles / .staleTimeMs, each range-validated.
 
 let _thresholdCache = null;
 let _sessionModel = null;
@@ -70,8 +69,7 @@ function getStaleThresholds() {
   const tokens = Math.max(10_000, Math.min(200_000, Math.round(budget * t.staleTokenRatio)));
   // Files: scale gently with budget (8 @ 200K, 32 @ 1M by default)
   const files = Math.max(6, Math.min(40, Math.round(t.staleFiles * (budget / 200_000))));
-  // Time: env override beats config
-  const timeMs = parseInt(process.env.CCO_STALE_TIME_MS || '', 10) || t.staleTimeMs;
+  const timeMs = t.staleTimeMs;
   _thresholdCache = { tokens, files, timeMs, budget };
   return _thresholdCache;
 }
