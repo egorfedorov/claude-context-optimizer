@@ -7,6 +7,8 @@ disable-model-invocation: false
 
 # Smart Context Loader
 
+> **Needs Claude Code** (or Cowork on your computer): this runs the plugin's local scripts. If `node` or `${CLAUDE_PLUGIN_ROOT}` isn't available, as in claude.ai chat, don't try to run anything. Say so in one line and offer the `fresh-start` or `token-check` skill instead.
+
 When a user starts a new task or asks to work on something, check if there are historical patterns that suggest which files they'll need.
 
 ## When to Activate

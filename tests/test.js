@@ -3149,7 +3149,32 @@ describe('skill listing cost', () => {
       const fm = rf(join(dir, name, 'SKILL.md'), 'utf-8').split('---')[1] || '';
       return !/^disable-model-invocation:\s*true\s*$/m.test(fm);
     }).sort();
-    assert.deepEqual(listed, ['cco-anatomy', 'cco-git', 'cco-pack', 'cco-task', 'smart-loader']);
+    assert.deepEqual(listed, ['cco-anatomy', 'cco-git', 'cco-pack', 'cco-task', 'fresh-start', 'sharpen-prompt', 'smart-loader', 'token-check']);
+  });
+});
+
+describe('works on every surface', async () => {
+  // claude.ai chat loads only skills (no hooks, no agents, no local scripts).
+  const { readdirSync, readFileSync: rf } = await import('fs');
+  const { fileURLToPath } = await import('url');
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const skills = readdirSync(join(root, 'skills'));
+  const text = (n) => rf(join(root, 'skills', n, 'SKILL.md'), 'utf-8');
+
+  it('chat skills run nothing locally', () => {
+    for (const n of ['fresh-start', 'token-check', 'sharpen-prompt']) {
+      assert.doesNotMatch(text(n), /CLAUDE_PLUGIN_ROOT|allowed-tools/, n);
+    }
+  });
+
+  it('every skill that runs a script says it needs Claude Code', () => {
+    for (const n of skills.filter(n => /CLAUDE_PLUGIN_ROOT\}\/src/.test(text(n)))) {
+      assert.match(text(n), /Needs Claude Code/, n);
+    }
+  });
+
+  it('README shows bundled images with Markdown syntax (directory rule)', () => {
+    assert.doesNotMatch(rf(join(root, 'README.md'), 'utf-8'), /<img\b/);
   });
 });
 

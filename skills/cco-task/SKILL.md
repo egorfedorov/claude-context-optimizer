@@ -9,6 +9,8 @@ allowed-tools:
 
 # Tasks — per-task context, cost, and execution state
 
+> **Needs Claude Code** (or Cowork on your computer): this runs the plugin's local scripts. If `node` or `${CLAUDE_PLUGIN_ROOT}` isn't available, as in claude.ai chat, don't try to run anything. Say so in one line and offer the `fresh-start` or `token-check` skill instead.
+
 A task is a named unit of work. While a task is active, the tokens the session
 spends are attributed to it, so the Control Center (`/cco`) can show cost **per
 task**, not just per session.

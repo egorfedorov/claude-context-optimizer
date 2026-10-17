@@ -9,6 +9,8 @@ allowed-tools:
 
 # Smart Context Pack
 
+> **Needs Claude Code** (or Cowork on your computer): this runs the plugin's local scripts. If `node` or `${CLAUDE_PLUGIN_ROOT}` isn't available, as in claude.ai chat, don't try to run anything. Say so in one line and offer the `fresh-start` or `token-check` skill instead.
+
 When the user runs `/cco-pack` or asks "what files do I need for X", build a curated, token-budget-aware list of files to load instead of guessing or reading the whole repo.
 
 ## How to use

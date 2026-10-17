@@ -10,6 +10,8 @@ allowed-tools:
 
 # CCO Tools — what your tools really cost
 
+> **Needs Claude Code** (or Cowork on your computer): this runs the plugin's local scripts. If `node` or `${CLAUDE_PLUGIN_ROOT}` isn't available, as in claude.ai chat, don't try to run anything. Say so in one line and offer the `fresh-start` or `token-check` skill instead.
+
 MCP and Agent token costs used to be constants picked once (`mcp__*` ≈ 200 in,
 `Agent` ≈ 500). Real results vary by orders of magnitude — a "list all issues"
 query and a one-row lookup are the same tool name and nowhere near the same

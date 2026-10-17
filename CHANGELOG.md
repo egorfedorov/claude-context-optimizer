@@ -1,5 +1,42 @@
 # Changelog
 
+## 4.23.0 — 2026-10-17
+
+The directory dashboard showed where the installs come from: 56% from
+claude.ai chat, 24% from Cowork, 20% from Claude Code. Chat loads a plugin's
+skills only, with no hooks, no subagents and no local scripts, so most people
+who installed CCO got almost nothing from it. This release gives every
+surface something that works.
+
+### Skills that work everywhere (no scripts)
+
+- **`fresh-start`** writes a compact handoff (goal, decisions, state, next
+  step, facts not to lose) so work continues in a new conversation. Claude
+  offers it when a conversation grows long or the user hits limits. In Claude
+  Code it points to `/compact` instead.
+- **`token-check`** estimates the tokens in a text, a file or the
+  conversation, explains that everything in a conversation is re-sent with
+  every message, and lists the cheapest ways to cut.
+- **`sharpen-prompt`** rewrites a vague request into a precise prompt, or asks
+  the one question it can't answer.
+
+### Fewer dead ends outside Claude Code
+
+- Every skill that runs a local script now says up front that it needs Claude
+  Code (or Cowork on your computer), and in chat offers `fresh-start` or
+  `token-check` instead of failing. `/cco-orchestrate` notes that its
+  subagents don't load in chat.
+
+### Directory listing
+
+- The README, which the directory shows as the listing description, opens
+  with what each surface gets. Bundled images now use Markdown syntax instead
+  of HTML `<img>`, which the directory's checklist holds for a reviewer.
+- `plugin.json` sets `displayName: "Context Optimizer (CCO)"`, search
+  keywords, and the directory listing fields: `icon` (a new 512×512
+  `assets/icon.png`; the listing showed the author's avatar), `homepage`,
+  `documentationUrl`, `supportUrl` and `privacyPolicyUrl`.
+
 ## 4.22.0 — 2026-10-17
 
 We checked, on real transcripts, whether CCO saves anything. Read dedup works,

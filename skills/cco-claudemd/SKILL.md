@@ -10,6 +10,8 @@ allowed-tools:
 
 # CLAUDE.md Analyzer
 
+> **Needs Claude Code** (or Cowork on your computer): this runs the plugin's local scripts. If `node` or `${CLAUDE_PLUGIN_ROOT}` isn't available, as in claude.ai chat, don't try to run anything. Say so in one line and offer the `fresh-start` or `token-check` skill instead.
+
 Analyze CLAUDE.md files in the current project for token bloat and optimization opportunities.
 
 Run the analyzer:

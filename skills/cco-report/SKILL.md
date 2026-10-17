@@ -11,6 +11,8 @@ allowed-tools:
 
 # Context Token ROI Report
 
+> **Needs Claude Code** (or Cowork on your computer): this runs the plugin's local scripts. If `node` or `${CLAUDE_PLUGIN_ROOT}` isn't available, as in claude.ai chat, don't try to run anything. Say so in one line and offer the `fresh-start` or `token-check` skill instead.
+
 Generate and display a comprehensive token usage report across all tracked sessions.
 
 Run:

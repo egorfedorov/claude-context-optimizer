@@ -10,6 +10,8 @@ allowed-tools:
 
 # CCO Doctor
 
+> **Needs Claude Code** (or Cowork on your computer): this runs the plugin's local scripts. If `node` or `${CLAUDE_PLUGIN_ROOT}` isn't available, as in claude.ai chat, don't try to run anything. Say so in one line and offer the `fresh-start` or `token-check` skill instead.
+
 When the user runs `/cco-doctor` or reports the plugin "isn't working", run a quick health check.
 
 ## How to use

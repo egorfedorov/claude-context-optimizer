@@ -10,6 +10,8 @@ allowed-tools:
 
 # Prompt Coach
 
+> **Needs Claude Code** (or Cowork on your computer): this runs the plugin's local scripts. If `node` or `${CLAUDE_PLUGIN_ROOT}` isn't available, as in claude.ai chat, don't try to run anything. Say so in one line and offer the `fresh-start` or `token-check` skill instead.
+
 When the user runs `/cco-coach` or asks for "prompt feedback" / "оцени мой промпт", run the analyzer on the user's last natural-language ask (or on text they provide).
 
 ## How to use
