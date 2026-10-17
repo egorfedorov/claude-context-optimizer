@@ -2952,8 +2952,9 @@ describe('hooks end-to-end (sh -c, hooks.json commands)', async () => {
     wf(file, Array.from({ length: 60 }, (_, i) =>
       i % 20 === 0 ? `export function part${i / 20}() {` : i % 20 === 19 ? '}' : `  const v${i} = ${i};`,
     ).join('\n') + '\n');
-    const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_PLUGIN_ROOT: ROOT };
-    delete env.CI; delete env.CCO_QUIET; // quiet mode would mute the prompt coach
+    // Only what the hooks need: PATH to find node, a throwaway HOME. CI and
+    // CCO_QUIET stay out (quiet mode would mute the prompt coach).
+    const env = { PATH: process.env.PATH, HOME: home, USERPROFILE: home, CLAUDE_PLUGIN_ROOT: ROOT };
     const fire = (event, fields = {}, root = ROOT) => {
       const r = spawnSync('/bin/sh', ['-c', commandFor(event)], {
         input: JSON.stringify({ hook_event_name: event, session_id: 'e2e', cwd: project, ...fields }),
@@ -3307,7 +3308,7 @@ describe('cost policy', async () => {
   it('is on by default and can be turned off', () => {
     assert.equal(costPolicy('startup'), COST_POLICY);
     assert.equal(costPolicy('startup', { orchestrate: false }), '');
-    assert.equal(costPolicy('startup', {}, { CCO_ORCHESTRATE: '0' }), '');
+    assert.equal(costPolicy('startup', {}, '0'), '');
     assert.equal(costPolicy('fork'), '');
   });
   it('stays short', () => {
@@ -3330,5 +3331,22 @@ describe('Haiku agents', async () => {
   it('scout cannot change files or run commands', () => {
     const tools = /^tools: (.*)$/m.exec(fm('scout'))[1].split(',').map(t => t.trim());
     assert.deepEqual(tools.filter(t => ['Bash', 'Edit', 'Write', 'NotebookEdit'].includes(t)), []);
+  });
+});
+
+describe('no environment forwarding', () => {
+  // The directory's security scan held v4.22.0 for "Update adds credential
+  // forward". Code reads named CCO_* variables only and never passes the whole
+  // environment on, to a function, a child process or anywhere else.
+  it('no source passes process.env as a whole', async () => {
+    const { readdirSync, readFileSync: rf } = await import('fs');
+    const { fileURLToPath } = await import('url');
+    const root = fileURLToPath(new URL('..', import.meta.url));
+    const files = ['src', 'scripts', 'tests', 'benchmark'].flatMap(d =>
+      readdirSync(join(root, d)).filter(f => f.endsWith('.js')).map(f => join(root, d, f)));
+    for (const f of files) {
+      const code = rf(f, 'utf-8').replace(/\/\/.*$/gm, '');
+      assert.doesNotMatch(code, /\.\.\.process\.env\b|process\.env\s*[,)]/, f);
+    }
   });
 });

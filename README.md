@@ -1057,6 +1057,7 @@ This plugin:
 - **Runs `git` locally** for `/cco-git`, `/cco-pack` and `/cco-anatomy`; nothing else is executed
 - **Stores everything locally** in `~/.claude-context-optimizer/`, pruned automatically (90 days for session history, 14 for live-session state)
 - **Sends zero telemetry** — the plugin's own code makes no network calls, no analytics, no tracking
+- **Never touches credentials** — it reads only its own `CCO_*` settings variables, and never passes your environment on to another process or anywhere else
 - **Ships two subagents** (`scout`, `runner`) that Claude can call. They use Claude Code's own tools under your permission settings: `scout` may use WebFetch/WebSearch when asked to read web docs, and `runner` runs the commands it is given through Bash
 - **Can be fully wiped** with `/cco-clean --reset-all`
 

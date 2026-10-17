@@ -85,9 +85,13 @@ export const COST_POLICY =
   'only a short summary, so this context stays small. Do a single known file or one grep yourself, and keep ' +
   'edits and design decisions here.';
 
-/** The policy text for a SessionStart, or '' (off, or already in context). */
-export function costPolicy(source, cfg = {}, env = {}) {
-  if (env.CCO_ORCHESTRATE === '0' || cfg.orchestrate === false) return '';
+/**
+ * The policy text for a SessionStart, or '' (off, or already in context).
+ * `optOut` is the value of CCO_ORCHESTRATE — the one variable read, never the
+ * whole environment.
+ */
+export function costPolicy(source, cfg = {}, optOut = '') {
+  if (optOut === '0' || cfg.orchestrate === false) return '';
   // A resumed or forked conversation still carries the earlier copy.
   if (source === 'resume' || source === 'fork') return '';
   return COST_POLICY;
@@ -173,7 +177,7 @@ export async function dispatch(event) {
       case 'SessionStart': {
         await safely(async () => (await import('./tracker.js')).trackEvent(event));
         context.push(await safely(async () => (await import('./tasks.js')).rehydrateText(event)));
-        const policy = costPolicy(event.source, loadConfig(), process.env);
+        const policy = costPolicy(event.source, loadConfig(), process.env.CCO_ORCHESTRATE);
         if (policy) {
           context.push(policy);
           // It enters Claude's context, so it counts against NET savings.
