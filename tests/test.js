@@ -3455,9 +3455,10 @@ describe('live meter (v5)', async () => {
     ...over,
   });
 
-  it('says nothing before the first reply', () => {
-    assert.equal(meterLine({ context: { window: 1_000_000 } }), undefined);
-    assert.equal(meterLine(undefined), undefined);
+  it('is visible before the first reply, with whatever is known', () => {
+    assert.equal(meterLine({ context: { window: 1_000_000 }, rateLimits: [], cost: { usd: 0 } }), 'ctx after the first reply');
+    assert.equal(meterLine(undefined), 'ctx after the first reply');
+    assert.equal(meterLine({ context: { window: 1_000_000 }, rateLimits: [{ kind: 'seven_day', percentUsed: 94 }] }), 'ctx after the first reply · 7d 94%');
   });
 
   it('fits context, cost, limits and cache in one line', () => {

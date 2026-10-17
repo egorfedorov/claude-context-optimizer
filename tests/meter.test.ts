@@ -84,3 +84,21 @@ test('/cco-meter on and off say what they mean; bare /cco-meter toggles', async 
   expect((await $.command.run({ command: 'cco-meter', args: 'OFF ' })).text).toContain('off')
   expect((await $.command.run({ command: 'cco-meter', args: '' })).text).toBe('Live meter on.')
 })
+
+test('shows the line as soon as the session starts, before any reply', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  mock.store(on)
+  const lines: (string | undefined)[] = []
+  on('session.usage', () => ({
+    value: { startedAt: 0, context: { window: 1_000_000 }, rateLimits: [{ kind: 'seven_day', percentUsed: 94 }] },
+  }))
+  on('ui.status', ($, e) => {
+    lines.push(e.text)
+    return { value: undefined }
+  })
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+
+  await $.session.start({ cwd: '/p', surface: 'terminal', isInteractive: true })
+  expect(lines.at(-1)).toBe('ctx after the first reply · 7d 94%')
+})
