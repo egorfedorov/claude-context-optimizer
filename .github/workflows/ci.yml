@@ -7,23 +7,31 @@ on:
     branches: [main]
 
 jobs:
+  # Job names are required status checks on main ("test (18)" …) — renaming
+  # the job or adding a matrix axis leaves them unreported and blocks merges.
   test:
-    # Hooks run under `sh -c`: dash on Ubuntu, bash on macOS. The end-to-end
-    # tests drive hooks.json through both — read dedup once broke on dash only.
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
         node-version: [18, 20, 22, 24]
-        include:
-          - os: macos-latest
-            node-version: 22
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
+      - run: npm test
+      - run: node src/doctor.js
+
+  # Hooks run under `sh -c`: dash on Ubuntu, bash on macOS. The end-to-end
+  # tests drive hooks.json through both — read dedup once broke on dash only.
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
       - run: npm test
       - run: node src/doctor.js
 

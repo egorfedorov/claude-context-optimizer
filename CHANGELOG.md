@@ -45,7 +45,13 @@ injections now count too.
 - **Honest re-read size.** A full read of an 830-line file was booked as the
   Read tool's 2000-line default (~20K tokens instead of ~8.5K).
 - Refusals use `permissionDecision: "deny"` instead of the deprecated
-  top-level `decision: "block"`.
+  top-level `decision: "block"`. Claude Code shows every refusal as a "hook
+  error", so the message now says outright that the re-read was skipped and
+  that Claude should use the copy it already has. It shows a file map only
+  when the file has structure to map.
+- Checked live in Claude Code 2.1.302. Claude Code does not skip unchanged
+  re-reads on its own: without CCO, the second Read of a file returns the
+  whole file again.
 
 ### One process per event
 

@@ -246,32 +246,30 @@ function record(scope, filePath, mtime, offset, end, ext) {
 
 function buildBlockMessage(filePath, entry, wasPartialRequest) {
   const name = basename(filePath);
-  let landmarks, digest;
+  let landmarks = [], digest = '';
   try {
     landmarks = parseFileStructure(filePath);
-    digest = formatDigest(landmarks, entry.lines);
-  } catch {
-    landmarks = [];
-    digest = '';
-  }
+    // A "no landmarks" line tells Claude nothing — only show a real map.
+    if (landmarks.length) digest = '\n' + formatDigest(landmarks, entry.lines);
+  } catch { /* map is best-effort */ }
 
   // Pick a useful offset/limit suggestion from the landmarks
   let suggestion = '';
   if (landmarks.length > 1) {
     const mid = landmarks[Math.floor(landmarks.length / 2)];
-    suggestion = `\n→ Example: Read with offset=${mid.line - 1}, limit=50 to see ${mid.label}`;
+    suggestion = `\n→ Need a different part? Read with offset=${mid.line - 1}, limit=50 to see ${mid.label}`;
   }
 
-  const partialHint = wasPartialRequest ? ' This section is already loaded.' : '';
-
-  const reason =
-    `⛔ [read-cache] Already loaded ${name} this session ` +
-    `(${entry.lines} lines, ~${formatTokens(entry.tokens)} tokens).` +
-    `${partialHint} File unchanged.\n${digest}${suggestion}` +
-    `\nIf its contents are no longer in your context (older tool results cleared), ` +
-    `repeat the same Read and it will be allowed.`;
-
-  return reason;
+  // Claude Code labels every refusal "hook error", and a model that takes it
+  // for a failure retries or reports being blocked. Say plainly that it is a
+  // skip, and that the copy it already has is the one to use.
+  const what = wasPartialRequest ? 'That section of' : 'The full';
+  return (
+    `✅ [read-cache] Not an error — re-read skipped to save tokens. ${what} ${name} is already in your context ` +
+    `from an earlier Read this session, and the file is unchanged since (${entry.lines} lines, ~${formatTokens(entry.tokens)} tokens). ` +
+    `Use that copy.${digest}${suggestion}` +
+    `\nIf it is no longer in your context (older tool results cleared), repeat the same Read and it will go through.`
+  );
 }
 
 // ── Hook handlers ─────────────────────────────────────────────────────────────

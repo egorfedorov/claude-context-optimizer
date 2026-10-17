@@ -2949,7 +2949,9 @@ describe('hooks end-to-end (sh -c, hooks.json commands)', async () => {
     const project = join(home, 'proj');
     mkdirSync(project);
     const file = join(project, 'mod.js');
-    wf(file, Array.from({ length: 60 }, (_, i) => `export const v${i} = ${i};`).join('\n') + '\n');
+    wf(file, Array.from({ length: 60 }, (_, i) =>
+      i % 20 === 0 ? `export function part${i / 20}() {` : i % 20 === 19 ? '}' : `  const v${i} = ${i};`,
+    ).join('\n') + '\n');
     const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_PLUGIN_ROOT: ROOT };
     delete env.CI; delete env.CCO_QUIET; // quiet mode would mute the prompt coach
     const fire = (event, fields = {}, root = ROOT) => {
@@ -2981,7 +2983,10 @@ describe('hooks end-to-end (sh -c, hooks.json commands)', async () => {
     assert.equal(read(), null);
     const out = read();
     assert.ok(denied(out));
-    assert.match(out.hookSpecificOutput.permissionDecisionReason, /Already loaded mod\.js .*61 lines/);
+    const reason = out.hookSpecificOutput.permissionDecisionReason;
+    assert.match(reason, /Not an error — re-read skipped/);
+    assert.match(reason, /The full mod\.js is already in your context.*61 lines/);
+    assert.match(reason, /📋 File map/, 'a file with structure gets its map');
   });
 
   it('gives each subagent its own context', () => {
