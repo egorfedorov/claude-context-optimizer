@@ -5,7 +5,7 @@ must make a number more true, a waste more visible, or a fix more automatic.
 
 ## v4.4 — Act, don't just report
 
-- [x] **`/cco-overhead` auto-fix** — shipped in v4.6.0: `overhead.js mcp`
+- [x] **`/cco overhead` auto-fix** — shipped in v4.6.0: `overhead.js mcp`
       audits 30 days of tracked mcp__* calls per configured server and prints
       the exact `claude mcp remove` for servers never called; the skill offers
       to run them
@@ -16,7 +16,7 @@ must make a number more true, a waste more visible, or a fix more automatic.
 - [ ] **Prompt-coach outcome learning**: correlate prompt grades with what the
       session actually did (files read to find intent, re-prompts) and tune
       the weights from evidence, not vibes
-- [ ] **`/cco-pack` v2**: pack from git branch context + open PR diff, not
+- [ ] **`/cco pack` v2**: pack from git branch context + open PR diff, not
       just prompt keywords
 
 ## v4.5 — Precision
@@ -32,7 +32,7 @@ must make a number more true, a waste more visible, or a fix more automatic.
       observed result sizes replaces the hardcoded MCP/Agent guesses (#38)
 - [x] **Subagent economics** — v4.20.0 booked subagent output apart from the
       main budget; v4.22.0 ships Haiku `scout`/`runner` agents, a delegation
-      policy, and `/cco-audit` with subagent spend by model
+      policy, and `/cco audit` with subagent spend by model
 - [ ] **Measure delegation per task**: attribute a task's saving to the scout
       runs it made (cost with vs. without), via `claude plugin eval`
 - [x] **Windows-correct paths** — shipped in v4.7.0: transcript-folder
@@ -43,7 +43,7 @@ must make a number more true, a waste more visible, or a fix more automatic.
 
 ## v5.0 — The ecosystem
 
-- [x] **Team patterns** — shipped in v4.9.0: `/cco-patterns export|import`,
+- [x] **Team patterns** — shipped in v4.9.0: `/cco patterns export|import`,
       anonymized relative-path digest committed to the repo, merged as a
       separate prior that never overrides local observations (#37)
 - [ ] **Unified local dashboard** with [cco-arcade](https://github.com/egorfedorov/cco-arcade):

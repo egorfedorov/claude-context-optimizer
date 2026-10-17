@@ -31,7 +31,10 @@ copies cleanly:
 5. **Must not be lost** — names, numbers, constraints, preferences, things
    that were tried and failed.
 
-Then tell the user: open a new conversation, paste the block, and continue.
+Then give the saving in one line, as an estimate: "This conversation is about
+60K tokens; the handoff is about 500, so each message in the new chat re-sends
+under 1% of what it does here." Then tell the user: open a new conversation,
+paste the block, and continue.
 
 ## On each surface
 
@@ -39,7 +42,7 @@ Then tell the user: open a new conversation, paste the block, and continue.
   project's files stay available, so the handoff can just name them.
 - **Cowork:** start a new task with the handoff as its first message.
 - **Claude Code:** `/compact` keeps working in place and is usually enough.
-  For a clean break, `/clear` and paste the handoff. `/cco-task patch` keeps
+  For a clean break, `/clear` and paste the handoff. `/cco task patch` keeps
   structured task state across `/compact` automatically.
 
 Never paste whole files, logs or the transcript into the handoff.

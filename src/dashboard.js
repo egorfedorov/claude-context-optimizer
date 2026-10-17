@@ -204,7 +204,7 @@ export function renderBoard(d) {
     const spent = taskSpend(d.active, d.used);
     L.push(`  ▶ Task   #${d.active.id} ${d.active.name}  ·  ~${formatTokens(spent)} · $${((spent / 1e6) * d.cost.input).toFixed(3)}`);
   } else {
-    L.push('  ▶ Task   none active  →  /cco-task add "<what you are doing>"');
+    L.push('  ▶ Task   none active  →  /cco task add "<what you are doing>"');
   }
   if (d.recentTasks.length > 1) {
     const done = d.recentTasks.filter(t => t.status === 'done').slice(0, 2);
@@ -233,12 +233,12 @@ function buildActions(d) {
     out.push(`⚡ Free ~${formatTokens(d.reclaimable)}:  drop ${top}  → /compact`);
   }
   if (!d.active) {
-    out.push('📦 Start a task:  /cco-task add "<task>"  then  /cco-pack "<task>"');
+    out.push('📦 Start a task:  /cco task add "<task>"  then  /cco pack "<task>"');
   } else {
-    out.push(`📦 Pack minimal context:  /cco-pack "${d.active.name}"`);
+    out.push(`📦 Pack minimal context:  /cco pack "${d.active.name}"`);
   }
   if (d.prompt && d.prompt.grade && 'CDF'.includes(d.prompt.grade)) {
-    out.push('✍️  Last prompt was vague — /cco-coach can sharpen the next one');
+    out.push('✍️  Last prompt was vague — /cco coach can sharpen the next one');
   }
   return out;
 }

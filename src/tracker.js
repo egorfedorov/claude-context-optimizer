@@ -1086,7 +1086,7 @@ export function trackEvent(event, action) {
             audience: 'user',
             text:
               `[cco] CLAUDE.md memory totals ${memLines} lines — it loads into every prompt ` +
-              `(≤200 recommended). Run /cco-claudemd to find what to trim or split into .claude/rules/.`,
+              `(≤200 recommended). Run /cco claudemd to find what to trim or split into .claude/rules/.`,
           });
         }
       } catch { /* never block session start */ }
@@ -1132,7 +1132,7 @@ export function trackEvent(event, action) {
               if (existsSync(templateFile)) {
                 emitNotice(sessionId, {
                   kind: 'start:template', audience: 'user',
-                  text: `[cco] Auto-template ready! Run: /cco-templates apply auto-${projectName}`,
+                  text: `[cco] Auto-template ready! Run: /cco templates apply auto-${projectName}`,
                 });
               }
               break;

@@ -258,7 +258,7 @@ function doExport() {
     console.log('  (dropping them is what keeps absolute paths out of a file you commit)');
   }
   console.log('\n  Contains: relative paths + counts. No file contents, no absolute paths.');
-  console.log('  Safe to commit — teammates get it on clone and run /cco-patterns import.\n');
+  console.log('  Safe to commit — teammates get it on clone and run /cco patterns import.\n');
 }
 
 function doImport() {

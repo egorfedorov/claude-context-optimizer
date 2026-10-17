@@ -410,7 +410,7 @@ export const THRESHOLD_SPEC = {
   promptMinWords:     [8,      1,    100,     'prompt word count below which the coach calls it too vague'],
   promptIdealMaxWords:[200,    20,   2000,    'upper bound of the coach\'s "ideal length" band'],
   promptTooLongWords: [500,    50,   5000,    'prompt word count above which the ask is considered buried'],
-  packBudgetPercent:  [25,     1,    90,      'max share of the budget /cco-pack may consume'],
+  packBudgetPercent:  [25,     1,    90,      'max share of the budget /cco pack may consume'],
 };
 
 export const DEFAULT_THRESHOLDS = Object.fromEntries(

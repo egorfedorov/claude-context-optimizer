@@ -89,13 +89,13 @@ function suggestOrApply(mode) {
 
   if (mode === 'apply') {
     const file = join(cwd, '.contextignore');
-    const block = `\n# Added by /cco-shield apply — files unused in 3+ sessions (${new Date().toISOString().slice(0, 10)})\n` +
+    const block = `\n# Added by /cco shield apply — files unused in 3+ sessions (${new Date().toISOString().slice(0, 10)})\n` +
       suggestions.map(s => s.pattern).join('\n') + '\n';
     appendFileSync(file, block);
     console.log(`\n  ✓ Appended ${suggestions.length} pattern(s) to ${file}`);
     console.log('  Reads of these files are now blocked (Grep still works). Edit the file to undo.\n');
   } else {
-    console.log('\n  Run `/cco-shield apply` to append these to .contextignore.\n');
+    console.log('\n  Run `/cco shield apply` to append these to .contextignore.\n');
   }
 }
 
@@ -146,7 +146,7 @@ export function shieldRead(event) {
         text:
           `[context-shield] ${ignoreSuggestions.length} file(s) in this project were read but never used in 3+ sessions ` +
           `(~${formatTokens(totalWaste)} tokens/session recurring). Top: ${top}. ` +
-          `Run /cco-shield apply to add them to .contextignore for good.`,
+          `Run /cco shield apply to add them to .contextignore for good.`,
         audience: 'user',
       });
     }
@@ -190,7 +190,7 @@ export function shieldRead(event) {
   }
 
   // (Co-edited files used to be suggested here as "load them together". That
-  // asks Claude to read MORE on a guess; /cco-pack uses co-occurrence where
+  // asks Claude to read MORE on a guess; /cco pack uses co-occurrence where
   // the task is known.)
 
   // Emit at most one shield tip per file, gated by the session noise budget —

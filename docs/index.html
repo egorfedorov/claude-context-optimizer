@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>context-optimizer — cut what Claude Code sessions cost</title>
-<meta name="description" content="A Claude plugin that spends less of your usage on re-reading: fresh-start handoffs and token checks in chat; Haiku 5.5 subagents, read dedup and /cco-audit in Claude Code.">
+<meta name="description" content="A Claude plugin that shows what Claude costs you and spends less of it: handoffs, document digests and Project setup in chat; a live cost and context meter, Haiku 5.5 subagents and /cco audit in Claude Code.">
 <meta property="og:title" content="context-optimizer — cut what Claude Code sessions cost">
-<meta property="og:description" content="Haiku subagents do the reading for 1/40 of the price. /cco-audit shows where your money actually goes. Local, open source, no telemetry.">
+<meta property="og:description" content="A live meter for context, cost and plan limits; Haiku subagents that do the reading for 1/40 of the price; skills that keep long chats cheap. Local, open source, no telemetry.">
 <meta property="og:type" content="website">
 <meta name="color-scheme" content="dark light">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23111418'/><path d='M8 22V10h4v12zM14 22v-8h4v8zM20 22v-4h4v4z' fill='%23FFB224'/></svg>">
@@ -82,6 +82,9 @@
   h1 em { font-style: normal; color: var(--accent); }
   .lede { color: var(--dim); font-size: 1.12rem; max-width: 34em; }
   .lede strong { color: var(--text); font-weight: 600; }
+  .meter-line { margin: 18px 0 0; padding: 10px 14px; font: 500 0.8rem/1.4 var(--mono); color: var(--dim);
+                background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+                white-space: pre; overflow-x: auto; max-width: 100%; }
   .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
   .btn { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.95rem;
          padding: 12px 18px; border-radius: 10px; text-decoration: none; border: 1px solid var(--border);
@@ -231,9 +234,10 @@
 <header class="hero">
   <div class="wrap hero-grid">
     <div>
-      <span class="eyebrow"><b>v4.23.2 &middot;</b> Claude Code plugin &middot; MIT &middot; no telemetry</span>
+      <span class="eyebrow"><b>v5.0.0 &middot;</b> Claude plugin &middot; MIT &middot; no telemetry</span>
       <h1>In a long session, most of the bill is <em>re&#8209;reading</em>.</h1>
-      <p class="lede">Every request re-reads the whole context. <strong>context-optimizer keeps it small:</strong> Haiku&nbsp;5.5 subagents do the reading and the test runs for 1/40 of the price, and <code>/cco-audit</code> shows from your own transcripts where the money actually went.</p>
+      <p class="lede">Every request re-reads the whole context. <strong>context-optimizer keeps it small and shows you the numbers:</strong> a live line under the prompt with context, cost, plan limits and the cache countdown; Haiku&nbsp;5.5 subagents that do the reading for 1/40 of the price; and skills that keep long chats cheap on claude.ai too.</p>
+      <pre class="meter-line">CCO · ctx 142K/1M 14% · $3.10 · 5h 63% · 7d 41% · cache 47m</pre>
       <div class="cta">
         <a class="btn primary" href="#install">Install the plugin</a>
         <a class="btn" href="#audit">See a real audit</a>
@@ -259,7 +263,7 @@
         <div><span>repeated reads of unchanged files</span><b>≈ 0</b></div>
       </div>
       <hr class="rule">
-      <p class="receipt-foot">Measured with <code>/cco-audit</code> on the session that built this release. Your numbers will differ — that's the point of the audit.</p>
+      <p class="receipt-foot">Measured with <code>/cco audit</code> on the session that built this release. Your numbers will differ — that's the point of the audit.</p>
     </div>
   </div>
 </header>
@@ -325,10 +329,10 @@
 
       <div>
         <div class="points">
-          <div class="point"><span class="n">1</span><div><h3>Scouts explore</h3><p>"Where is X defined, what calls Y, what do the docs say" goes to <code>context-optimizer:scout</code>, several in parallel. Each answer comes back with <code>path:line</code> evidence.</p></div></div>
+          <div class="point"><span class="n">1</span><div><h3>Scouts explore</h3><p>"Where is X defined, what calls Y, which tests cover Z" goes to <code>context-optimizer:scout</code>, several in parallel. Each answer comes back with <code>path:line</code> evidence.</p></div></div>
           <div class="point"><span class="n">2</span><div><h3>The main model plans and edits</h3><p>It reads only the line ranges it's about to change. Design calls and edits never leave it.</p></div></div>
           <div class="point"><span class="n">3</span><div><h3>The runner verifies</h3><p>Test suites and builds run in <code>context-optimizer:runner</code>. Thousands of log lines stay there; you get pass/fail and the failures.</p></div></div>
-          <div class="point"><span class="n">4</span><div><h3>Or ask for it outright</h3><p><code>/cco-orchestrate &lt;task&gt;</code> runs a whole task this way.</p></div></div>
+          <div class="point"><span class="n">4</span><div><h3>Or ask for it outright</h3><p><code>/cco orchestrate &lt;task&gt;</code> runs a whole task this way.</p></div></div>
         </div>
         <p class="proof">Checked live in Claude Code 2.1.302: the scout ran on <b>claude-haiku-5-5</b>, did one Grep and a 25-line Read, and found <code>readEnd</code> at <code>src/read-cache.js:212</code>. The whole session cost <b>$0.005</b>.</p>
       </div>
@@ -345,7 +349,7 @@
       <div class="card">
         <div class="stat green">Chat</div>
         <h3>claude.ai, desktop and mobile</h3>
-        <p><code>fresh-start</code> writes a compact handoff when a conversation gets long, so you continue in a new one instead of re-sending everything. <code>token-check</code> sizes files and chats; <code>sharpen-prompt</code> tightens a request.</p>
+        <p><code>fresh-start</code> hands a long conversation over to a new one. <code>doc-digest</code> turns a long document into a working digest. <code>project-context</code> turns background you keep retyping into Project instructions. <code>token-check</code> and <code>sharpen-prompt</code> size and tighten.</p>
       </div>
       <div class="card">
         <div class="stat blue">Cowork</div>
@@ -355,7 +359,7 @@
       <div class="card">
         <div class="stat accent">Code</div>
         <h3>Claude Code</h3>
-        <p>Everything: Haiku subagents, read dedup with file maps, budget and cache-break warnings, task state across <code>/compact</code>, <code>/cco</code> and <code>/cco-audit</code>.</p>
+        <p>Everything: the live meter, Haiku subagents, one <code>/cco</code> command for the board, the audit and task state across <code>/compact</code>, read dedup, budget and cache warnings.</p>
       </div>
     </div>
   </div>
@@ -363,11 +367,11 @@
 
 <section id="audit">
   <div class="wrap">
-    <div class="label">/cco-audit</div>
+    <div class="label">/cco audit</div>
     <h2>Does it save you anything? Ask your transcripts.</h2>
     <p class="sub">Claude Code keeps every session in <code>~/.claude/projects/</code>. The audit prices them with each session's real model and cache TTL, counts every refusal CCO made, and ranks the levers that would save you the most. Nothing leaves your machine.</p>
     <div class="term">
-      <div class="term-bar"><i></i><i></i><i></i><span>/cco-audit --days 2</span></div>
+      <div class="term-bar"><i></i><i></i><i></i><span>/cco audit --days 2</span></div>
 <pre><span class="t-b">  SAVINGS AUDIT — 3 sessions + 2 subagent runs, last 2 days</span>
 <span class="t-d">  ──────────────────────────────────────────────────────────────────</span>
   Spend      <span class="t-b">$26.16</span> over 293 requests  (subagents $2.04)
@@ -398,11 +402,12 @@
     <h2>Quiet by default. Every message actually arrives.</h2>
     <p class="sub">Since v4.20 the hooks answer in the JSON Claude Code reads: advice for Claude as context, notes for you as a system message that costs no tokens.</p>
     <div class="features">
+      <div class="feature"><code>meter</code><h3>A live line under the prompt</h3><p>Context fill, session cost, 5-hour and weekly limits, and minutes until the prompt cache goes cold. One toast when something needs you. <code>/cco-meter</code> hides it.</p></div>
       <div class="feature"><code>read-cache</code><h3>Read dedup with file maps</h3><p>An unchanged re-read is skipped and replaced by a map of the file. Per subagent, and it steps aside if Claude asks again.</p></div>
       <div class="feature"><code>budget</code><h3>Budget and cache-break warnings</h3><p>Real context size from the transcript, the cost of a cold cache after a pause, and a nudge to <code>/compact</code> before quality drops.</p></div>
-      <div class="feature"><code>/cco</code><h3>One-screen control center</h3><p>Budget, dollars spent, NET savings, waste, the active task and the next action, on one screen.</p></div>
-      <div class="feature"><code>/cco-task</code><h3>Task state that survives /compact</h3><p>A small JSON state per task, put back into context after compaction or resume.</p></div>
-      <div class="feature"><code>/cco-overhead</code><h3>Fixed overhead audit</h3><p>What every session pays before you type: system prompt, MCP tools, CLAUDE.md. Lists MCP servers you never call.</p></div>
+      <div class="feature"><code>/cco</code><h3>One command for the rest</h3><p><code>/cco</code> is the session board; <code>/cco help</code> lists audit, task, pack, orchestrate, config and the others.</p></div>
+      <div class="feature"><code>/cco task</code><h3>Task state that survives /compact</h3><p>A small JSON state per task, put back into context after compaction or resume.</p></div>
+      <div class="feature"><code>/cco overhead</code><h3>Fixed overhead audit</h3><p>What every session pays before you type: system prompt, MCP tools, CLAUDE.md. Lists MCP servers you never call.</p></div>
       <div class="feature"><code>.contextignore</code><h3>Files you never need</h3><p>Block lock files and build output from Read. ContextShield proposes rules from your own waste history.</p></div>
     </div>
   </div>
@@ -415,7 +420,7 @@
     <div class="principles">
       <div class="principle"><span class="ok">✓</span><p><b>Transcripts over estimates.</b> Cost comes from the API usage Claude Code records, priced per model, cache TTL and fast mode.</p></div>
       <div class="principle"><span class="ok">✓</span><p><b>NET savings.</b> Everything CCO injects into context is subtracted from what it claims to save.</p></div>
-      <div class="principle"><span class="ok">✓</span><p><b>Tested the way Claude Code runs it.</b> End-to-end tests drive the real hooks through <code>sh -c</code> on Linux and macOS; <code>/cco-doctor</code> does the same on your machine.</p></div>
+      <div class="principle"><span class="ok">✓</span><p><b>Tested the way Claude Code runs it.</b> End-to-end tests drive the real hooks through <code>sh -c</code> on Linux and macOS; <code>/cco doctor</code> does the same on your machine.</p></div>
       <div class="principle"><span class="ok">✓</span><p><b>Local only.</b> The plugin's code makes no network calls. Data lives in <code>~/.claude-context-optimizer/</code> and is pruned automatically.</p></div>
     </div>
   </div>
@@ -434,13 +439,13 @@ claude plugin install context-optimizer@cco</pre>
       </div>
       <div class="code">
         <div class="h">Check it, then see your numbers</div>
-        <button class="copy" data-copy="/context-optimizer:cco-doctor&#10;/context-optimizer:cco-audit">copy</button>
+        <button class="copy" data-copy="/cco doctor&#10;/cco audit">copy</button>
 <pre><span class="c"># in Claude Code</span>
-/context-optimizer:cco-doctor
-/context-optimizer:cco-audit</pre>
+/cco doctor
+/cco audit</pre>
       </div>
     </div>
-    <p class="note">Had it installed as <code>claude-context-optimizer</code>? Claude Code moves you to the new name on its next start. Turn the delegation policy off with <code>"orchestrate": false</code> in <code>~/.claude-context-optimizer/config.json</code>.</p>
+    <p class="note">On claude.ai, the desktop app or Cowork: open the Directory and add <b>Context Optimizer</b>. Upgrading from 4.x: commands moved under <code>/cco</code> (<code>/cco-audit</code> is now <code>/cco audit</code>). Turn the delegation policy off with <code>"orchestrate": false</code> in <code>~/.claude-context-optimizer/config.json</code>.</p>
   </div>
 </section>
 

@@ -1,5 +1,58 @@
 # Changelog
 
+## 5.0.0 — 2026-10-17
+
+The directory showed 870 installs and 61 active users. Most installs come from
+claude.ai chat, where 23 of the 27 skills could only say "needs Claude Code",
+and in Claude Code the plugin mostly worked out of sight. 5.0 is built around
+what people see and use.
+
+### A live meter in Claude Code
+
+One dim line under the prompt, updated after every reply and every minute:
+context fill against the model's window, the session's cost, the plan's
+5-hour and weekly limits, and the minutes until the prompt cache goes cold.
+It learns from the first request after a pause whether the cache lasts 5
+minutes or an hour. It toasts once when context passes 70%, a limit passes
+80%, or the cache went cold on a large context. `/cco-meter` hides it. The
+figures come from Claude Code itself (`$.session.usage()` and each request's
+usage); it reads no files and sends nothing. It is a plugin mod
+(hooks/meter.ts), wired through `modules` in hooks.json, with its logic in
+src/meter-core.js.
+
+### One `/cco` command
+
+The 24 Claude Code skills (`/cco-audit`, `/cco-task`, `/cco-pack`, …) are now
+subcommands of one: `/cco audit`, `/cco task`, `/cco pack`. `/cco` alone is
+the board and `/cco help` the menu. Each command's instructions moved to
+skills/cco/commands/ and load only when that command runs. smart-loader folded
+into `/cco pack`. Every script stays pre-approved by its own path only.
+
+### Skills for chat and Cowork
+
+- **`doc-digest`**: a long document, PDF, transcript or log becomes a digest
+  with a section map and references, at about a tenth of the size, with the
+  options to keep going from it, start a new chat with it, or put it in a
+  Project.
+- **`project-context`**: background the user keeps retyping becomes Project
+  instructions and a file list (or a lean `CLAUDE.md` in Claude Code).
+- **`fresh-start`** now states what the handoff saves.
+
+Six skills in all, five of them script-free; the listing Claude carries in
+every conversation shrank to match.
+
+### Smaller and clearer
+
+- The README is a 265-line product page instead of 1,147 lines of release
+  notes; those live here.
+- Unused images are gone; the plugin is 1.1 MB instead of 1.9 MB.
+- The landing page shows the meter and the new skills.
+
+### Upgrading
+
+Commands moved: `/cco-audit` is `/cco audit`, and so on. Nothing else to do:
+data in `~/.claude-context-optimizer/` and config keys are unchanged.
+
 ## 4.23.2 — 2026-10-17
 
 Nothing in the plugin reads the environment or can reach the network any

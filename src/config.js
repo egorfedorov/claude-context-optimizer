@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 /**
- * Config surface — /cco-config
+ * Config surface — /cco config
  *
  * CCO's aggressiveness used to live as magic numbers across four modules:
  * when a re-read is worth complaining about, when a cached file counts as
- * evicted, what the prompt coach calls too short, how much budget /cco-pack
+ * evicted, what the prompt coach calls too short, how much budget /cco pack
  * may spend. Different context sizes and workflows want different answers,
  * and tuning should never mean editing source.
  *
