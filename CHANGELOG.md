@@ -1,5 +1,16 @@
 # Changelog
 
+## 5.1.1 — 2026-10-22
+
+- **Directory submission: the live-line mod is out for now.** Any plugin with a
+  mod is held by the directory for manual review, which kept 5.x from being
+  listed. `hooks/meter.ts` and `/cco-meter` are removed; everything else is
+  unchanged. The mod returns as an update once the plugin is listed (the live
+  version keeps serving while an update is reviewed). `src/meter-core.js` and its
+  tests stay; the last version with the line is v5.1.0.
+- Dropped `displayName`, `documentationUrl` and `supportUrl` from `plugin.json`
+  (not fields Claude Code reads).
+
 ## 5.1.0 — 2026-10-22
 
 - **The live line forecasts your limit.** When the last half hour's pace
