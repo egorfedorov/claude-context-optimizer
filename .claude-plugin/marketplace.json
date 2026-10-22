@@ -13,7 +13,7 @@
     {
       "name": "context-optimizer",
       "description": "See what Claude costs you and spend less of it. In chat: hand a long chat over to a new one, digest long documents, set up Projects, check tokens, sharpen prompts. In Claude Code: a live line with context, cost, plan limits and the cache countdown; Haiku 5.5 subagents for reading and test runs; /cco audit of your own transcripts. Local, no telemetry.",
-      "version": "5.0.2",
+      "version": "5.1.0",
       "source": "./"
     }
   ]

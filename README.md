@@ -80,7 +80,7 @@ the active task and what to do next. `/cco help` lists everything:
 
 | See where the tokens go | Spend less | Settings and data |
 |---|---|---|
-| `/cco audit`: your own transcripts, where the money went, what CCO saved | `/cco orchestrate <task>`: Haiku does the reading and test runs | `/cco config`: thresholds |
+| `/cco audit`: your own transcripts, where the money went, what CCO saved; `/cco wrapped`: your week in one screen | `/cco orchestrate <task>`: Haiku does the reading and test runs | `/cco config`: thresholds |
 | `/cco report`, `/cco roi`, `/cco digest`: trends across sessions | `/cco task`: cost per task, state that survives `/compact` | `/cco budget`: budget and auto-compact |
 | `/cco replay`: recent sessions | `/cco pack <task>`: the files a task needs, with line ranges | `/cco export`: Markdown or an offline HTML page |
 | `/cco tools`: what each tool costs | `/cco anatomy`, `/cco git`: a project map, git-aware context | `/cco patterns`: share learned patterns |

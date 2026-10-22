@@ -7,6 +7,7 @@ allowed-tools:
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/dashboard.js:*)"
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/tracker.js:*)"
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/audit.js:*)"
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/wrapped.js:*)"
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/tasks.js:*)"
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/smart-pack.js:*)"
   - "Bash(node ${CLAUDE_PLUGIN_ROOT}/src/anatomy.js:*)"
@@ -49,6 +50,7 @@ the script from the table directly and skip reading the file.
 |---|---|---|
 | *(none)* / `board` | This session: budget, $ spent, saved, waste, active task, next actions | `node ${CLAUDE_PLUGIN_ROOT}/src/dashboard.js board` |
 | `audit` | Your real transcripts: where the money went and what CCO saved | `node ${CLAUDE_PLUGIN_ROOT}/src/audit.js <args>` |
+| `wrapped` | A recap of your last week: spend, busiest day, priciest projects, one tip | `node ${CLAUDE_PLUGIN_ROOT}/src/wrapped.js <args>` |
 | `report` | Token ROI across all tracked sessions | `node ${CLAUDE_PLUGIN_ROOT}/src/report.js full` |
 | `roi` | Monthly savings by model | `node ${CLAUDE_PLUGIN_ROOT}/src/roi.js` |
 | `digest` | Efficiency score and trend for the last N days | `node ${CLAUDE_PLUGIN_ROOT}/src/digest.js <args>` |

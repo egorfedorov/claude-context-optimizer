@@ -1,7 +1,7 @@
 {
   "name": "context-optimizer",
   "displayName": "Context Optimizer (CCO)",
-  "version": "5.0.2",
+  "version": "5.1.0",
   "description": "See what Claude costs you and spend less of it. In chat: hand a long chat over to a new one, digest long documents, set up Projects, check tokens, sharpen prompts. In Claude Code: a live line with context, cost, plan limits and the cache countdown; Haiku 5.5 subagents for reading and test runs; /cco audit of your own transcripts. Local, no telemetry.",
   "author": {
     "name": "Egor Fedorov"
@@ -27,7 +27,6 @@
     "cowork"
   ],
   "homepage": "https://egorfedorov.github.io/claude-context-optimizer/",
-  "icon": "./assets/icon.png",
   "documentationUrl": "https://github.com/egorfedorov/claude-context-optimizer#readme",
   "supportUrl": "https://github.com/egorfedorov/claude-context-optimizer/issues",
   "privacyPolicyUrl": "https://github.com/egorfedorov/claude-context-optimizer#privacy"

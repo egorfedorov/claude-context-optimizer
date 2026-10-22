@@ -1,5 +1,31 @@
 # Changelog
 
+## 5.1.0 — 2026-10-22
+
+- **The live line forecasts your limit.** When the last half hour's pace
+  would use up a plan limit before it resets, the line says so:
+  `5h 62% (full in ~35m)`. It stays silent when there is too little history,
+  the pace is flat, the limit resets first, or it is more than 3 hours away.
+  The pace is kept in memory only.
+- **`/cco wrapped`: your week in one screen.** Spend, sessions, the busiest
+  day, the three priciest projects, the priciest session and one tip, read
+  from your local transcripts (`--days N` changes the window). Nothing
+  leaves the machine.
+
+## 5.0.4 — 2026-10-22
+
+- **`npm test` no longer fails on a stray `.DS_Store`.** Four tests listed `skills/`,
+  `agents/` or `skills/cco/commands/` without skipping dotfiles, so macOS
+  Finder files turned the suite red. Tests only; nothing changes for users.
+
+## 5.0.3 — 2026-10-22
+
+- **Directory scan: dropped the `icon` field from `plugin.json`.** The scan
+  treated `./assets/icon.png` as an image the plugin's code could run
+  (`UNREAD_ASSET_REFERENCED`) and held the version for a reviewer. Claude Code
+  ignores the field at load time, so nothing changes for users. The file stays
+  in `assets/`.
+
 ## 5.0.2 — 2026-10-17
 
 - **The live line shows up as soon as a session starts.** Before the first

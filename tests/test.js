@@ -3188,7 +3188,7 @@ describe('skill listing cost', () => {
     const { readdirSync, readFileSync: rf } = await import('fs');
     const { fileURLToPath } = await import('url');
     const dir = fileURLToPath(new URL('../skills', import.meta.url));
-    const listed = readdirSync(dir).filter(name => {
+    const listed = readdirSync(dir).filter(name => !name.startsWith('.')).filter(name => {
       const fm = rf(join(dir, name, 'SKILL.md'), 'utf-8').split('---')[1] || '';
       return !/^disable-model-invocation:\s*true\s*$/m.test(fm);
     }).sort();
@@ -3203,7 +3203,7 @@ describe('/cco router', async () => {
   const { fileURLToPath } = await import('url');
   const dir = fileURLToPath(new URL('../skills/cco', import.meta.url));
   const router = rf(join(dir, 'SKILL.md'), 'utf-8');
-  const files = readdirSync(join(dir, 'commands')).map(f => f.replace(/\.md$/, '')).sort();
+  const files = readdirSync(join(dir, 'commands')).filter(f => f.endsWith('.md')).map(f => f.replace(/\.md$/, '')).sort();
   const listed = [...router.matchAll(/^\| (?:\*\(none\)\* \/ )?`(\w+)/gm)].map(m => m[1]).sort();
 
   it('lists every command that has instructions, and nothing else', () => {
@@ -3235,7 +3235,7 @@ describe('works on every surface', async () => {
   const { readdirSync, readFileSync: rf } = await import('fs');
   const { fileURLToPath } = await import('url');
   const root = fileURLToPath(new URL('..', import.meta.url));
-  const skills = readdirSync(join(root, 'skills'));
+  const skills = readdirSync(join(root, 'skills')).filter(d => !d.startsWith('.'));
   const text = (n) => rf(join(root, 'skills', n, 'SKILL.md'), 'utf-8');
 
   it('chat skills run nothing locally', () => {
@@ -3440,7 +3440,7 @@ describe('no environment reads, no network', () => {
     const { readdirSync, readFileSync: rf } = await import('fs');
     const { fileURLToPath } = await import('url');
     const dir = fileURLToPath(new URL('../agents', import.meta.url));
-    for (const f of readdirSync(dir)) {
+    for (const f of readdirSync(dir).filter(f => !f.startsWith('.'))) {
       assert.doesNotMatch(rf(join(dir, f), 'utf-8'), /^tools:.*\bWeb(Fetch|Search)\b/m, f);
     }
   });
@@ -3513,5 +3513,41 @@ describe('live meter (v5)', async () => {
     const mod = rf(new URL('../hooks/meter.ts', import.meta.url), 'utf-8');
     assert.match(mod, /from '\.\.\/src\/meter-core\.js'/);
     assert.doesNotMatch(mod, /\$\.(fs|process|network|http)\b|fetch\(/, 'the meter reads no files and sends nothing');
+  });
+});
+
+describe('limit forecast and /cco wrapped (v5.1)', async () => {
+  const { limitForecast, meterLine } = await import('../src/meter-core.js');
+  const { buildWrapped, projectName } = await import('../src/wrapped.js');
+  const now = Date.UTC(2026, 9, 22, 12, 0);
+  const min = (m) => now - m * 60_000;
+  const reset = (m) => new Date(now + m * 60_000).toISOString();
+
+  it('forecasts minutes to full from the recent pace', () => {
+    // 20 points in 20 minutes: 1 point a minute, 60 left.
+    assert.equal(limitForecast([{ t: min(20), pct: 20 }, { t: now, pct: 40 }], reset(300), now), 60);
+  });
+  it('stays silent without an honest answer', () => {
+    assert.equal(limitForecast([{ t: now, pct: 40 }], reset(300), now), null, 'one sample');
+    assert.equal(limitForecast([{ t: min(5), pct: 20 }, { t: now, pct: 30 }], reset(300), now), null, 'span under 10 min');
+    assert.equal(limitForecast([{ t: min(20), pct: 40 }, { t: now, pct: 40 }], reset(300), now), null, 'flat');
+    assert.equal(limitForecast([{ t: min(20), pct: 20 }, { t: now, pct: 40 }], reset(30), now), null, 'resets first');
+    assert.equal(limitForecast([{ t: min(20), pct: 10 }, { t: now, pct: 12 }], reset(900), now), null, 'over 3 hours');
+  });
+  it('shows the forecast on the limit it belongs to', () => {
+    const usage = { rateLimits: [{ kind: 'five_hour', percentUsed: 62 }, { kind: 'seven_day', percentUsed: 10 }] };
+    assert.match(meterLine(usage, null, { five_hour: 35 }), /5h 62% \(full in ~35m\) · 7d 10%/);
+    assert.doesNotMatch(meterLine(usage, null), /full in/);
+  });
+  it('wrapped totals sessions, ranks projects and names the project', () => {
+    const row = (dir, total, subagent = false) => ({
+      path: `/r/${dir}/s.jsonl`, root: '/r', mtimeMs: now, subagent,
+      price: { total, split: { cacheReads: total / 2 } }, facts: { requests: 10, peak: 100_000, compactions: 1 },
+    });
+    const w = buildWrapped([row('-Users-me-app', 5), row('-Users-me-site', 1), row('-Users-me-app', 4, true)]);
+    assert.equal(w.total, 10);
+    assert.equal(w.sessions, 2);
+    assert.deepEqual(w.projects[0], ['app', 9]);
+    assert.equal(projectName('/r/-Users-me-code-app/s.jsonl', '/r'), 'code-app');
   });
 });

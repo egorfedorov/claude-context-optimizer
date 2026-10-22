@@ -339,7 +339,7 @@ export function findTranscripts(root, sinceMs) {
         try {
           const st = statSync(p);
           if (st.mtimeMs >= sinceMs && st.size <= MAX_FILE_BYTES) {
-            out.push({ path: p, size: st.size, subagent: /[\\/]subagents[\\/]/.test(p) || basename(p).startsWith('agent-') });
+            out.push({ path: p, size: st.size, mtimeMs: st.mtimeMs, subagent: /[\\/]subagents[\\/]/.test(p) || basename(p).startsWith('agent-') });
           }
         } catch { /* vanished */ }
       }
@@ -367,7 +367,7 @@ export function dropSeenMessages(lines, seen) {
   return out;
 }
 
-export function runAudit({ days = 30, project = null, compactAt = 200_000 } = {}) {
+export function collectSessions({ days = 30, project = null, compactAt = 200_000 } = {}) {
   const root = project ? projectTranscriptDir(project) : join(homedir(), '.claude', 'projects');
   const fallbackModel = loadConfig().model || 'opus-5.5';
   const sessions = [];
@@ -382,9 +382,13 @@ export function runAudit({ days = 30, project = null, compactAt = 200_000 } = {}
     const facts = analyzeTranscript(lines);
     if (!facts.requests) continue;
     const econ = parseEconomicsFromLines(lines);
-    sessions.push({ subagent: t.subagent, facts, price: priceSession(facts, econ, { compactAt, fallbackModel }) });
+    sessions.push({ path: t.path, root, mtimeMs: t.mtimeMs, subagent: t.subagent, facts, price: priceSession(facts, econ, { compactAt, fallbackModel }) });
   }
-  return summarize(sessions);
+  return sessions;
+}
+
+export function runAudit(opts = {}) {
+  return summarize(collectSessions(opts));
 }
 
 function main() {
