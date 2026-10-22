@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.0.3 — 2026-10-22
+
+- **Directory scan: dropped the `icon` field from `plugin.json`.** The scan
+  treated `./assets/icon.png` as an image the plugin's code could run
+  (`UNREAD_ASSET_REFERENCED`) and held the version for a reviewer. Claude Code
+  ignores the field at load time, so nothing changes for users. The file stays
+  in `assets/`.
+
 ## 5.0.2 — 2026-10-17
 
 - **The live line shows up as soon as a session starts.** Before the first
