@@ -3188,7 +3188,7 @@ describe('skill listing cost', () => {
     const { readdirSync, readFileSync: rf } = await import('fs');
     const { fileURLToPath } = await import('url');
     const dir = fileURLToPath(new URL('../skills', import.meta.url));
-    const listed = readdirSync(dir).filter(name => {
+    const listed = readdirSync(dir).filter(name => !name.startsWith('.')).filter(name => {
       const fm = rf(join(dir, name, 'SKILL.md'), 'utf-8').split('---')[1] || '';
       return !/^disable-model-invocation:\s*true\s*$/m.test(fm);
     }).sort();
@@ -3203,7 +3203,7 @@ describe('/cco router', async () => {
   const { fileURLToPath } = await import('url');
   const dir = fileURLToPath(new URL('../skills/cco', import.meta.url));
   const router = rf(join(dir, 'SKILL.md'), 'utf-8');
-  const files = readdirSync(join(dir, 'commands')).map(f => f.replace(/\.md$/, '')).sort();
+  const files = readdirSync(join(dir, 'commands')).filter(f => f.endsWith('.md')).map(f => f.replace(/\.md$/, '')).sort();
   const listed = [...router.matchAll(/^\| (?:\*\(none\)\* \/ )?`(\w+)/gm)].map(m => m[1]).sort();
 
   it('lists every command that has instructions, and nothing else', () => {
@@ -3235,7 +3235,7 @@ describe('works on every surface', async () => {
   const { readdirSync, readFileSync: rf } = await import('fs');
   const { fileURLToPath } = await import('url');
   const root = fileURLToPath(new URL('..', import.meta.url));
-  const skills = readdirSync(join(root, 'skills'));
+  const skills = readdirSync(join(root, 'skills')).filter(d => !d.startsWith('.'));
   const text = (n) => rf(join(root, 'skills', n, 'SKILL.md'), 'utf-8');
 
   it('chat skills run nothing locally', () => {
@@ -3440,7 +3440,7 @@ describe('no environment reads, no network', () => {
     const { readdirSync, readFileSync: rf } = await import('fs');
     const { fileURLToPath } = await import('url');
     const dir = fileURLToPath(new URL('../agents', import.meta.url));
-    for (const f of readdirSync(dir)) {
+    for (const f of readdirSync(dir).filter(f => !f.startsWith('.'))) {
       assert.doesNotMatch(rf(join(dir, f), 'utf-8'), /^tools:.*\bWeb(Fetch|Search)\b/m, f);
     }
   });

@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.0.4 — 2026-10-22
+
+- **`npm test` no longer fails on a stray `.DS_Store`.** Four tests listed `skills/`,
+  `agents/` or `skills/cco/commands/` without skipping dotfiles, so macOS
+  Finder files turned the suite red. Tests only; nothing changes for users.
+
 ## 5.0.3 — 2026-10-22
 
 - **Directory scan: dropped the `icon` field from `plugin.json`.** The scan
