@@ -65,14 +65,43 @@ function limitLabel(kind) {
   return { five_hour: '5h', seven_day: '7d', spend_limit: 'spend' }[kind] || kind;
 }
 
+const FORECAST_WINDOW_MIN = 30;
+const FORECAST_MIN_SPAN_MIN = 10;
+const FORECAST_MAX_MIN = 180;
+
+/**
+ * Minutes until a rate limit is used up at the pace of the last half hour, or
+ * null when there is no honest answer: too little history, no climb, a pace
+ * that reaches 100% only after the window resets, or more than 3 hours out.
+ * `samples` is [{ t: ms, pct }] in time order.
+ * @param {{ t: number, pct: number }[]} samples
+ * @param {string | undefined} resetsAt ISO time the limit resets
+ * @param {number} now ms
+ * @returns {number | null}
+ */
+export function limitForecast(samples, resetsAt, now) {
+  const recent = (samples || []).filter(x => now - x.t <= FORECAST_WINDOW_MIN * 60_000);
+  if (recent.length < 2) return null;
+  const first = recent[0];
+  const last = recent[recent.length - 1];
+  const spanMin = (last.t - first.t) / 60_000;
+  const rise = last.pct - first.pct;
+  if (spanMin < FORECAST_MIN_SPAN_MIN || rise < 1 || last.pct >= 100) return null;
+  const left = Math.round((100 - last.pct) / (rise / spanMin));
+  const resetMin = (new Date(resetsAt).getTime() - now) / 60_000;
+  if (Number.isFinite(resetMin) && left >= resetMin) return null;
+  return left > FORECAST_MAX_MIN ? null : left;
+}
+
 /**
  * The status line. Before the first reply it says so, with any limits known.
  * `usage` is $.session.usage()'s answer; `cacheLeft` is cacheMinutesLeft's.
  * @param {any} usage
  * @param {number | null} [cacheLeft]
+ * @param {Record<string, number | null>} [forecasts] minutes to full, by limit kind
  * @returns {string}
  */
-export function meterLine(usage, cacheLeft = null) {
+export function meterLine(usage, cacheLeft = null, forecasts = {}) {
   const ctx = usage?.context;
   const parts = [];
   // Before the session's first reply there is no context figure yet; show
@@ -85,7 +114,9 @@ export function meterLine(usage, cacheLeft = null) {
   }
   if (usage?.cost && Number.isFinite(usage.cost.usd) && usage.cost.usd > 0) parts.push(money(usage.cost.usd));
   for (const l of usage?.rateLimits || []) {
-    if (Number.isFinite(l.percentUsed)) parts.push(`${limitLabel(l.kind)} ${Math.round(l.percentUsed)}%`);
+    if (!Number.isFinite(l.percentUsed)) continue;
+    const eta = forecasts[l.kind];
+    parts.push(`${limitLabel(l.kind)} ${Math.round(l.percentUsed)}%${eta ? ` (full in ~${eta}m)` : ''}`);
   }
   if (cacheLeft === 0) parts.push('cache cold');
   else if (cacheLeft != null) parts.push(`cache ${cacheLeft}m`);

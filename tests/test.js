@@ -3515,3 +3515,39 @@ describe('live meter (v5)', async () => {
     assert.doesNotMatch(mod, /\$\.(fs|process|network|http)\b|fetch\(/, 'the meter reads no files and sends nothing');
   });
 });
+
+describe('limit forecast and /cco wrapped (v5.1)', async () => {
+  const { limitForecast, meterLine } = await import('../src/meter-core.js');
+  const { buildWrapped, projectName } = await import('../src/wrapped.js');
+  const now = Date.UTC(2026, 9, 22, 12, 0);
+  const min = (m) => now - m * 60_000;
+  const reset = (m) => new Date(now + m * 60_000).toISOString();
+
+  it('forecasts minutes to full from the recent pace', () => {
+    // 20 points in 20 minutes: 1 point a minute, 60 left.
+    assert.equal(limitForecast([{ t: min(20), pct: 20 }, { t: now, pct: 40 }], reset(300), now), 60);
+  });
+  it('stays silent without an honest answer', () => {
+    assert.equal(limitForecast([{ t: now, pct: 40 }], reset(300), now), null, 'one sample');
+    assert.equal(limitForecast([{ t: min(5), pct: 20 }, { t: now, pct: 30 }], reset(300), now), null, 'span under 10 min');
+    assert.equal(limitForecast([{ t: min(20), pct: 40 }, { t: now, pct: 40 }], reset(300), now), null, 'flat');
+    assert.equal(limitForecast([{ t: min(20), pct: 20 }, { t: now, pct: 40 }], reset(30), now), null, 'resets first');
+    assert.equal(limitForecast([{ t: min(20), pct: 10 }, { t: now, pct: 12 }], reset(900), now), null, 'over 3 hours');
+  });
+  it('shows the forecast on the limit it belongs to', () => {
+    const usage = { rateLimits: [{ kind: 'five_hour', percentUsed: 62 }, { kind: 'seven_day', percentUsed: 10 }] };
+    assert.match(meterLine(usage, null, { five_hour: 35 }), /5h 62% \(full in ~35m\) · 7d 10%/);
+    assert.doesNotMatch(meterLine(usage, null), /full in/);
+  });
+  it('wrapped totals sessions, ranks projects and names the project', () => {
+    const row = (dir, total, subagent = false) => ({
+      path: `/r/${dir}/s.jsonl`, root: '/r', mtimeMs: now, subagent,
+      price: { total, split: { cacheReads: total / 2 } }, facts: { requests: 10, peak: 100_000, compactions: 1 },
+    });
+    const w = buildWrapped([row('-Users-me-app', 5), row('-Users-me-site', 1), row('-Users-me-app', 4, true)]);
+    assert.equal(w.total, 10);
+    assert.equal(w.sessions, 2);
+    assert.deepEqual(w.projects[0], ['app', 9]);
+    assert.equal(projectName('/r/-Users-me-code-app/s.jsonl', '/r'), 'code-app');
+  });
+});

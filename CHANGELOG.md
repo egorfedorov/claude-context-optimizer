@@ -1,5 +1,17 @@
 # Changelog
 
+## 5.1.0 — 2026-10-22
+
+- **The live line forecasts your limit.** When the last half hour's pace
+  would use up a plan limit before it resets, the line says so:
+  `5h 62% (full in ~35m)`. It stays silent when there is too little history,
+  the pace is flat, the limit resets first, or it is more than 3 hours away.
+  The pace is kept in memory only.
+- **`/cco wrapped`: your week in one screen.** Spend, sessions, the busiest
+  day, the three priciest projects, the priciest session and one tip, read
+  from your local transcripts (`--days N` changes the window). Nothing
+  leaves the machine.
+
 ## 5.0.4 — 2026-10-22
 
 - **`npm test` no longer fails on a stray `.DS_Store`.** Four tests listed `skills/`,

@@ -1,6 +1,6 @@
 import type { EngineInterface, Register } from 'claude-code'
 
-import { cacheMinutesLeft, learnTtl, LONG_TTL_MIN, meterLine, nudges } from '../src/meter-core.js'
+import { cacheMinutesLeft, learnTtl, limitForecast, LONG_TTL_MIN, meterLine, nudges } from '../src/meter-core.js'
 
 // Live meter: one line pinned under the prompt with the context's fill, what
 // the session has cost, the plan's limits and how long the prompt cache stays
@@ -17,6 +17,7 @@ type Meter = {
   ttlMin: number
   isOff: boolean
   shown: Set<string>
+  samples: Record<string, { t: number; pct: number }[]>
 }
 
 async function refresh($: EngineInterface, m: Meter) {
@@ -25,9 +26,19 @@ async function refresh($: EngineInterface, m: Meter) {
     return
   }
   const usage = await $.session.usage()
-  const cacheLeft = cacheMinutesLeft(m.lastReplyAt, await $.clock.now(), m.ttlMin)
+  const now = await $.clock.now()
+  const cacheLeft = cacheMinutesLeft(m.lastReplyAt, now, m.ttlMin)
   m.lastContext = usage.context.tokens ?? m.lastContext
-  $.ui.status(meterLine(usage, cacheLeft))
+  // Pace of each limit over the last half hour, in memory only.
+  const forecasts: Record<string, number | null> = {}
+  for (const l of usage.rateLimits ?? []) {
+    if (!Number.isFinite(l.percentUsed)) continue
+    const s = (m.samples[l.kind] ??= [])
+    s.push({ t: now, pct: l.percentUsed })
+    while (s.length > 40 || (s.length > 1 && now - s[0].t > 30 * 60_000)) s.shift()
+    forecasts[l.kind] = limitForecast(s, l.resetsAt, now)
+  }
+  $.ui.status(meterLine(usage, cacheLeft, forecasts))
   for (const n of nudges(usage, { cacheLeft, shown: m.shown })) {
     m.shown.add(n.kind)
     $.ui.toast(n.text)
@@ -42,6 +53,7 @@ export const register: Register = on => {
     ttlMin: LONG_TTL_MIN,
     isOff: false,
     shown: new Set(),
+    samples: {},
   }
 
   on('session.start', async ($, e, next) => {
