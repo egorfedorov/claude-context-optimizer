@@ -9,7 +9,7 @@ moves cheap work to a cheap model, and shows you the numbers while you work.
 |---|---|
 | **claude.ai chat and desktop** | Skills Claude uses on its own: `fresh-start` hands a long chat over to a new one, `doc-digest` turns a long document into a working digest, `project-context` turns background you keep retyping into Project instructions, `token-check` sizes text and files, `sharpen-prompt` tightens a vague request |
 | **Cowork** | The same skills, plus two subagents on Haiku 5.5, about 40× cheaper than Opus: `scout` for reading and searching, `runner` for tests and builds |
-| **Claude Code** | Everything: a **live meter** under the prompt, the Haiku subagents, `/cco` (a session board, an audit of your own transcripts, task state that survives `/compact`, and more), read dedup, and budget and cache warnings |
+| **Claude Code** | Everything: the Haiku subagents, `/cco` (a session board, an audit of your own transcripts, task state that survives `/compact`, and more), read dedup, and budget and cache warnings |
 
 Runs locally, open source (MIT), no telemetry.
 
@@ -21,30 +21,6 @@ Runs locally, open source (MIT), no telemetry.
 [![Mentioned in Awesome Claude Code](https://awesome.re/mentioned-badge.svg)](https://github.com/hesreallyhim/awesome-claude-code)
 
 ---
-
-## The live meter
-
-In Claude Code, one line under the prompt, updated after every reply and every
-minute. It appears as the session starts, with your plan's limits; the context
-and cost fill in after the first reply:
-
-```text
-context-optimizer: ctx 142K/1M 14% · $3.10 · 5h 63% · 7d 41% · cache 47m
-```
-
-- **ctx**: how much context the last reply was answered over, of the model's
-  window. Every message re-sends all of it.
-- **$**: what the session has cost so far, as `/cost` counts it.
-- **5h / 7d**: how much of your plan's 5-hour and weekly limits is used.
-- **cache**: minutes until the prompt cache expires. After that, the next
-  message pays full price or more for the whole context instead of a
-  twentieth of it. The meter learns from your own requests whether your cache lasts 5
-  minutes or an hour.
-
-It speaks up once, as a toast, when it matters: context past 70%, a limit past
-80%, or a cold cache on a large context. `/cco-meter` hides it or shows it
-again. The figures come from Claude Code itself; the meter reads no files and
-sends nothing anywhere.
 
 ## Skills that work everywhere
 
@@ -157,8 +133,7 @@ Your history stays in `~/.claude-context-optimizer/`.
 
 ### Requirements
 
-- Claude Code with plugin support; the live meter needs a version with plugin
-  mods. Skills alone work on claude.ai and in Cowork.
+- Claude Code with plugin support. Skills alone work on claude.ai and in Cowork.
 - Node.js 18 or later for the hooks and `/cco`.
 - A POSIX shell for hooks: macOS and Linux as they are, Git Bash or WSL on
   Windows.
@@ -185,7 +160,6 @@ This plugin:
 - **Stores everything locally** in `~/.claude-context-optimizer/`, pruned automatically (90 days for session history, 14 for live-session state)
 - **Sends zero telemetry**: the plugin's own code makes no network calls, no analytics, no tracking
 - **Reads no environment variables**: every setting lives in `~/.claude-context-optimizer/config.json`
-- **The live meter** shows figures Claude Code already has, from inside Claude Code; it reads no files and sends nothing
 - **Ships two subagents** (`scout`, `runner`) that Claude can call. They use Claude Code's own tools under your permission settings: `scout` only reads and searches the project (Read, Grep, Glob), and `runner` runs the commands it is given through Bash
 - **`/cco export html` writes one offline file**: charts are inline SVG, with no scripts and nothing loaded from the web
 - **Can be fully wiped** with `/cco clean --reset-all`
@@ -197,8 +171,7 @@ Your data never leaves your machine.
 **Does it slow Claude Code down?**
 Barely. Each hook event starts one Node process, about 50–65 ms, mostly Node's
 own startup. Only Read triggers a hook before the tool runs. `/cco doctor`
-shows the time on your machine. The meter runs inside Claude Code and costs
-nothing per request.
+shows the time on your machine.
 
 **Which models does it know?**
 Opus 5.5, Sonnet 5.5, Haiku 5.5 and Fable 5.1, plus the earlier Claude 5 and

@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>context-optimizer — cut what Claude Code sessions cost</title>
-<meta name="description" content="A Claude plugin that shows what Claude costs you and spends less of it: handoffs, document digests and Project setup in chat; a live cost and context meter, Haiku 5.5 subagents and /cco audit in Claude Code.">
+<meta name="description" content="A Claude plugin that shows what Claude costs you and spends less of it: handoffs, document digests and Project setup in chat; Haiku 5.5 subagents and /cco audit in Claude Code.">
 <meta property="og:title" content="context-optimizer — cut what Claude Code sessions cost">
-<meta property="og:description" content="A live meter for context, cost and plan limits; Haiku subagents that do the reading for 1/40 of the price; skills that keep long chats cheap. Local, open source, no telemetry.">
+<meta property="og:description" content="Haiku subagents that do the reading for 1/40 of the price; skills that keep long chats cheap. Local, open source, no telemetry.">
 <meta property="og:type" content="website">
 <meta name="color-scheme" content="dark light">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23111418'/><path d='M8 22V10h4v12zM14 22v-8h4v8zM20 22v-4h4v4z' fill='%23FFB224'/></svg>">
@@ -234,10 +234,9 @@
 <header class="hero">
   <div class="wrap hero-grid">
     <div>
-      <span class="eyebrow"><b>v5.1.0 &middot;</b> Claude plugin &middot; MIT &middot; no telemetry</span>
+      <span class="eyebrow"><b>v5.1.1 &middot;</b> Claude plugin &middot; MIT &middot; no telemetry</span>
       <h1>In a long session, most of the bill is <em>re&#8209;reading</em>.</h1>
-      <p class="lede">Every request re-reads the whole context. <strong>context-optimizer keeps it small and shows you the numbers:</strong> a live line under the prompt with context, cost, plan limits and the cache countdown; Haiku&nbsp;5.5 subagents that do the reading for 1/40 of the price; and skills that keep long chats cheap on claude.ai too.</p>
-      <pre class="meter-line">context-optimizer: ctx 142K/1M 14% · $3.10 · 5h 63% · 7d 41% · cache 47m</pre>
+      <p class="lede">Every request re-reads the whole context. <strong>context-optimizer keeps it small and shows you the numbers:</strong> Haiku&nbsp;5.5 subagents that do the reading for 1/40 of the price; and skills that keep long chats cheap on claude.ai too.</p>
       <div class="cta">
         <a class="btn primary" href="#install">Install the plugin</a>
         <a class="btn" href="#audit">See a real audit</a>
@@ -359,7 +358,7 @@
       <div class="card">
         <div class="stat accent">Code</div>
         <h3>Claude Code</h3>
-        <p>Everything: the live meter, Haiku subagents, one <code>/cco</code> command for the board, the audit and task state across <code>/compact</code>, read dedup, budget and cache warnings.</p>
+        <p>Everything: Haiku subagents, one <code>/cco</code> command for the board, the audit and task state across <code>/compact</code>, read dedup, budget and cache warnings.</p>
       </div>
     </div>
   </div>
@@ -402,7 +401,6 @@
     <h2>Quiet by default. Every message actually arrives.</h2>
     <p class="sub">Since v4.20 the hooks answer in the JSON Claude Code reads: advice for Claude as context, notes for you as a system message that costs no tokens.</p>
     <div class="features">
-      <div class="feature"><code>meter</code><h3>A live line under the prompt</h3><p>Context fill, session cost, 5-hour and weekly limits, and minutes until the prompt cache goes cold. One toast when something needs you. <code>/cco-meter</code> hides it.</p></div>
       <div class="feature"><code>read-cache</code><h3>Read dedup with file maps</h3><p>An unchanged re-read is skipped and replaced by a map of the file. Per subagent, and it steps aside if Claude asks again.</p></div>
       <div class="feature"><code>budget</code><h3>Budget and cache-break warnings</h3><p>Real context size from the transcript, the cost of a cold cache after a pause, and a nudge to <code>/compact</code> before quality drops.</p></div>
       <div class="feature"><code>/cco</code><h3>One command for the rest</h3><p><code>/cco</code> is the session board; <code>/cco help</code> lists audit, task, pack, orchestrate, config and the others.</p></div>

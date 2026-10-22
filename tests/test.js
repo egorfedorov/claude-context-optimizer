@@ -3506,13 +3506,10 @@ describe('live meter (v5)', async () => {
     assert.deepEqual(nudges(usage({ context: { tokens: 20_000, window: 1_000_000, percent: 2 } }), { cacheLeft: 0 }), []);
   });
 
-  it('is wired into hooks.json as a module', async () => {
+  it('ships no mod (it holds the directory listing for manual review)', async () => {
     const { readFileSync: rf } = await import('fs');
     const hooks = JSON.parse(rf(new URL('../hooks/hooks.json', import.meta.url), 'utf-8'));
-    assert.deepEqual(hooks.modules, ['./meter.ts']);
-    const mod = rf(new URL('../hooks/meter.ts', import.meta.url), 'utf-8');
-    assert.match(mod, /from '\.\.\/src\/meter-core\.js'/);
-    assert.doesNotMatch(mod, /\$\.(fs|process|network|http)\b|fetch\(/, 'the meter reads no files and sends nothing');
+    assert.equal(hooks.modules, undefined);
   });
 });
 
