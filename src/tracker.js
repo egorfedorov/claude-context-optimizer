@@ -53,7 +53,7 @@ function loadSession(sessionId) {
 function saveSession(session) {
   const sessionFile = join(SESSIONS_DIR, `${session.id}.json`);
   session.updatedAt = new Date().toISOString();
-  writeFileSync(sessionFile, JSON.stringify(session, null, 2));
+  saveJSON(sessionFile, session);
 }
 
 // ── Patterns (project-segmented) ────────────────────────────────────────────
