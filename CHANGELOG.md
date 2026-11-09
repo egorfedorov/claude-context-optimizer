@@ -9,9 +9,9 @@
   after JSON`. It now goes through `saveJSON()` (temp file + rename), like every
   other ledger (#88, approach from #89).
 - **`saveJSON()` does not fall back to an in-place overwrite.** A failed rename
-  is retried. If the destination already exists, the previous file is left
-  intact instead of being rewritten with `writeFileSync`, which is the same
-  trailing-byte race. A direct write remains only when the destination is missing.
+  is retried. If it still fails, the temp file is removed and the previous
+  file stays. Rewriting the destination with `writeFileSync` is the same
+  trailing-byte race.
 
 ## 5.1.1 — 2026-10-22
 

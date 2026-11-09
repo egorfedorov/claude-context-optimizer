@@ -368,10 +368,9 @@ export function loadJSON(file) {
 /**
  * Atomic JSON write: temp file in the same directory, then rename.
  * Readers see the previous file or the new one, never a mix of the two.
- * A rename that loses to a sharing violation is retried. An existing
- * destination is never rewritten in place — that leaves the previous tail
- * after a shorter write (#88). A missing destination has no tail to keep,
- * so a direct write is still safe there.
+ * A rename that loses to a sharing violation is retried. There is no
+ * in-place fallback: that leaves the previous tail after a shorter write (#88).
+ * If every rename fails, the previous file stays and the error propagates.
  */
 export function saveJSON(file, data) {
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
@@ -387,14 +386,7 @@ export function saveJSON(file, data) {
       if (attempt < 4) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15);
     }
   }
-  try {
-    if (!existsSync(file)) {
-      writeFileSync(file, body);
-      return;
-    }
-  } finally {
-    try { unlinkSync(tmp); } catch { /* already gone */ }
-  }
+  try { unlinkSync(tmp); } catch { /* already gone */ }
   throw lastErr;
 }
 
