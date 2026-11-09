@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- **Session ledgers are written atomically.** `saveSession()` wrote
+  `sessions/<id>.json` in place, so two overlapping hooks could leave a shorter
+  write on top of a longer one, with trailing bytes after the JSON. Every later
+  hook for that session then failed with `Unexpected non-whitespace character
+  after JSON`. It now goes through `saveJSON()` (temp file + rename), like every
+  other ledger (#88, approach from #89).
+- **`saveJSON()` does not fall back to an in-place overwrite.** A failed rename
+  is retried. If it still fails, the temp file is removed and the previous
+  file stays. Rewriting the destination with `writeFileSync` is the same
+  trailing-byte race.
+
 ## 5.1.1 — 2026-10-22
 
 - **Directory submission: the live-line mod is out for now.** Any plugin with a

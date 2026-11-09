@@ -3548,3 +3548,244 @@ describe('limit forecast and /cco wrapped (v5.1)', async () => {
     assert.equal(projectName('/r/-Users-me-code-app/s.jsonl', '/r'), 'code-app');
   });
 });
+
+// ── #88: session JSON must survive overlapping hook writes ──────────────────
+// Deterministic cases below pass on the old in-place writer: a finished
+// writeFileSync truncates, and hook.js's session lock serializes fast hooks.
+// The corrupt file (valid JSON plus a tail, "Unexpected non-whitespace
+// character after JSON") shows up only when two writes overlap, including a
+// shorter one. tracker.js has no session lock; hook.js gives its lock up
+// after ~0.6s and then runs unlocked. Those two are stress tests, not
+// single-threaded logic checks. Measured on a 4-vCPU Linux host against the
+// in-place writer: about 30% of 16-way tracker rounds and about 25% of
+// lock-abandoned hook rounds left a trailing tail. Round counts are set so
+// that pattern fails the run. Not executed on Windows.
+
+describe('session ledger overlapping writes (#88)', async () => {
+  const { spawn } = await import('child_process');
+  const { mkdtempSync, readFileSync: rf, rmSync, utimesSync, readdirSync } = await import('fs');
+  const { tmpdir } = await import('os');
+  const { fileURLToPath, pathToFileURL } = await import('url');
+  const ROOT = fileURLToPath(new URL('..', import.meta.url));
+  const TRACKER = join(ROOT, 'src', 'tracker.js');
+  const HOOK = join(ROOT, 'src', 'hook.js');
+  const UTILS = join(ROOT, 'src', 'utils.js');
+  // 16-way overlap on a ~700KB ledger. See the rate note above.
+  const PROCS = 16;
+  const TRACKER_ROUNDS = 15;
+  const HOOK_ROUNDS = 10;
+
+  function buildSeed(id, fileCount) {
+    const files = {};
+    for (let i = 0; i < fileCount; i++) {
+      files[`/proj/${'p'.repeat(40)}/m${i}.js`] = {
+        reads: 1, edits: 0, lines: 20, estTokens: 80,
+        firstRead: '2026-10-01T00:00:00.000Z', lastUse: '2026-10-01T00:00:00.000Z',
+        wasEdited: false, partialReads: 0, fullReads: 1,
+      };
+    }
+    return {
+      id, startedAt: '2026-10-01T00:00:00.000Z', projectRoot: '/proj',
+      files, searches: [], tools: { Read: { calls: fileCount } },
+      compactions: 0, totalReads: fileCount, totalEdits: 0, totalSearches: 0,
+      totalToolCalls: fileCount,
+    };
+  }
+
+  function hookEvent(id, i) {
+    const shrink = i % 2 === 0;
+    return {
+      hook_event_name: 'PostToolUse', session_id: id, cwd: '/proj',
+      tool_name: shrink ? 'Bash' : 'Read',
+      tool_input: shrink
+        ? { command: 'true' }
+        : { file_path: `/proj/src/${'abc'.repeat(40)}-${i}.js` },
+      tool_response: {},
+    };
+  }
+
+  function sandbox(id, fileCount) {
+    const home = mkdtempSync(join(tmpdir(), 'cco-race-'));
+    const data = join(home, '.claude-context-optimizer');
+    const sessions = join(data, 'sessions');
+    mkdirSync(sessions, { recursive: true });
+    const session = buildSeed(id, fileCount);
+    const sessionPath = join(sessions, `${id}.json`);
+    const seedText = JSON.stringify(session, null, 2);
+    writeFileSync(sessionPath, seedText);
+    const env = { HOME: home, USERPROFILE: home };
+    return { home, data, sessions, sessionPath, seedText, seedCalls: session.totalToolCalls, env, id };
+  }
+
+  function holdLock(dir) {
+    mkdirSync(dir, { recursive: true });
+    const touch = () => {
+      const now = new Date();
+      try { utimesSync(dir, now, now); } catch { /* removed */ }
+    };
+    touch();
+    const timer = setInterval(touch, 200);
+    return () => clearInterval(timer);
+  }
+
+  async function wave(script, box, n, warmupMs) {
+    const kids = [];
+    for (let i = 0; i < n; i++) {
+      const child = spawn(process.execPath, [script], {
+        cwd: ROOT, env: box.env, stdio: ['pipe', 'ignore', 'pipe'],
+      });
+      let err = '';
+      child.stderr.on('data', (d) => { if (err.length < 500) err += d; });
+      kids.push({ child, stderr: () => err, payload: hookEvent(box.id, i) });
+    }
+    await new Promise((r) => setTimeout(r, warmupMs));
+    for (const k of kids) k.child.stdin.end(JSON.stringify(k.payload));
+    return Promise.all(kids.map((k) => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        k.child.kill('SIGKILL');
+        reject(new Error(`${script} timed out`));
+      }, 20_000);
+      k.child.on('close', (code) => {
+        clearTimeout(timer);
+        resolve({ code, stderr: k.stderr() });
+      });
+    })));
+  }
+
+  function parseSession(box, results, label) {
+    const text = rf(box.sessionPath, 'utf8');
+    try {
+      return JSON.parse(text);
+    } catch (err) {
+      const stderr = (results || []).map((r) => r.stderr).filter(Boolean).slice(0, 2).join(' | ');
+      assert.fail(`${label}: ${err.message} (${text.length} bytes) tail=${JSON.stringify(text.slice(-90))}${stderr ? ` stderr=${stderr}` : ''}`);
+    }
+  }
+
+  it('sequential shrinking tracker.js writes stay valid and actually shrink', async () => {
+    const box = sandbox('seq88', 4);
+    try {
+      writeFileSync(box.sessionPath, box.seedText);
+      await wave(TRACKER, box, 1, 0);
+      const shorter = rf(box.sessionPath);
+      const shortData = JSON.parse(shorter.toString('utf8'));
+      assert.equal(shortData.totalToolCalls, box.seedCalls + 1);
+      assert.equal(shortData.tools.Bash.calls, 1);
+
+      writeFileSync(box.sessionPath, box.seedText);
+      const child = spawn(process.execPath, [TRACKER], {
+        cwd: ROOT, env: box.env, stdio: ['pipe', 'ignore', 'pipe'],
+      });
+      child.stderr.on('data', () => {});
+      child.stdin.end(JSON.stringify(hookEvent(box.id, 1)));
+      const code = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('timed out')); }, 20_000);
+        child.on('close', (c) => { clearTimeout(timer); resolve(c); });
+      });
+      assert.equal(code, 0);
+      const longer = rf(box.sessionPath);
+      const longData = JSON.parse(longer.toString('utf8'));
+      assert.equal(longData.totalToolCalls, box.seedCalls + 1);
+      assert.ok(longer.length > shorter.length, `shrinking payload ${shorter.length} vs read ${longer.length}`);
+    } finally {
+      rmSync(box.home, { recursive: true, force: true });
+    }
+  });
+
+  it('overlapping tracker.js PostToolUse writes keep valid JSON', async () => {
+    const box = sandbox('trk88', 2300);
+    try {
+      assert.ok(box.seedText.length > 600_000, `seed ${box.seedText.length} is too small to overlap writes`);
+      for (let round = 0; round < TRACKER_ROUNDS; round++) {
+        writeFileSync(box.sessionPath, box.seedText);
+        const results = await wave(TRACKER, box, PROCS, 250);
+        const data = parseSession(box, results, `tracker round ${round}`);
+        assert.ok(data.totalToolCalls > box.seedCalls, `tracker round ${round} wrote nothing`);
+        const temps = readdirSync(box.sessions).filter((n) => n.endsWith('.tmp'));
+        assert.deepEqual(temps, [], `tracker round ${round} left ${temps.join(',')}`);
+      }
+    } finally {
+      rmSync(box.home, { recursive: true, force: true });
+    }
+  });
+
+  it('hook.js applies every parallel update while its session lock is held', async () => {
+    const box = sandbox('lock88', 2);
+    try {
+      const n = 6;
+      const results = await wave(HOOK, box, n, 150);
+      const data = parseSession(box, results, 'locked hook');
+      assert.equal(data.totalToolCalls, box.seedCalls + n);
+    } finally {
+      rmSync(box.home, { recursive: true, force: true });
+    }
+  });
+
+  it('hook.js PostToolUse stays valid after the session lock is given up', async () => {
+    const box = sandbox('hook88', 2300);
+    const release = holdLock(join(box.data, '.session-hook88.lock'));
+    try {
+      for (let round = 0; round < HOOK_ROUNDS; round++) {
+        writeFileSync(box.sessionPath, box.seedText);
+        const results = await wave(HOOK, box, PROCS, 50);
+        const data = parseSession(box, results, `hook round ${round}`);
+        assert.ok(data.totalToolCalls > box.seedCalls, `hook round ${round} wrote nothing`);
+      }
+    } finally {
+      release();
+      rmSync(box.home, { recursive: true, force: true });
+    }
+  });
+
+  it('saveJSON keeps shrinking payloads valid under overlapping writes', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cco-savejson-'));
+    const file = join(dir, 'ledger.json');
+    const script = join(dir, 'write.mjs');
+    writeFileSync(script, `
+      import { saveJSON } from ${JSON.stringify(pathToFileURL(UTILS).href)};
+      const file = process.argv[2];
+      const kind = process.argv[3];
+      let buf = '';
+      process.stdin.on('data', (d) => { buf += d; });
+      process.stdin.on('end', () => {
+        const small = kind === 'small';
+        saveJSON(file, {
+          kind: small ? 'small' : 'big',
+          n: buf,
+          pad: small ? 's'.repeat(24) : 'B'.repeat(180_000),
+        });
+      });
+    `);
+    try {
+      for (let round = 0; round < 12; round++) {
+        writeFileSync(file, JSON.stringify({ kind: 'seed', pad: 'B'.repeat(180_000) }));
+        const kids = [];
+        for (let i = 0; i < 10; i++) {
+          const child = spawn(process.execPath, [script, file, i % 2 === 0 ? 'small' : 'big'], {
+            cwd: ROOT,
+            env: { HOME: dir, USERPROFILE: dir },
+            stdio: ['pipe', 'ignore', 'pipe'],
+          });
+          child.stderr.on('data', () => {});
+          kids.push(child);
+        }
+        await new Promise((r) => setTimeout(r, 80));
+        for (const child of kids) child.stdin.end(String(round));
+        await Promise.all(kids.map((child) => new Promise((resolve, reject) => {
+          const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('saveJSON writer timed out')); }, 20_000);
+          child.on('close', (code) => { clearTimeout(timer); resolve(code); });
+        })));
+        const text = rf(file, 'utf8');
+        let data;
+        try { data = JSON.parse(text); } catch (err) {
+          assert.fail(`saveJSON round ${round}: ${err.message} (${text.length} bytes) tail=${JSON.stringify(text.slice(-70))}`);
+        }
+        assert.ok(data.kind === 'small' || data.kind === 'big', data.kind);
+        const temps = readdirSync(dir).filter((n) => n.endsWith('.tmp'));
+        assert.deepEqual(temps, [], `saveJSON round ${round} left ${temps.join(',')}`);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
