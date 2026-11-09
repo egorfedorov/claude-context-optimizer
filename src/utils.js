@@ -366,21 +366,36 @@ export function loadJSON(file) {
 }
 
 /**
- * Atomic JSON write: write to temp + rename.
- * Prevents corruption when parallel hook processes write the same file
- * (e.g. main session + subagent finalizing concurrently).
+ * Atomic JSON write: temp file in the same directory, then rename.
+ * Readers see the previous file or the new one, never a mix of the two.
+ * A rename that loses to a sharing violation is retried. An existing
+ * destination is never rewritten in place — that leaves the previous tail
+ * after a shorter write (#88). A missing destination has no tail to keep,
+ * so a direct write is still safe there.
  */
 export function saveJSON(file, data) {
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  try {
-    writeFileSync(tmp, JSON.stringify(data, null, 2));
-    renameSync(tmp, file);
-  } catch (err) {
-    // Best-effort: fall back to direct write so we don't lose data.
-    try { writeFileSync(file, JSON.stringify(data, null, 2)); } catch { /* drop */ }
-    try { if (existsSync(tmp)) { /* leave tmp for inspection */ } } catch { /* ignore */ }
-    throw err;
+  const body = JSON.stringify(data, null, 2);
+  writeFileSync(tmp, body);
+  let lastErr;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      renameSync(tmp, file);
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < 4) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15);
+    }
   }
+  try {
+    if (!existsSync(file)) {
+      writeFileSync(file, body);
+      return;
+    }
+  } finally {
+    try { unlinkSync(tmp); } catch { /* already gone */ }
+  }
+  throw lastErr;
 }
 
 // ── Config ───────────────────────────────────────────────────────────────────

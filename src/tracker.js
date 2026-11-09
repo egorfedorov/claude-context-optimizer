@@ -53,7 +53,9 @@ function loadSession(sessionId) {
 function saveSession(session) {
   const sessionFile = join(SESSIONS_DIR, `${session.id}.json`);
   session.updatedAt = new Date().toISOString();
-  writeFileSync(sessionFile, JSON.stringify(session, null, 2));
+  // writeFileSync is not atomic: an overlapping shorter snapshot leaves a tail
+  // after the JSON (#88). Every other ledger already goes through saveJSON.
+  saveJSON(sessionFile, session);
 }
 
 // ── Patterns (project-segmented) ────────────────────────────────────────────
